@@ -66,6 +66,10 @@ function layout() {
   $('#sair').addEventListener('click', () => sair());
   $('#tema').addEventListener('click', (e) => { alternarTema(); e.currentTarget.innerHTML = `<i class="fa-solid fa-${iconeTema()}"></i>`; });
   montarBusca($('#busca-slot'), () => rotear());
+  // Aviso discreto quando a IA está usando a assinatura do Claude (modo de desenvolvimento) em vez da API paga.
+  fetch('/api/saude').then((r) => r.json()).then((s) => {
+    if (s.provedor === 'cli' && $('#tema')) $('#tema').insertAdjacentHTML('beforebegin', '<span class="tag tag-info" title="As chamadas de IA usam a sua assinatura do Claude (CLI), sem custo por token. Ao configurar a chave da API, o servidor passa a usá-la como reserva."><i class="fa-solid fa-user-check mr-1"></i>IA: assinatura</span>');
+  }).catch(() => {});
 }
 
 async function rotear() {

@@ -39,7 +39,7 @@ export function registrarUso({ cliente, tarefa, uso }) {
     const doc = {
       clienteId: cliente?.id || null, clienteNome: cliente?.nome || '', tarefa, categoria: TAREFAS_IA[tarefa]?.[1] || 'outros', modelo: uso.modelo || '',
       tokensEntrada: uso.entrada || 0, tokensSaida: uso.saida || 0, tokensCacheEscrita: uso.cacheEscrita || 0, tokensCacheLeitura: uso.cacheLeitura || 0,
-      buscasWeb: uso.buscasWeb || 0, custoUsd: uso.custoUsd || 0, moeda: 'USD', mes: mesDe(), data: new Date().toISOString(),
+      buscasWeb: uso.buscasWeb || 0, custoUsd: uso.custoUsd || 0, moeda: 'USD', provedor: uso.provedor || 'api', mes: mesDe(), data: new Date().toISOString(),
     };
     // Acumulado já em memória: soma agora (o orçamento vale para a próxima chamada mesmo antes da gravação terminar).
     // Se não estiver em memória, a próxima leitura espera a fila e vem do banco já com este registro.

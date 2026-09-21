@@ -10,6 +10,8 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import os from 'node:os';
+import { spawn } from 'node:child_process';
 
 const PORT = Number(process.env.PORT || 8787);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -17,6 +19,14 @@ const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase();
 // Atalho de teste local: jamais habilitado em produção.
 const AUTH_BYPASS = !IS_PROD && process.env.DEV_AUTH_BYPASS === '1';
+
+// ---------- provedor de IA ----------
+// IA_PROVEDOR=auto (padrão): em DESENVOLVIMENTO usa primeiro a assinatura do Claude (CLI `claude -p`, sem custo por token) e só cai
+// para a API da Anthropic se a CLI falhar e houver ANTHROPIC_API_KEY; em PRODUÇÃO usa só a API.
+// 'cli' força a assinatura; 'api' força a API. A CLI nunca roda em produção: limites de assinatura são pessoais e o uso é serial/lento.
+const PEDIDO = (process.env.IA_PROVEDOR || 'auto').toLowerCase();
+let PROVEDOR = PEDIDO === 'auto' ? (IS_PROD ? 'api' : 'cli') : PEDIDO;
+if (PROVEDOR === 'cli' && IS_PROD) { console.warn('[api] a CLI do Claude é só para desenvolvimento; ignorada em produção (usando a API).'); PROVEDOR = 'api'; }
 
 // ---------- modelos e tarefas ----------
 // Haiku: tarefas curtas e simples. Sonnet: tarefas que exigem raciocínio (criativo completo, mercado, site).
@@ -96,16 +106,54 @@ function limitar(req, res, next) {
   next();
 }
 
+/** Fila simples: no máximo 2 chamadas da CLI ao mesmo tempo (cada uma é um processo do Claude Code). */
+let ativos = 0; const espera = [];
+const vez = () => new Promise((ok) => { const t = () => { ativos++; ok(); }; ativos < 2 ? t() : espera.push(t); });
+const liberar = () => { ativos--; espera.shift()?.(); };
+
+/** Chama `claude -p` sem shell (o prompt vai por stdin; nenhum argumento vem do usuário) e converte a saída para o formato da API. */
+async function viaCli({ tarefa, t, estavel, system, messages, webSearch }) {
+  const prompt = [
+    estavel, system,
+    messages.map((m) => (messages.length > 1 ? (m.role === 'assistant' ? 'ASSISTENTE: ' : 'USUÁRIO: ') : '') + m.content).join('\n\n'),
+  ].filter(Boolean).join('\n\n---\n\n');
+  const busca = Boolean(webSearch && t.web);
+  const args = ['-p', '--model', familia(t.modelo) === 'haiku' ? 'haiku' : 'sonnet', '--output-format', 'json', '--no-session-persistence',
+    '--system-prompt', 'Você é um assistente que segue exatamente o formato de saída pedido pelo usuário. Não use ferramentas além das liberadas.',
+    ...(busca ? ['--tools', 'WebSearch', '--allowedTools', 'WebSearch'] : ['--tools', ''])];
+  const env = { ...process.env }; delete env.ANTHROPIC_API_KEY; delete env.ANTHROPIC_BASE_URL; delete env.ANTHROPIC_AUTH_TOKEN; // usa o login da assinatura
+  await vez();
+  try {
+    const saida = await new Promise((ok, falha) => {
+      const p = spawn('claude', args, { cwd: os.tmpdir(), env, windowsHide: true });
+      let out = '', err = '';
+      const timer = setTimeout(() => { p.kill(); falha(new Error('A CLI do Claude demorou demais (3 min).')); }, 180_000);
+      p.stdout.on('data', (d) => (out += d)); p.stderr.on('data', (d) => (err += d));
+      p.on('error', (e) => { clearTimeout(timer); falha(new Error('Não consegui executar a CLI "claude": ' + e.message)); });
+      p.on('close', () => { clearTimeout(timer); ok({ out, err }); });
+      p.stdin.end(prompt);
+    });
+    let j; try { j = JSON.parse(saida.out); } catch { throw new Error('Resposta inesperada da CLI do Claude: ' + (saida.err || saida.out).slice(0, 200)); }
+    if (j.is_error) throw new Error('A CLI do Claude devolveu erro: ' + String(j.result || '').slice(0, 200));
+    const u = j.usage || {};
+    // Na assinatura não há cobrança por token: registramos os tokens e custo 0 (o app marca o provedor como "cli").
+    return { texto: j.result || '', fontes: [], modelo: t.modelo, provedor: 'cli', uso: {
+      entrada: u.input_tokens || 0, saida: u.output_tokens || 0, cacheEscrita: u.cache_creation_input_tokens || 0, cacheLeitura: u.cache_read_input_tokens || 0,
+      buscasWeb: u.server_tool_use?.web_search_requests || 0, custoUsd: 0, modelo: t.modelo, provedor: 'cli',
+    } };
+  } finally { liberar(); }
+}
+
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/saude', (_req, res) => {
-  res.json({ ok: true, modelos: { leve: MODELO_LEVE, complexo: MODELO_COMPLEXO }, chaveConfigurada: Boolean(process.env.ANTHROPIC_API_KEY) });
+  res.json({ ok: true, provedor: PROVEDOR, modelos: { leve: MODELO_LEVE, complexo: MODELO_COMPLEXO }, chaveConfigurada: Boolean(process.env.ANTHROPIC_API_KEY) });
 });
 
 app.post('/api/claude', exigirLogin, limitar, async (req, res) => {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (PROVEDOR === 'api' && !process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ erro: 'IA indisponível: ANTHROPIC_API_KEY não configurada no servidor. Use a opção manual.' });
   }
   const { tarefa, estavel, system, messages, maxTokens, webSearch } = req.body || {};
@@ -113,6 +161,15 @@ app.post('/api/claude', exigirLogin, limitar, async (req, res) => {
   if (!t) return res.status(400).json({ erro: 'Tipo de tarefa de IA desconhecido.' });
   if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ erro: 'messages é obrigatório.' });
   for (const campo of [estavel, system]) if (typeof campo !== 'undefined' && typeof campo !== 'string') return res.status(400).json({ erro: 'Campo de sistema inválido.' });
+
+  if (PROVEDOR === 'cli') {
+    try { return res.json(await viaCli({ tarefa, t, estavel, system, messages, webSearch })); }
+    catch (e) {
+      console.error('[cli]', tarefa, e?.message);
+      if (!process.env.ANTHROPIC_API_KEY) return res.status(502).json({ erro: (e?.message || 'Falha ao chamar a CLI do Claude.') + ' (sem ANTHROPIC_API_KEY para usar como reserva)' });
+      console.warn('[api] CLI falhou; usando a API da Anthropic como reserva.'); // assinatura primeiro, API depois
+    }
+  }
 
   // Prompt caching: o que é estável por cliente (regras + perfil de marca) vai PRIMEIRO e é marcado para cache;
   // o que muda a cada chamada (instrução da tarefa, referências, resultados) vem depois do ponto de cache.
@@ -181,5 +238,5 @@ if (IS_PROD && fs.existsSync(dist)) {
 
 // Só sobe o servidor quando executado diretamente (permite importar TAREFAS/calcularCusto em testes).
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  app.listen(PORT, () => console.log(`[api] http://localhost:${PORT}  leve=${MODELO_LEVE}  complexo=${MODELO_COMPLEXO}  auth-bypass=${AUTH_BYPASS}`));
+  app.listen(PORT, () => console.log(`[api] http://localhost:${PORT}  provedor=${PROVEDOR}  leve=${MODELO_LEVE}  complexo=${MODELO_COMPLEXO}  auth-bypass=${AUTH_BYPASS}`));
 }

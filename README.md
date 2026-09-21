@@ -11,6 +11,13 @@ npm run dev               # web em :5173 + servidor de IA em :8787
 ```
 Login = usuário criado no Firebase Auth (Console > Authentication). Desative o cadastro de novos usuários lá.
 
+### IA em desenvolvimento: assinatura primeiro, API depois
+Com `IA_PROVEDOR=auto` (padrão do `.env.example`), em **desenvolvimento** o servidor usa primeiro a sua assinatura do Claude, chamando a CLI
+`claude -p` (sem custo por token; precisa estar logado no Claude Code), e só cai para a API da Anthropic se a CLI falhar **e** houver `ANTHROPIC_API_KEY`.
+O cabeçalho mostra o selo "IA: assinatura". Em **produção** a CLI é ignorada e só a API é usada. Diferenças no modo assinatura: mais lento
+(10–60 s por chamada), sem prompt caching nem limite de tokens por operação, e o custo é registrado como US$ 0 (os tokens são registrados).
+Para testar com a API simulada ou forçar a API: `IA_PROVEDOR=api`.
+
 ## Segurança (leia antes de publicar)
 - **A chave da Anthropic nunca vai ao navegador.** O frontend chama `/api/claude`; `server/index.js` valida o ID token do
   Firebase (JWKS público do Google, sem credencial de admin) e só então chama a API. Defina `ADMIN_EMAIL` para aceitar só o administrador.

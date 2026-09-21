@@ -67,7 +67,7 @@ const REGRA_CRITICA = (cliente) => `REGRAS CRÍTICAS (valem para tudo que você 
 1. Soe como conteúdo nativo e orgânico — como uma pessoa real falando, nunca como anúncio de vendas.
 2. Evite linguagem de venda óbvia ("compre agora", "oferta imperdível", "o melhor do mercado", "você não vai acreditar") e claims exagerados ou garantias de resultado. Prefira especificidade concreta e verossímil.
 3. NUNCA use estes termos proibidos/restritos do nicho: ${termosProibidos(cliente).join(', ') || '(nenhum cadastrado — mesmo assim evite promessas de saúde, dinheiro ou resultado garantido)'}.
-4. Escreva em ${IDIOMA_NOME[cliente.marca?.idioma] || IDIOMA_NOME['pt-BR']}.
+4. Idioma: todo texto voltado ao PÚBLICO FINAL (hooks, copy, CTA, textos de loja) em ${IDIOMA_NOME[cliente.marca?.idioma] || IDIOMA_NOME['pt-BR']}. Análises, explicações, planos e checklists para o GESTOR, sempre em português do Brasil. As chaves dos JSONs pedidos NUNCA são traduzidas.
 5. Cada variação deve ter um gatilho mental identificável e um ângulo diferente das demais.
 6. Não invente dados, números, estudos, prêmios ou depoimentos de pessoas reais. Use só o que consta no perfil de marca.`;
 
@@ -109,6 +109,9 @@ function contextoResultados(res = []) {
 /** Parte que se repete entre as chamadas do mesmo cliente: vai como bloco cacheado (mais barato nas chamadas seguintes). */
 const estavelDe = (cliente) => `${REGRA_CRITICA(cliente)}\n\n${contextoCliente(cliente)}`;
 
+/** Última instrução do pedido (a mais lembrada pelo modelo): o idioma dos textos vale mesmo que o briefing/perfil estejam em outro idioma. */
+const idiomaLinha = (cliente) => `IDIOMA DOS TEXTOS (obrigatório): ${IDIOMA_NOME[cliente.marca?.idioma] || IDIOMA_NOME['pt-BR']}. Escreva TODO o conteúdo voltado ao público nesse idioma, mesmo que o briefing e o perfil estejam em outro (traduza e adapte, não traduza literalmente). As chaves do JSON ficam exatamente como pedido.`;
+
 const SO_JSON = 'Responda APENAS com JSON válido, sem texto antes ou depois, sem cercas de código.';
 
 // ---------- criativos ----------
@@ -123,6 +126,7 @@ export async function gerarCriativos({ cliente, briefing, modelo, framework, for
     formato && `Formato: ${formato}`,
     base && `Ponto de partida — anúncio de referência de mercado (adapte o ÂNGULO ao cliente, sem copiar o texto): ${base.titulo || ''}\n${base.texto || ''}\nAnálise: ${JSON.stringify(base.analise || {})}`,
     `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação).`,
+    idiomaLinha(cliente),
     SO_JSON,
   ].filter(Boolean).join('\n');
   const { dados } = await gerarJSON({ tarefa: 'criativos', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
@@ -141,7 +145,7 @@ export async function refinarCriativo({ cliente, criativo, instrucao, conversa =
   const atual = JSON.stringify({ hook: criativo.hook, copy: criativo.copy, cta: criativo.cta, angulo: criativo.angulo, framework: criativo.framework });
   const msgs = [
     ...conversa,
-    { role: 'user', content: `Criativo atual: ${atual}\n\nAjuste pedido: ${instrucao}\n\nDevolva o criativo COMPLETO já ajustado como objeto JSON com: "hook","copy","cta","angulo","gatilho","explicacao" (1-2 frases dizendo o que mudou). ${SO_JSON}` },
+    { role: 'user', content: `Criativo atual: ${atual}\n\nAjuste pedido: ${instrucao}\n\nDevolva o criativo COMPLETO já ajustado como objeto JSON com: "hook","copy","cta","angulo","gatilho","explicacao" (1-2 frases dizendo o que mudou). Mantenha o idioma do criativo atual (${IDIOMA_NOME[cliente.marca?.idioma] || IDIOMA_NOME['pt-BR']}), exceto se o ajuste pedir outro. ${SO_JSON}` },
   ];
   const { dados } = await gerarJSON({ tarefa: 'refino', cliente, estavel: estavelDe(cliente), system, messages: msgs });
   return dados;
@@ -150,7 +154,7 @@ export async function refinarCriativo({ cliente, criativo, instrucao, conversa =
 // ---------- hooks ----------
 export async function gerarHooks({ cliente, tema, categoria, quantidade = 8 }) {
   const system = 'Você cria hooks (ganchos de abertura) para anúncios.';
-  const pedido = `Crie ${quantidade} hooks${categoria ? ` da categoria "${categoria}"` : ' de categorias variadas'}${tema ? ` sobre: ${tema}` : ''}. Cada um deve caber em 1-2 frases faladas. Saída: array JSON de {"texto","categoria"} com categoria em: dor, curiosidade, prova, resultado, erro_comum, contraintuitivo, pergunta. ${SO_JSON}`;
+  const pedido = `Crie ${quantidade} hooks${categoria ? ` da categoria "${categoria}"` : ' de categorias variadas'}${tema ? ` sobre: ${tema}` : ''}. Cada um deve caber em 1-2 frases faladas. Saída: array JSON de {"texto","categoria"} com categoria em: dor, curiosidade, prova, resultado, erro_comum, contraintuitivo, pergunta. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'hooks', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return (Array.isArray(dados) ? dados : dados.hooks || []).filter((h) => h.texto);
 }
@@ -162,42 +166,69 @@ export async function gerarEstruturaCampanha({ cliente, criativos, objetivo, orc
 Objetivo: ${objetivo || 'vendas'}. Orçamento diário disponível: ${orcamentoDiario ? 'R$ ' + orcamentoDiario : 'não informado — sugira uma faixa coerente e diga que é estimativa'}.
 Criativos disponíveis: ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
 Saída em JSON: {"resumo": string, "publicos": [{"nome","descricao","tipo"}], "orcamento": {"diario": number, "distribuicao": string}, "estruturaTeste": {"campanhas": number, "conjuntos": string, "criativosPorConjunto": string, "duracaoDias": number, "criterioDecisao": string}, "checklistMeta": [string]}.
-"checklistMeta" = passos práticos, na ordem, para configurar no Gerenciador de Anúncios do Meta. ${SO_JSON}`;
+"checklistMeta" = passos práticos, na ordem, para configurar no Gerenciador de Anúncios do Meta. Escreva os textos em português do Brasil (é para o gestor de tráfego) e use EXATAMENTE as chaves JSON pedidas, sem traduzi-las. ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'campanha', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
-  return dados;
+  return normalizarCampanha(dados);
+}
+
+/** Aceita variações comuns de chave (o modelo às vezes escreve "nombre"/"name") e garante a forma que o app espera. */
+const pegar = (o, ...chaves) => { for (const k of chaves) if (o?.[k] != null && o[k] !== '') return o[k]; return ''; };
+export function normalizarCampanha(d = {}) {
+  const t = d.estruturaTeste || d.estructuraTest || d.estrutura_teste || {};
+  return {
+    resumo: pegar(d, 'resumo', 'resumen', 'summary'),
+    publicos: (d.publicos || d.públicos || d.audiencias || []).map((p) => ({ nome: pegar(p, 'nome', 'nombre', 'name', 'titulo'), descricao: pegar(p, 'descricao', 'descripcion', 'descripción', 'description'), tipo: pegar(p, 'tipo', 'type') })).filter((p) => p.nome),
+    orcamento: { diario: d.orcamento?.diario ?? d.presupuesto?.diario ?? null, distribuicao: pegar(d.orcamento || d.presupuesto || {}, 'distribuicao', 'distribucion', 'distribución') },
+    estruturaTeste: { campanhas: pegar(t, 'campanhas', 'campañas'), conjuntos: pegar(t, 'conjuntos'), criativosPorConjunto: pegar(t, 'criativosPorConjunto', 'creativosPorConjunto'), duracaoDias: pegar(t, 'duracaoDias', 'duracionDias', 'duracion'), criterioDecisao: pegar(t, 'criterioDecisao', 'criterioDecision', 'criterio') },
+    checklistMeta: d.checklistMeta || d.checklist || [],
+  };
 }
 
 // ---------- referências ----------
 export async function buscarReferencias({ cliente, diasMinimos, quantidade = 5 }) {
   const system = `Você pesquisa anúncios reais de empresas de destaque num nicho e os analisa estrategicamente. Você NUNCA inventa anúncios, links ou datas: só inclui o que encontrou na pesquisa.`;
   const pedido = `Nicho do cliente: ${cliente.nicho}. Idioma/mercado: ${IDIOMA_NOME[cliente.marca?.idioma] || 'pt-BR'}.
-Pesquise na web (priorize a Biblioteca de Anúncios do Meta, facebook.com/ads/library, e depois buscas gerais) até ${quantidade} anúncios ATIVOS de empresas de destaque nesse nicho, priorizando os que estão no ar há pelo menos ${diasMinimos} dias.
+Pesquise na web com VÁRIAS buscas diferentes (marcas líderes do nicho, "Biblioteca de Anúncios Meta <marca>" em facebook.com/ads/library, páginas de anúncio e landing pages) e traga até ${quantidade} exemplos de anúncios de empresas de destaque nesse nicho, priorizando anúncios ATIVOS e os que estão no ar há pelo menos ${diasMinimos} dias.
+Se não conseguir CONFIRMAR que o anúncio está ativo ou há quanto tempo, inclua mesmo assim o melhor candidato REAL que encontrou, com "diasNoAr": null, e explique em "evidencia" o que foi e o que não foi confirmado. Devolva [] somente se não encontrou nenhuma empresa ou anúncio real e relevante.
 Para cada um: "titulo" (descrição curta), "empresa", "link" (URL real encontrada), "texto" (copy do anúncio, se visível), "diasNoAr" (número SE a fonte mostra data de início; senão null — nunca estime), "evidencia" (de onde veio a informação de dias/atividade), e "analise": {"angulo","framework" (AIDA/PAS/4Us/HRR/outro), "formato", "publico", "replicar" (o que vale replicar para o cliente, sem copiar)}.
-Se a Biblioteca não for acessível pela busca, use outras fontes e diga isso em "evidencia". Se encontrar poucos, devolva poucos. Saída: array JSON. ${SO_JSON}`;
+Se a Biblioteca não for acessível pela busca, use outras fontes e diga isso em "evidencia". Nunca invente links ou datas. Saída: array JSON. Escreva a análise em português do Brasil; o texto do anúncio ("texto") fica no idioma original. Use EXATAMENTE as chaves pedidas. ${SO_JSON}`;
   const { dados, fontes } = await gerarJSON({
     tarefa: 'referencias', cliente, system, messages: [{ role: 'user', content: pedido }], webSearch: { maxUses: 8 },
   });
-  return { itens: Array.isArray(dados) ? dados : dados.resultados || [], fontes };
+  // Aceita array direto ou um objeto com o array dentro (o modelo às vezes embrulha a resposta).
+  const itens = Array.isArray(dados) ? dados : (dados && Object.values(dados).find(Array.isArray)) || [];
+  return { itens, fontes };
 }
 
 export async function analisarReferencia({ cliente, ref }) {
   const system = 'Você é estrategista de mídia paga e analisa anúncios de concorrentes.';
-  const pedido = `Analise este anúncio de mercado:\nTítulo: ${ref.titulo || ''}\nTexto: ${ref.texto || ''}\nLink: ${ref.link || ''}\nSaída JSON: {"angulo": string (ângulo/gatilho), "framework": string (framework de copy identificável), "formato": string, "publico": string (público provável), "replicar": string (o que replicar para ${cliente.nome} sem copiar)}. ${SO_JSON}`;
+  const pedido = `Analise este anúncio de mercado:\nTítulo: ${ref.titulo || ''}\nTexto: ${ref.texto || ''}\nLink: ${ref.link || ''}\nSaída JSON: {"angulo": string (ângulo/gatilho), "framework": string (framework de copy identificável), "formato": string, "publico": string (público provável), "replicar": string (o que replicar para ${cliente.nome} sem copiar)}. Escreva em português do Brasil e use EXATAMENTE essas chaves. ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'analise', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
+}
+
+/** Campos de texto que o modelo às vezes devolve como lista de parágrafos viram um texto só (senão aparecem com vírgulas coladas). */
+export function textoPlano(d) {
+  const junta = (v) => (Array.isArray(v) && v.every((x) => typeof x === 'string') ? v.join('\n\n') : v);
+  if (!d || typeof d !== 'object') return d;
+  const out = { ...d };
+  for (const k of ['heroTitulo', 'heroSubtitulo', 'heroCta', 'storytelling', 'newsletterTitulo', 'newsletterTexto']) out[k] = junta(out[k]);
+  if (out.politicas && typeof out.politicas === 'object') out.politicas = Object.fromEntries(Object.entries(out.politicas).map(([k, v]) => [k, junta(v)]));
+  return out;
 }
 
 // ---------- site / loja ----------
 export async function gerarConteudoSite({ cliente, produtos }) {
   const system = 'Você é copywriter de e-commerce.';
   const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.
-Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": [{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais),"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}]}. ${SO_JSON}`;
-  return (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
+Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": [{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais),"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}]}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+  const d = (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
+  return textoPlano(d);
 }
 
 export async function gerarTextosPacote({ cliente, produtos, plataforma }) {
   const system = `Você prepara lojas para ${plataforma}.`;
   const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})`).join(', ') || 'a definir'}.
-Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}]}. ${SO_JSON}`;
+Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}]}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'pacote', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
