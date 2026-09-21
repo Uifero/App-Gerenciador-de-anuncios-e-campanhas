@@ -70,3 +70,10 @@ Firebase Hosting sozinho não roda o servidor de IA.
 Coleções Firestore: `gcc_configuracoes`, `gcc_clientes`, `gcc_criativos`, `gcc_hooks`, `gcc_referencias`, `gcc_campanhas`, `gcc_resultados`,
 `gcc_produtos`, `gcc_sites`, `gcc_playbooks`, `gcc_uso_api`, `gcc_aprovacoes`, `gcc_aprovacao_respostas`.
 Arquivos no Storage: `gcc/{clienteId}/...`.
+
+## Estúdio de peças (foto e vídeo prontos para a campanha)
+No detalhe de cada criativo, **"Gerar foto e vídeo"** monta o material a partir do texto do criativo, direto no navegador (sem custo por peça):
+- **Foto (PNG):** 3 templates (foto em tela cheia, foto + painel de cor, só texto) nos formatos 1:1, 4:5 e 9:16, com logo e cores da marca.
+- **Vídeo (MP4):** a linha do tempo vem do roteiro ("Cena 1 (0-3s): … Voz: …"), com legendas animadas, fotos/vídeos em rodízio, música opcional e CTA final. A gravação é em tempo real e a aba precisa ficar visível. Se o navegador só gravar WebM, converta para MP4 (Meta/TikTok pedem MP4).
+- Os arquivos são **baixados no computador** (não usam o Storage). As fotos de origem escolhidas no estúdio não ficam salvas.
+- **Imagem por IA (opcional):** defina `OPENAI_API_KEY` no `.env` do servidor; limite de 10 imagens/hora.

@@ -3,6 +3,7 @@ import { db, COL, enviarArquivo, removerArquivo } from '../core/storage.js';
 import { gerarCriativos, refinarCriativo, checarQualidade, acharTermosProibidos } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
 import { abrirEnvio, sincronizarAprovacoes, tagAprovacao } from './aprovacao.js';
+import { abrirEstudio } from './estudio.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -224,6 +225,10 @@ function detalhe(c, cliente, cfg, recarregar) {
         <p class="hint">${tudoOk ? 'Checklist completo.' : 'Complete o checklist para aprovar.'}</p></div>
       <button class="btn-ghost" data-enviar-um title="Gera um link para o cliente final aprovar ou pedir ajuste deste criativo"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação do cliente</button></div>
 
+    <div class="mt-5 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3"><h4 class="mb-1 text-sm font-semibold"><i class="fa-solid fa-clapperboard"></i> Material para a campanha</h4>
+      <p class="hint mb-2">Gera a foto (PNG) e o vídeo prontos para subir no gerenciador de anúncios, a partir deste criativo.</p>
+      <button class="btn-primary btn-sm" data-estudio><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar foto e vídeo</button></div>
+
     <div class="mt-5 rounded-lg border border-slate-200 p-3"><h4 class="mb-2 text-sm font-semibold">Peça final (arquivo)</h4>
       ${c.arquivoUrl ? `<p class="mb-2 text-sm">${tag('com arquivo', 'tag-ok')} ${esc(c.arquivoNome || '')}</p>
         <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="${esc(c.arquivoUrl)}" target="_blank" rel="noopener" download="${esc(c.arquivoNome || 'criativo')}"><i class="fa-solid fa-download"></i> Baixar</a>
@@ -254,6 +259,7 @@ function detalhe(c, cliente, cfg, recarregar) {
     await ocupado(f.querySelector('button'), async () => { await novaVersao({ hook: v.hook, copy: v.copy, cta: v.cta }, 'Edição manual'); toast('Nova versão salva.'); desenhar(); recarregar(); });
   });
   on(alvo, 'click', '[data-copiar]', () => copiar(`${c.hook}\n\n${c.copy}\n\n${c.cta}`));
+  on(alvo, 'click', '[data-estudio]', () => abrirEstudio(c, cliente));
   on(alvo, 'submit', '#fc', async (f, ev) => {
     ev.preventDefault();
     const instrucao = lerForm(f).instrucao;

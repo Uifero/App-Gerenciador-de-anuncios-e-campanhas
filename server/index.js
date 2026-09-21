@@ -155,6 +155,31 @@ app.get('/api/saude', (_req, res) => {
   res.json({ ok: true, provedor: cliDisponivel() ? 'cli' : 'api', preferido: PROVEDOR, modelos: { leve: MODELO_LEVE, complexo: MODELO_COMPLEXO }, chaveConfigurada: Boolean(process.env.ANTHROPIC_API_KEY) });
 });
 
+// Imagem por IA (opcional, gerador externo): só o admin logado, com teto de 10 imagens por hora para conter gasto.
+const imagensPorUsuario = new Map();
+app.post('/api/imagem', exigirLogin, async (req, res) => {
+  const chave = process.env.OPENAI_API_KEY;
+  if (!chave) return res.status(503).json({ erro: 'Imagem por IA não configurada: defina OPENAI_API_KEY no .env do servidor. Enquanto isso, use as fotos do produto com os templates.' });
+  const { prompt, tamanho } = req.body || {};
+  if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 1500) return res.status(400).json({ erro: 'Descrição da imagem inválida (até 1500 caracteres).' });
+  const quem = req.usuario?.sub || req.usuario?.email || 'x', agora = Date.now();
+  const recentes = (imagensPorUsuario.get(quem) || []).filter((t) => agora - t < 3_600_000);
+  if (recentes.length >= 10) return res.status(429).json({ erro: 'Limite de 10 imagens por hora atingido.' });
+  recentes.push(agora); imagensPorUsuario.set(quem, recentes);
+  const size = ['1024x1024', '1024x1536', '1536x1024'].includes(tamanho) ? tamanho : '1024x1536';
+  try {
+    const r = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${chave}` },
+      body: JSON.stringify({ model: process.env.IMAGEM_MODELO || 'gpt-image-1', prompt: prompt.trim(), size, n: 1 }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ erro: 'Falha ao gerar a imagem: ' + (j.error?.message || `HTTP ${r.status}`) });
+    const b64 = j.data?.[0]?.b64_json;
+    if (!b64) return res.status(502).json({ erro: 'O gerador não devolveu a imagem.' });
+    res.json({ imagem: 'data:image/png;base64,' + b64 });
+  } catch (e) { console.error('[imagem]', e?.message); res.status(502).json({ erro: 'Não consegui falar com o gerador de imagens.' }); }
+});
+
 app.post('/api/claude', exigirLogin, limitar, async (req, res) => {
   if (!cliDisponivel() && !process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ erro: 'IA indisponível: ANTHROPIC_API_KEY não configurada no servidor. Use a opção manual.' });
