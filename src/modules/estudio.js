@@ -63,7 +63,9 @@ export function abrirEstudio(criativo, cliente) {
     </div>
     <div class="mt-3 flex justify-center rounded-lg bg-slate-100 p-2"><canvas data-previa style="max-width:100%;max-height:420px" class="rounded"></canvas></div>
     <div class="mt-3 flex flex-wrap gap-2"><button class="btn-primary btn-sm" data-baixar-foto><i class="fa-solid fa-download"></i> Baixar este formato</button>
-      <button class="btn-ghost btn-sm" data-baixar-todas><i class="fa-solid fa-file-zipper"></i> Baixar os 3 formatos</button></div>
+      <button class="btn-ghost btn-sm" data-baixar-todas><i class="fa-solid fa-file-zipper"></i> Baixar os 3 formatos</button>
+      <button class="btn-ghost btn-sm" data-baixar-por-foto title="Uma peça para cada foto enviada, no formato escolhido (ótimo para testar várias fotos ou montar carrossel)"><i class="fa-solid fa-images"></i> Uma peça para cada foto</button></div>
+    <p class="hint mt-1" data-aviso-fotos></p>
   </section>
 
   <section class="mt-4 rounded-lg border border-slate-200 p-3">
@@ -85,11 +87,15 @@ export function abrirEstudio(criativo, cliente) {
   const canvas = $('[data-previa]', raiz);
   const cfgPeca = () => ({
     template: est.template, hook: $('[data-hook]', raiz).value, cta: $('[data-cta]', raiz).value,
-    midia: est.midias.filter((x) => x.tipo === 'imagem')[Number($('[data-fundo]', raiz).value) || 0] || null,
+    midia: fotos()[Number($('[data-fundo]', raiz).value) || 0] || null,
+    midias: fotos(),
     cor: est.cor, corTexto: est.corTexto, logo: est.logo,
   });
   const fotos = () => est.midias.filter((x) => x.tipo === 'imagem');
   const previa = () => {
+    const n = fotos().length;
+    $('[data-aviso-fotos]', raiz).textContent = est.template === 'colagem' ? (n < 2 ? 'A colagem precisa de 2 a 4 fotos (você enviou ' + n + ').' : `Colagem com as ${Math.min(4, n)} primeiras fotos.`)
+      : n > 1 ? `Você enviou ${n} fotos: este template usa só a escolhida em "Foto de fundo". Para usar várias na mesma peça, escolha "Colagem"; para uma peça por foto, use "Uma peça para cada foto".` : '';
     const [w, h] = dims(est.formato); canvas.width = w; canvas.height = h;
     desenharPeca(canvas.getContext('2d'), w, h, cfgPeca());
   };
@@ -135,15 +141,22 @@ export function abrirEstudio(criativo, cliente) {
   on(raiz, 'change', '[data-formato-video]', (s) => { est.formatoVideo = s.value; });
 
   // ---- foto ----
-  const pngDe = async (formato) => {
+  const pngDe = async (formato, extra = {}) => {
     const [w, h] = dims(formato), c = document.createElement('canvas'); c.width = w; c.height = h;
-    desenharPeca(c.getContext('2d'), w, h, cfgPeca());
+    desenharPeca(c.getContext('2d'), w, h, { ...cfgPeca(), ...extra });
     return canvasParaPng(c);
   };
   on(raiz, 'click', '[data-baixar-foto]', (b) => ocupado(b, async () => { baixar(await pngDe(est.formato), `${slug(criativo.nome)}-${est.formato}.png`); toast('Foto baixada.'); }));
   on(raiz, 'click', '[data-baixar-todas]', (b) => ocupado(b, async () => {
     for (const [f] of FORMATOS_IMAGEM) { baixar(await pngDe(f), `${slug(criativo.nome)}-${f}.png`); await new Promise((r) => setTimeout(r, 400)); }
     toast('3 fotos baixadas. Se o navegador pedir, permita downloads múltiplos.');
+  }));
+
+  on(raiz, 'click', '[data-baixar-por-foto]', (b) => ocupado(b, async () => {
+    const lista = fotos();
+    if (!lista.length) throw new Error('Envie pelo menos uma foto em "Materiais".');
+    for (const [i, f] of lista.entries()) { baixar(await pngDe(est.formato, { midia: f }), `${slug(criativo.nome)}-${est.formato}-foto${i + 1}.png`); await new Promise((r) => setTimeout(r, 400)); }
+    toast(`${lista.length} peça(s) baixada(s). Se o navegador pedir, permita downloads múltiplos.`);
   }));
 
   // ---- imagem por IA (opcional) ----

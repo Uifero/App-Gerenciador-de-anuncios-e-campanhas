@@ -5,7 +5,7 @@
 export const FORMATOS_IMAGEM = [
   ['1080x1080', 'Feed quadrado 1:1 (1080×1080)'], ['1080x1350', 'Feed 4:5 (1080×1350)'], ['1080x1920', 'Stories/Reels 9:16 (1080×1920)'],
 ];
-export const TEMPLATES = [['destaque', 'Foto em tela cheia'], ['cartao', 'Foto + painel de cor'], ['texto', 'Só texto (sem foto)']];
+export const TEMPLATES = [['destaque', 'Foto em tela cheia'], ['cartao', 'Foto + painel de cor'], ['colagem', 'Colagem (2 a 4 fotos)'], ['texto', 'Só texto (sem foto)']];
 
 const FONTE = '"Segoe UI", Inter, Roboto, Arial, sans-serif';
 const DURACAO_MAX_S = 60;
@@ -148,22 +148,32 @@ function logotipo(ctx, logo, x, y, maxW, maxH) {
   ctx.drawImage(logo, x, y, logo.naturalWidth * esc, logo.naturalHeight * esc); ctx.restore();
 }
 
+/** Grade de 2 a 4 fotos dentro da área (x,y,w,h), com um respiro fino entre elas. */
+function grade(ctx, fotos, x, y, w, h) {
+  const n = Math.min(4, fotos.length), g = Math.round(w * 0.012);
+  const celulas = n === 2 ? [[0, 0, 0.5, 1], [0.5, 0, 0.5, 1]]
+    : n === 3 ? [[0, 0, 0.6, 1], [0.6, 0, 0.4, 0.5], [0.6, 0.5, 0.4, 0.5]]
+      : [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]];
+  celulas.forEach(([cx, cy, cw, ch], i) => cobrir(ctx, fotos[i], x + cx * w + g / 2, y + cy * h + g / 2, cw * w - g, ch * h - g));
+}
+
 const zonaSegura = (w, h) => (h / w > 1.5 ? { topo: 0.12, base: 0.2 } : { topo: 0.05, base: 0.06 });
 
 // ---------------- foto (PNG) ----------------
 /**
  * Desenha a peça estática no ctx (w × h).
- * opts: { template, hook, cta, midia ({tipo:'imagem',el} ou null), cor, corTexto, logo (HTMLImageElement|null) }
+ * opts: { template, hook, cta, midia ({tipo:'imagem',el} ou null), midias (fotos da colagem), cor, corTexto, logo (HTMLImageElement|null) }
  */
-export function desenharPeca(ctx, w, h, { template = 'destaque', hook = '', cta = '', midia = null, cor = '#4f46e5', corTexto = '#ffffff', logo = null }) {
+export function desenharPeca(ctx, w, h, { template = 'destaque', hook = '', cta = '', midia = null, midias = [], cor = '#4f46e5', corTexto = '#ffffff', logo = null }) {
   const zs = zonaSegura(w, h), mx = w * 0.08, larg = w - mx * 2;
   const tamCta = w * 0.04, corPilula = cor, tintaPilula = tintaSobre(cor);
   ctx.clearRect(0, 0, w, h);
 
-  if (template === 'cartao') {
-    const hImg = h * 0.56;
+  if (template === 'cartao' || template === 'colagem') {
+    const hImg = h * (template === 'colagem' ? 0.6 : 0.56);
     ctx.fillStyle = cor; ctx.fillRect(0, 0, w, h);
-    if (midia) cobrir(ctx, midia, 0, 0, w, hImg);
+    if (template === 'colagem' && midias.length >= 2) grade(ctx, midias, 0, 0, w, hImg);
+    else if (midia) cobrir(ctx, midia, 0, 0, w, hImg);
     else { const g = ctx.createLinearGradient(0, 0, w, hImg); g.addColorStop(0, escurecer(cor, 0.85)); g.addColorStop(1, escurecer(cor, 0.5)); ctx.fillStyle = g; ctx.fillRect(0, 0, w, hImg); }
     const tinta = tintaSobre(cor);
     const yCta = h - h * zs.base;
