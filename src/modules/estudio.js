@@ -116,12 +116,14 @@ export function abrirEstudio(criativo, cliente) {
       || '<p class="hint">Nenhuma foto ou vídeo ainda. Sem material, o app usa um fundo de cor (só texto).</p>';
     $('[data-fundo]', raiz).innerHTML = fotos().length ? opcoes(fotos().map((x, i) => [String(i), `${i + 1}. ${x.nome}`]), '0') : '<option value="0">(sem foto: usa fundo de cor)</option>';
     agendarPrevia();
+    if (typeof listarCenas === 'function') listarCenas();
   };
 
   const listarCenas = () => {
     $('[data-cenas]', raiz).innerHTML = est.cenas.map((c, i) => `<div class="flex items-start gap-2 rounded-lg bg-slate-50 p-2">
       <span class="mt-2 w-14 shrink-0 text-xs text-slate-500">${c.tipo === 'cta' ? 'Final' : 'Cena ' + (i + 1)}</span>
       <textarea class="input" rows="2" data-cena-texto="${i}" placeholder="(sem legenda: só a imagem)">${esc(c.texto)}</textarea>
+      ${est.midias.length ? `<select class="input !w-32 shrink-0" data-cena-midia="${i}" title="Imagem ou vídeo desta cena"><option value="">Imagem: auto</option>${est.midias.map((x, k) => `<option value="${k}" ${c.midiaIdx === k ? 'selected' : ''}>${k + 1}. ${esc(x.nome).slice(0, 14)}</option>`).join('')}</select>` : ''}
       <input type="number" class="input !w-20 shrink-0" min="1" max="12" step="0.5" data-cena-dur="${i}" value="${c.dur}" title="Segundos">
       <button class="btn-ghost btn-sm shrink-0" data-cena-rm="${i}" title="Remover cena">×</button></div>`).join('')
       || '<p class="hint">Sem cenas. Adicione pelo menos uma.</p>';
@@ -135,7 +137,12 @@ export function abrirEstudio(criativo, cliente) {
     listarMidias();
   };
   on(raiz, 'change', '[data-midias]', (i) => ocupado(i, async () => { await adicionarArquivos([...i.files]); i.value = ''; }));
-  on(raiz, 'click', '[data-rm-midia]', (b) => { const [x] = est.midias.splice(Number(b.dataset.rmMidia), 1); URL.revokeObjectURL(x.url); listarMidias(); });
+  on(raiz, 'click', '[data-rm-midia]', (b) => {
+    const k = Number(b.dataset.rmMidia), [x] = est.midias.splice(k, 1); URL.revokeObjectURL(x.url);
+    est.cenas.forEach((c) => { if (c.midiaIdx === k) c.midiaIdx = null; else if (c.midiaIdx > k) c.midiaIdx--; }); // cada cena continua ligada à mesma imagem
+    listarMidias();
+  });
+  on(raiz, 'change', '[data-cena-midia]', (s) => { est.cenas[Number(s.dataset.cenaMidia)].midiaIdx = s.value === '' ? null : Number(s.value); });
   on(raiz, 'change', '[data-logo]', (i) => ocupado(i, async () => { est.logo = i.files[0] ? (await carregarMidia(i.files[0])).el : null; agendarPrevia(); }));
   on(raiz, 'change', '[data-musica]', (i) => { est.musica = i.files[0] || null; });
   on(raiz, 'input', '[data-cor]', (i) => { est.cor = i.value; gravarPref(cliente.id, { cor: est.cor, corTexto: est.corTexto }); agendarPrevia(); });
@@ -169,10 +176,14 @@ export function abrirEstudio(criativo, cliente) {
   // ---- prompts para geradores externos (usa a assinatura, sem custo extra) ----
   on(raiz, 'click', '[data-sugerir-prompt]', (b) => ocupado(b, async () => {
     const r = await sugerirPromptsVisuais({ cliente, criativo });
-    const caixa = (rotulo, texto, pt) => `<div class="rounded-lg bg-slate-50 p-2"><div class="mb-1 flex items-center justify-between"><b class="text-xs text-slate-600">${esc(rotulo)}</b>
-      <button class="btn-ghost btn-sm" data-copiar-prompt>Copiar (inglês)</button></div><p class="whitespace-pre-wrap text-sm" data-texto-prompt>${esc(texto)}</p>
+    est.promptsCenas = r.cenas;
+    const caixa = (rotulo, texto, pt, cena = null) => `<div class="rounded-lg bg-slate-50 p-2"><div class="mb-1 flex items-center justify-between gap-2"><b class="text-xs text-slate-600">${esc(rotulo)}</b>
+      <span class="flex gap-1">${cena !== null ? `<button class="btn-ia btn-sm" data-gerar-cena="${cena}" title="Gera a imagem desta cena e liga à cena do vídeo">Gerar imagem</button>` : ''}
+      <button class="btn-ghost btn-sm" data-copiar-prompt>Copiar (inglês)</button></span></div><p class="whitespace-pre-wrap text-sm" data-texto-prompt>${esc(texto)}</p>
       ${pt ? `<p class="mt-1 whitespace-pre-wrap border-t border-slate-200 pt-1 text-xs text-slate-500"><b>Tradução:</b> ${esc(pt)}</p>` : ''}</div>`;
-    $('[data-prompts]', raiz).innerHTML = (r.foto ? caixa('Foto estática (4:5)', r.foto, r.fotoPt) : '') + r.cenas.map((c, i) => caixa(`Vídeo — cena ${i + 1} (9:16)`, c, r.cenasPt[i])).join('')
+    $('[data-prompts]', raiz).innerHTML = (r.foto ? caixa('Foto estática (4:5)', r.foto, r.fotoPt) : '') + (r.cenas.length ? `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 p-2"><span class="text-sm">Vídeo com IA: uma imagem por cena (${r.cenas.length} imagens, sai da cota do dia)</span>
+        <button class="btn-ia btn-sm" data-gerar-todas><i class="fa-solid fa-images"></i> Gerar imagem de todas as cenas</button></div>` : '')
+      + r.cenas.map((c, i) => caixa(`Vídeo — cena ${i + 1} (9:16)`, c, r.cenasPt[i], i)).join('')
       + (r.dicas ? `<p class="hint">${esc(r.dicas)}</p>` : '');
     if (r.foto) $('[data-prompt-ia]', raiz).value = r.foto;
   }));
@@ -191,18 +202,45 @@ export function abrirEstudio(criativo, cliente) {
     } catch { el.textContent = 'Servidor de IA indisponível (rode npm run dev).'; }
   };
   statusIa();
-  on(raiz, 'click', '[data-gerar-ia]', (b) => ocupado(b, async () => {
-    const prompt = $('[data-prompt-ia]', raiz).value.trim();
-    if (!prompt) throw new Error('Descreva a imagem.');
+  /** Gera uma imagem no servidor (rodízio de provedores), adiciona aos materiais e devolve o índice dela. */
+  const gerarImagemIa = async (prompt, formato) => {
     const r = await fetch('/api/imagem', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await tokenAtual()}` },
-      body: JSON.stringify({ prompt, formato: formatoIa() }),
+      body: JSON.stringify({ prompt, formato }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Falha ao gerar a imagem.');
-    est.midias.push(await carregarImagemUrl(j.imagem));
-    listarMidias(); toast(`Imagem gerada (${j.rotulo}) e adicionada aos materiais.`);
-    statusIa();
+    const m = await carregarImagemUrl(j.imagem);
+    m.nome = `ia-${est.midias.length + 1}`;
+    est.midias.push(m);
+    return est.midias.length - 1;
+  };
+  on(raiz, 'click', '[data-gerar-ia]', (b) => ocupado(b, async () => {
+    const prompt = $('[data-prompt-ia]', raiz).value.trim();
+    if (!prompt) throw new Error('Descreva a imagem.');
+    await gerarImagemIa(prompt, formatoIa());
+    listarMidias(); toast('Imagem gerada e adicionada aos materiais.'); statusIa();
+  }));
+  // Liga a i-ésima cena do roteiro (só as de conteúdo, sem o CTA final) à imagem gerada para ela.
+  const cenaDeConteudo = (i) => est.cenas.filter((c) => c.tipo === 'cena')[i];
+  const formatoVideoIa = () => { const [w, h] = dims(est.formatoVideo); return h / w > 1.5 ? '9:16' : h === w ? '1:1' : '4:5'; };
+  on(raiz, 'click', '[data-gerar-cena]', (b) => ocupado(b, async () => {
+    const i = Number(b.dataset.gerarCena);
+    const k = await gerarImagemIa(est.promptsCenas[i], formatoVideoIa());
+    const cena = cenaDeConteudo(i); if (cena) cena.midiaIdx = k;
+    listarMidias(); statusIa(); toast(`Imagem da cena ${i + 1} pronta${cena ? ' e ligada à cena do vídeo.' : '.'}`);
+  }));
+  on(raiz, 'click', '[data-gerar-todas]', (b) => ocupado(b, async () => {
+    const total = est.promptsCenas.length; let feitas = 0;
+    try {
+      for (let i = 0; i < total; i++) {
+        b.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Cena ${i + 1} de ${total}…`;
+        const k = await gerarImagemIa(est.promptsCenas[i], formatoVideoIa());
+        const cena = cenaDeConteudo(i); if (cena) cena.midiaIdx = k;
+        feitas++; listarMidias();
+      }
+    } finally { statusIa(); }
+    toast(`${feitas} imagens geradas e ligadas às cenas. Confira e clique em "Gerar vídeo".`);
   }));
 
   // ---- cenas ----
@@ -230,7 +268,7 @@ export function abrirEstudio(criativo, cliente) {
     await ocupado(b, async () => {
       try {
         const r = await gravarVideo({
-          cenas: est.cenas, midias: est.midias, cor: est.cor, corTexto: est.corTexto, logo: est.logo, musica: est.musica,
+          cenas: est.cenas.map((c) => ({ ...c, midia: c.midiaIdx != null ? est.midias[c.midiaIdx] : null })), midias: est.midias, cor: est.cor, corTexto: est.corTexto, logo: est.logo, musica: est.musica,
           largura, altura, sinal: est.ctrl.signal, aoProgresso: (p) => { barra.style.width = `${Math.round(p * 100)}%`; },
         });
         if (est.urlVideo) URL.revokeObjectURL(est.urlVideo);

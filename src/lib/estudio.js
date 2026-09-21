@@ -273,7 +273,7 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
     let i = cenas.length - 1;
     while (i > 0 && t < inicios[i]) i--;
     const cena = cenas[i], p = Math.min(1, Math.max(0, (t - inicios[i]) / cena.dur)), tLocal = t - inicios[i];
-    const midia = midias.length ? midias[i % midias.length] : null;
+    const midia = cena.midia || (midias.length ? midias[i % midias.length] : null); // cena.midia = imagem escolhida para esta cena
     if (i !== cenaAnterior) {
       cenaAnterior = i;
       if (midia?.tipo === 'video') { midia.el.currentTime = 0; midia.el.play().catch(() => {}); }
