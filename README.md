@@ -17,19 +17,41 @@ Login = usuário criado no Firebase Auth (Console > Authentication). Desative o 
 - **`firestore.rules` PRESERVA a regra aberta do Painel de Comissões** (`painelComissoes`) e restringe `gcc_*` a usuário autenticado.
   Publique com `firebase deploy --only firestore:rules,storage` — cuidado: se você editar as regras do painel, faça-o neste mesmo arquivo,
   pois um deploy sobrescreve todas as regras do projeto.
+- **Link de aprovação (público, sem login):** só funciona depois de publicar as regras. Elas abrem, para o público, apenas
+  (1) a leitura do documento do link pelo token (nunca listagem, e só até expirar) e (2) a gravação da própria resposta
+  (`aprovado`/`ajuste` + comentário de até 1000 caracteres) numa peça que pertence ao link. Nada mais é acessível. O token tem 192 bits aleatórios;
+  dá para revogar a qualquer momento. **Essas regras não foram testadas contra o emulador do Firestore** (exige Java) — teste com um link real após o deploy.
 - `VITE_DEMO_MODE`, `DEV_AUTH_BYPASS` e `ANTHROPIC_BASE_URL` são só para teste local; não os defina em produção
   (o bypass é ignorado com `NODE_ENV=production`, e o build de produção não deve ter `VITE_DEMO_MODE`).
 - Nenhum processamento de pagamento: o site gerado só expõe `window.checkoutHandler` como ponto de encaixe.
+
+## Custo de IA (Fase 3)
+- **Modelo por tarefa** (`TAREFAS` em `server/index.js`): Haiku 4.5 para hooks, refino e checklist de qualidade; Sonnet 5 para criativos,
+  campanha, busca/análise de mercado, site e playbooks. Troque pelas variáveis `ANTHROPIC_MODEL_LEVE` / `ANTHROPIC_MODEL_COMPLEXO`.
+  Só o Sonnet recebe `thinking` adaptativo e `effort` (o Haiku 4.5 rejeita esses parâmetros).
+- **Prompt caching:** regras + perfil de marca do cliente vão num bloco cacheado, sempre **antes** do que muda a cada chamada. O cache é por
+  modelo (Haiku e Sonnet não compartilham) e a API só cacheia trechos acima do mínimo do modelo — perfis curtos podem não cachear.
+  Confira o efeito real em "Custo de IA" do cliente (tokens lidos do cache).
+- **Registro:** cada chamada grava tokens, modelo, cliente e custo estimado em `gcc_uso_api`. O custo é uma **estimativa** pela tabela de preços
+  em `server/index.js` (confira com a fatura da Anthropic). Valores em US$; o equivalente em R$ usa a cotação de Configurações.
+- **Limites:** tokens de saída por tipo de operação (Configurações > Custos e limites de IA), orçamento mensal global e por cliente
+  (aviso a 80% no início; ao passar do limite, cada geração pede confirmação), variações por geração e reaproveitamento de buscas de mercado recentes.
+
+## Backup
+"Exportar dados" (início = tudo; dentro do cliente = só ele) baixa um JSON. Não inclui os arquivos do Storage (só os links) nem os
+tokens dos links de aprovação. Ainda não há importação/restauração pela interface.
 
 ## Produção
 `npm run build` e `npm start` (Express serve `dist/` + `/api`). Precisa de um host Node (Render, Railway, Cloud Run, VPS).
 Firebase Hosting sozinho não roda o servidor de IA.
 
 ## Estrutura
-- `src/core`: firebase, auth, storage (dados + arquivos), ui, ia (prompts)
-- `src/modules`: uma responsabilidade por arquivo (clientes, criativos, hooks, referencias, campanhas, resultados, produtos, sites, relatorios, dashboard, configuracoes)
-- `src/lib`: constantes, geração de site, CSV, PDF
-- `server/`: proxy autenticado para a Anthropic (com busca web)
+- `src/core`: firebase, auth, storage (dados + arquivos), ui, ia (prompts), tema
+- `src/modules`: uma responsabilidade por arquivo (clientes, onboarding, criativos, hooks, referencias, campanhas, resultados, produtos, sites,
+  relatorios, dashboard, alertas, playbooks, duplicar, busca, custo, backup, aprovacao, configuracoes)
+- `src/lib`: constantes, regras puras (metricas), geração de site, CSV, PDF
+- `server/`: proxy autenticado para a Anthropic (modelo por tarefa, cache, custo, busca web)
 
-Coleções Firestore: `gcc_configuracoes`, `gcc_clientes`, `gcc_criativos`, `gcc_hooks`, `gcc_referencias`, `gcc_campanhas`, `gcc_resultados`, `gcc_produtos`, `gcc_sites`.
+Coleções Firestore: `gcc_configuracoes`, `gcc_clientes`, `gcc_criativos`, `gcc_hooks`, `gcc_referencias`, `gcc_campanhas`, `gcc_resultados`,
+`gcc_produtos`, `gcc_sites`, `gcc_playbooks`, `gcc_uso_api`, `gcc_aprovacoes`, `gcc_aprovacao_respostas`.
 Arquivos no Storage: `gcc/{clienteId}/...`.

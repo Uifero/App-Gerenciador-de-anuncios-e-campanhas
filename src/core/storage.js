@@ -10,6 +10,7 @@ export const COL = {
   config: 'gcc_configuracoes', clientes: 'gcc_clientes', criativos: 'gcc_criativos', hooks: 'gcc_hooks',
   referencias: 'gcc_referencias', campanhas: 'gcc_campanhas', resultados: 'gcc_resultados',
   produtos: 'gcc_produtos', sites: 'gcc_sites', playbooks: 'gcc_playbooks',
+  usoApi: 'gcc_uso_api', aprovacoes: 'gcc_aprovacoes', respostas: 'gcc_aprovacao_respostas',
 };
 
 const agora = () => new Date().toISOString();
@@ -65,6 +66,8 @@ export const db = {
     return r.sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
   },
   obter: (col, id) => drv.obter(col, id),
+  /** Grava um documento exatamente como veio (sem criadoEm/atualizadoEm). Usado nas respostas públicas de aprovação, cujas regras aceitam só campos específicos. */
+  async definir(col, id, dados) { await drv.criar(col, semUndefined(dados), id); avisar(col); },
   async criar(col, dados, id) {
     const d = semUndefined({ ...dados, criadoEm: agora(), atualizadoEm: agora() });
     const nid = await drv.criar(col, d, id);

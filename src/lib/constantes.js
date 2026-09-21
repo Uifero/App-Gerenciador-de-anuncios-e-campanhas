@@ -40,9 +40,9 @@ export const MODELO_DESCRICAO = {
 export const FORMATOS = [['video_curto', 'Vídeo curto (Reels/TikTok)'], ['imagem', 'Imagem única'], ['carrossel', 'Carrossel'], ['texto', 'Texto/Legenda']];
 
 export const STATUS_CRIATIVO = [
-  ['rascunho', 'Rascunho'], ['aprovado', 'Aprovado'], ['em_uso', 'Em uso'], ['pausado', 'Pausado'], ['encerrado', 'Encerrado'],
+  ['rascunho', 'Rascunho'], ['pronto_aprovacao', 'Aguardando cliente'], ['aprovado', 'Aprovado'], ['em_uso', 'Em uso'], ['pausado', 'Pausado'], ['encerrado', 'Encerrado'],
 ];
-export const STATUS_COR = { rascunho: '', aprovado: 'tag-info', em_uso: 'tag-ok', pausado: 'tag-warn', encerrado: 'tag-bad' };
+export const STATUS_COR = { rascunho: '', pronto_aprovacao: 'tag-warn', aprovado: 'tag-info', em_uso: 'tag-ok', pausado: 'tag-warn', encerrado: 'tag-bad' };
 
 /** Perguntas do checklist de qualidade antes de aprovar um criativo. */
 export const CHECKLIST_QUALIDADE = [
@@ -68,7 +68,24 @@ export const CONFIG_PADRAO = {
   diasMinimosReferencia: 15, cortes: { moderado: 15, forte: 30 }, diasFadiga: 14,
   diasSemaforo: 7,  // janela (dias) de resultados recentes usada no semáforo
   diasEscalar: 7,   // dias seguidos batendo a meta para sugerir "hora de escalar"
+  // --- Fase 3: custo e limites de IA ---
+  orcamentoIaMensalUsd: null, // orçamento global do mês em US$ (null = sem limite)
+  cotacaoUsd: 5.5,            // só para exibir o equivalente em R$ (estimativa editável)
+  diasReutilizarBusca: 30,    // antes de gastar numa busca de mercado, oferece as referências salvas dos últimos N dias
+  variacoesPadrao: 4,         // variações por geração de criativo (1 a 5)
+  limitesTokens: {},          // sobrescreve o limite de tokens de saída por tarefa (ver TAREFAS_IA)
 };
+
+/**
+ * Tarefas de IA (chaves iguais às do servidor): [rótulo, categoria de custo, limite padrão de tokens de saída, modelo].
+ * Os limites e modelos espelham TAREFAS em server/index.js (o servidor é a fonte da verdade; aqui servem de sugestão na tela).
+ */
+export const TAREFAS_IA = {
+  criativos: ['Geração de criativos', 'criativos', 8000, 'Sonnet'], refino: ['Refino de criativos', 'criativos', 3000, 'Haiku'], checklist: ['Checklist de qualidade', 'criativos', 1200, 'Haiku'],
+  hooks: ['Geração de hooks', 'hooks', 2000, 'Haiku'], referencias: ['Busca de mercado', 'mercado', 10000, 'Sonnet'], analise: ['Análise de referência', 'mercado', 2500, 'Sonnet'],
+  site: ['Conteúdo do site', 'site', 6000, 'Sonnet'], pacote: ['Pacote de plataforma', 'site', 8000, 'Sonnet'], campanha: ['Estrutura de campanha', 'campanhas', 5000, 'Sonnet'], playbook: ['Playbooks', 'playbooks', 4000, 'Sonnet'],
+};
+export const CATEGORIAS_CUSTO = { criativos: 'Criativos', hooks: 'Hooks', mercado: 'Análise de mercado', site: 'Site/Loja', campanhas: 'Campanhas', playbooks: 'Playbooks' };
 
 /** Escopo padrão de um cliente (módulos entregues). */
 export const ESCOPO_PADRAO = { criativos: true, hooks: true, referencias: true, campanhas: true, resultados: true, produtos: false, site: false, relatorio: true };

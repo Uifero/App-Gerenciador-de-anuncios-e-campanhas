@@ -2,20 +2,33 @@
 // Toda função aqui tem um equivalente manual nos módulos (formulários "sem IA").
 import { tokenAtual } from './auth.js';
 import { IDIOMA_NOME, MODELO_DESCRICAO } from '../lib/constantes.js';
+import { obterConfig } from '../modules/configuracoes.js';
+import { verificarOrcamento, registrarUso } from '../modules/custo.js';
 
-export async function chamarClaude({ system, messages, maxTokens = 8000, webSearch = null, effort = 'medium' }) {
+/**
+ * Chamada única à IA (via servidor). O servidor escolhe o modelo pela `tarefa` (Haiku x Sonnet), aplica o limite de tokens
+ * e o cache do bloco `estavel`. Aqui: confere o orçamento mensal antes e registra o consumo depois (gcc_uso_api).
+ *  - tarefa: hooks | refino | checklist | criativos | campanha | referencias | analise | site | pacote | playbook
+ *  - cliente: quem originou a chamada (para o custo por cliente); null em tarefas globais
+ *  - estavel: texto que se repete entre chamadas do mesmo cliente (regras + perfil de marca) -> vai para o cache
+ *  - system: instrução específica desta tarefa (muda a cada chamada, fica depois do cache)
+ */
+export async function chamarClaude({ tarefa, cliente = null, estavel, system, messages, webSearch = null }) {
+  const cfg = await obterConfig();
+  await verificarOrcamento(cliente, cfg); // exige confirmação manual se o orçamento do mês já estourou
   const token = await tokenAtual();
   let r;
   try {
     r = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ system, messages, maxTokens, webSearch, effort }),
+      body: JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || undefined, webSearch }),
     });
   } catch {
     throw new Error('Não consegui falar com o servidor de IA. Ele está rodando? Você pode usar a opção manual.');
   }
   const corpo = await r.json().catch(() => ({}));
+  if (corpo.uso) registrarUso({ cliente, tarefa, uso: corpo.uso }); // até respostas cortadas consumiram tokens (grava em segundo plano)
   if (!r.ok) {
     if (!corpo.erro && [502, 503, 504].includes(r.status)) throw new Error('O servidor de IA não respondeu. Confirme que ele está rodando (npm run dev) ou use a opção manual.');
     throw new Error(corpo.erro || `Erro ${r.status} ao chamar a IA.`);
@@ -93,13 +106,17 @@ function contextoResultados(res = []) {
     `- "${r.criativoNome || 'criativo'}" (ângulo: ${r.angulo || 'n/d'}): CTR ${r.ctr ?? 'n/d'}%, CPA ${r.cpa ?? 'n/d'}, ROAS ${r.roas ?? 'n/d'}`).join('\n');
 }
 
+/** Parte que se repete entre as chamadas do mesmo cliente: vai como bloco cacheado (mais barato nas chamadas seguintes). */
+const estavelDe = (cliente) => `${REGRA_CRITICA(cliente)}\n\n${contextoCliente(cliente)}`;
+
 const SO_JSON = 'Responda APENAS com JSON válido, sem texto antes ou depois, sem cercas de código.';
 
 // ---------- criativos ----------
 export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base }) {
-  const system = `Você é um copywriter e estrategista de tráfego pago sênior. Cria anúncios que parecem conteúdo orgânico.\n\n${REGRA_CRITICA(cliente)}\n\n${contextoCliente(cliente)}${contextoReferencias(referencias)}${contextoResultados(resultados)}`;
+  const n = Math.min(5, Math.max(1, Number(quantidade) || 4));
+  const system = `Você é um copywriter e estrategista de tráfego pago sênior. Cria anúncios que parecem conteúdo orgânico.${contextoReferencias(referencias)}${contextoResultados(resultados)}`;
   const pedido = [
-    `Gere ${Math.min(5, Math.max(3, quantidade))} variações de criativo, cada uma com hook e ângulo diferentes.`,
+    n === 1 ? 'Gere 1 variação de criativo.' : `Gere ${n} variações de criativo, cada uma com hook e ângulo diferentes.`,
     briefing && `Briefing: ${briefing}`,
     modelo && `Modelo de criativo: ${modelo.replace('_', ' ')} — ${MODELO_DESCRICAO[modelo] || ''}`,
     framework && framework !== 'livre' && `Framework de copy obrigatório: ${framework}`,
@@ -108,7 +125,7 @@ export async function gerarCriativos({ cliente, briefing, modelo, framework, for
     `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação).`,
     SO_JSON,
   ].filter(Boolean).join('\n');
-  const { dados } = await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 10000 });
+  const { dados } = await gerarJSON({ tarefa: 'criativos', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return (Array.isArray(dados) ? dados : dados.variacoes || []).map(normalizarCriativo);
 }
 
@@ -120,33 +137,33 @@ function normalizarCriativo(c) {
 }
 
 export async function refinarCriativo({ cliente, criativo, instrucao, conversa = [] }) {
-  const system = `Você refina criativos de anúncio mantendo tom orgânico.\n\n${REGRA_CRITICA(cliente)}\n\n${contextoCliente(cliente)}`;
+  const system = 'Você refina criativos de anúncio mantendo tom orgânico.';
   const atual = JSON.stringify({ hook: criativo.hook, copy: criativo.copy, cta: criativo.cta, angulo: criativo.angulo, framework: criativo.framework });
   const msgs = [
     ...conversa,
     { role: 'user', content: `Criativo atual: ${atual}\n\nAjuste pedido: ${instrucao}\n\nDevolva o criativo COMPLETO já ajustado como objeto JSON com: "hook","copy","cta","angulo","gatilho","explicacao" (1-2 frases dizendo o que mudou). ${SO_JSON}` },
   ];
-  const { dados } = await gerarJSON({ system, messages: msgs, maxTokens: 6000 });
+  const { dados } = await gerarJSON({ tarefa: 'refino', cliente, estavel: estavelDe(cliente), system, messages: msgs });
   return dados;
 }
 
 // ---------- hooks ----------
 export async function gerarHooks({ cliente, tema, categoria, quantidade = 8 }) {
-  const system = `Você cria hooks (ganchos de abertura) para anúncios.\n\n${REGRA_CRITICA(cliente)}\n\n${contextoCliente(cliente)}`;
+  const system = 'Você cria hooks (ganchos de abertura) para anúncios.';
   const pedido = `Crie ${quantidade} hooks${categoria ? ` da categoria "${categoria}"` : ' de categorias variadas'}${tema ? ` sobre: ${tema}` : ''}. Cada um deve caber em 1-2 frases faladas. Saída: array JSON de {"texto","categoria"} com categoria em: dor, curiosidade, prova, resultado, erro_comum, contraintuitivo, pergunta. ${SO_JSON}`;
-  const { dados } = await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 4000, effort: 'low' });
+  const { dados } = await gerarJSON({ tarefa: 'hooks', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return (Array.isArray(dados) ? dados : dados.hooks || []).filter((h) => h.texto);
 }
 
 // ---------- campanhas ----------
 export async function gerarEstruturaCampanha({ cliente, criativos, objetivo, orcamentoDiario }) {
-  const system = `Você é gestor de tráfego Meta Ads sênior. Estrutura testes enxutos e realistas.\n\n${contextoCliente(cliente)}`;
+  const system = 'Você é gestor de tráfego Meta Ads sênior. Estrutura testes enxutos e realistas.';
   const pedido = `Monte a estrutura de campanha ${cliente.estagio === 'rodando' ? 'de ESCALA/otimização usando o histórico do cliente' : 'de PRIMEIRO TESTE (cliente novo, sem histórico)'}.
 Objetivo: ${objetivo || 'vendas'}. Orçamento diário disponível: ${orcamentoDiario ? 'R$ ' + orcamentoDiario : 'não informado — sugira uma faixa coerente e diga que é estimativa'}.
 Criativos disponíveis: ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
 Saída em JSON: {"resumo": string, "publicos": [{"nome","descricao","tipo"}], "orcamento": {"diario": number, "distribuicao": string}, "estruturaTeste": {"campanhas": number, "conjuntos": string, "criativosPorConjunto": string, "duracaoDias": number, "criterioDecisao": string}, "checklistMeta": [string]}.
 "checklistMeta" = passos práticos, na ordem, para configurar no Gerenciador de Anúncios do Meta. ${SO_JSON}`;
-  const { dados } = await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 6000 });
+  const { dados } = await gerarJSON({ tarefa: 'campanha', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return dados;
 }
 
@@ -158,30 +175,30 @@ Pesquise na web (priorize a Biblioteca de Anúncios do Meta, facebook.com/ads/li
 Para cada um: "titulo" (descrição curta), "empresa", "link" (URL real encontrada), "texto" (copy do anúncio, se visível), "diasNoAr" (número SE a fonte mostra data de início; senão null — nunca estime), "evidencia" (de onde veio a informação de dias/atividade), e "analise": {"angulo","framework" (AIDA/PAS/4Us/HRR/outro), "formato", "publico", "replicar" (o que vale replicar para o cliente, sem copiar)}.
 Se a Biblioteca não for acessível pela busca, use outras fontes e diga isso em "evidencia". Se encontrar poucos, devolva poucos. Saída: array JSON. ${SO_JSON}`;
   const { dados, fontes } = await gerarJSON({
-    system, messages: [{ role: 'user', content: pedido }], maxTokens: 12000, webSearch: { maxUses: 8 },
+    tarefa: 'referencias', cliente, system, messages: [{ role: 'user', content: pedido }], webSearch: { maxUses: 8 },
   });
   return { itens: Array.isArray(dados) ? dados : dados.resultados || [], fontes };
 }
 
 export async function analisarReferencia({ cliente, ref }) {
-  const system = `Você é estrategista de mídia paga e analisa anúncios de concorrentes.\n\n${contextoCliente(cliente)}`;
+  const system = 'Você é estrategista de mídia paga e analisa anúncios de concorrentes.';
   const pedido = `Analise este anúncio de mercado:\nTítulo: ${ref.titulo || ''}\nTexto: ${ref.texto || ''}\nLink: ${ref.link || ''}\nSaída JSON: {"angulo": string (ângulo/gatilho), "framework": string (framework de copy identificável), "formato": string, "publico": string (público provável), "replicar": string (o que replicar para ${cliente.nome} sem copiar)}. ${SO_JSON}`;
-  return (await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 3000, effort: 'low' })).dados;
+  return (await gerarJSON({ tarefa: 'analise', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
 // ---------- site / loja ----------
 export async function gerarConteudoSite({ cliente, produtos }) {
-  const system = `Você é copywriter de e-commerce.\n\n${REGRA_CRITICA(cliente)}\n\n${contextoCliente(cliente)}`;
+  const system = 'Você é copywriter de e-commerce.';
   const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.
 Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": [{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais),"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}]}. ${SO_JSON}`;
-  return (await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 6000 })).dados;
+  return (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
 export async function gerarTextosPacote({ cliente, produtos, plataforma }) {
-  const system = `Você prepara lojas para ${plataforma}.\n\n${REGRA_CRITICA(cliente)}\n\n${contextoCliente(cliente)}`;
+  const system = `Você prepara lojas para ${plataforma}.`;
   const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})`).join(', ') || 'a definir'}.
 Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}]}. ${SO_JSON}`;
-  return (await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 10000 })).dados;
+  return (await gerarJSON({ tarefa: 'pacote', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
 // ---------- playbooks ----------
@@ -193,5 +210,14 @@ ${REGRA_CRITICA(cliente)}`;
   const pedido = `Tipo de produto/nicho: ${tipoProduto}.
 Monte um playbook com 5 a 6 ângulos, do que mais costuma funcionar para o que costuma funcionar menos, e 3 hooks nativos/orgânicos por ângulo (1-2 frases faladas cada).
 Saída JSON: {"nome": string, "angulos": [{"angulo": string, "hooks": [string]}], "notas": string (2-3 frases: quando usar, cuidados do nicho)}. ${SO_JSON}`;
-  return (await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 4000 })).dados;
+  return (await gerarJSON({ tarefa: 'playbook', system, messages: [{ role: 'user', content: pedido }] })).dados;
+}
+
+// ---------- checklist de qualidade (Haiku: tarefa curta e barata) ----------
+/** Sugere as respostas do checklist de qualidade. A pessoa revisa e aplica; o checklist manual continua valendo. */
+export async function checarQualidade({ cliente, criativo, perguntas }) {
+  const system = 'Você revisa criativos de anúncio com olhar crítico e honesto. Se algo estiver fraco, diga que não passa.';
+  const pedido = `Criativo:\nHook: ${criativo.hook}\nCopy: ${criativo.copy}\nCTA: ${criativo.cta}\nFramework: ${criativo.framework || 'livre'}\n\nResponda cada pergunta com true (sim, passa) ou false, e uma razão curta (máx. 15 palavras):\n${perguntas.map(([k, q]) => `- "${k}": ${q}`).join('\n')}
+Saída JSON: um objeto cujas chaves são exatamente as acima e cada valor é {"ok": boolean, "motivo": string}. ${SO_JSON}`;
+  return (await gerarJSON({ tarefa: 'checklist', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }

@@ -13,5 +13,30 @@ service cloud.firestore {
     match /{col}/{document=**} {
       allow read, write: if col.matches('gcc_.*') && request.auth != null;
     }
+
+    // ---- Link de aprovação (acesso PÚBLICO, sem login, restrito) ----
+    // Regras somam (OU) com a de cima: aqui só se ABRE o que o público realmente precisa.
+    //
+    // 1) O documento do link (snapshot do que o cliente vê): só leitura direta pelo token (get), NUNCA listagem,
+    //    e apenas enquanto não expirou. Criar/alterar/apagar continua só para o admin (regra acima).
+    match /gcc_aprovacoes/{token} {
+      allow get: if resource.data.expiraMs > request.time.toMillis();
+    }
+
+    // 2) A resposta do cliente final: pode ler a própria resposta (por id) e gravar/alterar SÓ os campos abaixo,
+    //    com valores válidos, para um link existente, não expirado, e uma peça que pertence a esse link.
+    match /gcc_aprovacao_respostas/{rid} {
+      allow get: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['token', 'clienteId', 'criativoId', 'status', 'comentario', 'em'])
+        && request.resource.data.keys().hasAll(['token', 'clienteId', 'criativoId', 'status', 'comentario', 'em'])
+        && request.resource.data.status in ['aprovado', 'ajuste']
+        && request.resource.data.comentario is string && request.resource.data.comentario.size() <= 1000
+        && request.resource.data.em is string && request.resource.data.em.size() <= 40
+        && rid == request.resource.data.token + '_' + request.resource.data.criativoId
+        && exists(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token))
+        && get(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token)).data.expiraMs > request.time.toMillis()
+        && get(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token)).data.clienteId == request.resource.data.clienteId
+        && request.resource.data.criativoId in get(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token)).data.itensIds;
+    }
   }
 }

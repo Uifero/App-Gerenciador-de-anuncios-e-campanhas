@@ -1,7 +1,8 @@
 // Aba Criativos: gerar (IA ou manual), refinar por chat com histórico de versões, aprovar, anexar arquivo final.
 import { db, COL, enviarArquivo, removerArquivo } from '../core/storage.js';
-import { gerarCriativos, refinarCriativo, acharTermosProibidos } from '../core/ia.js';
+import { gerarCriativos, refinarCriativo, checarQualidade, acharTermosProibidos } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
+import { abrirEnvio, sincronizarAprovacoes, tagAprovacao } from './aprovacao.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -26,6 +27,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
     db.listar(COL.resultados, { clienteId: cliente.id }), obterConfig(),
   ]);
+  // Traz para o painel o que o cliente final respondeu pelo link de aprovação (falha aqui não impede de usar a aba).
+  try { await sincronizarAprovacoes(cliente, criativos); } catch (e) { console.warn('[aprovação] não foi possível sincronizar as respostas:', e); }
   let filtro = '';
 
   const lista = () => {
@@ -37,6 +40,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   root.innerHTML = `${cabecalho('Criativos', 'Anúncios prontos para revisar, aprovar e subir. Cada ajuste vira uma versão.',
     `<select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
+     <button class="btn-ghost" data-enviar title="Gera um link para o cliente final ver as peças e aprovar ou pedir ajuste, sem login"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação</button>
      <button class="btn-primary" data-novo title="Gerar ou escrever um criativo novo"><i class="fa-solid fa-plus"></i> Novo criativo</button>`)}
     <div id="painel"></div><div id="lista">${lista()}</div>`;
 
@@ -45,13 +49,14 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     $('#lista', root).innerHTML = lista();
   };
   on(root, 'change', '[data-filtro]', (s) => { filtro = s.value; $('#lista', root).innerHTML = lista(); });
-  on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar));
+  on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg));
+  on(root, 'click', '[data-enviar]', () => abrirEnvio(cliente, criativos, { preSelecionar: criativos.filter((c) => c.status === 'rascunho').map((c) => c.id), aoMudar: recarregar }));
 
   // Vindo da aba Referências: abre já com a referência escolhida como ponto de partida.
   let preRef = null;
   try { preRef = sessionStorage.getItem('gcc_ref'); sessionStorage.removeItem('gcc_ref'); } catch { /* sem storage */ }
   const base = preRef && referencias.find((r) => r.id === preRef);
-  if (base) painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, base, atualizar);
+  if (base) painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, base, atualizar, cfg);
   on(root, 'click', '[data-abrir]', (b) => detalhe(criativos.find((c) => c.id === b.dataset.abrir), cliente, cfg, recarregar));
 
   // Vindo da busca global: abre direto o criativo encontrado.
@@ -68,7 +73,7 @@ function cartao(c, cfg) {
     <div class="flex items-start justify-between gap-2"><h3 class="font-semibold leading-tight">${esc(c.nome)}</h3>${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}</div>
     <p class="caption mt-1 line-clamp-2">“${esc(c.hook)}”</p>
     <div class="mt-3 flex flex-wrap gap-1">
-      ${c.framework ? tag(c.framework, 'tag-info') : ''}${c.angulo ? tag(c.angulo) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma || 'pt-BR')}
+      ${tagAprovacao(c)}${c.framework ? tag(c.framework, 'tag-info') : ''}${c.angulo ? tag(c.angulo) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma || 'pt-BR')}
       ${c.arquivoUrl ? tag('com arquivo', 'tag-ok') : tag('sem arquivo', 'tag-warn')}
       ${(c.versoes?.length || 1) > 1 ? tag(`v${c.versoes.length}`) : ''}${c.referenciaId ? tag('de referência', 'tag-info') : ''}
       ${fadiga ? tag(`fadiga: ${dias}d no ar`, 'tag-bad') : ''}</div>
@@ -76,7 +81,7 @@ function cartao(c, cfg) {
 }
 
 // ---------------- painel de novo criativo ----------------
-function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = null, atualizar = null) {
+function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = null, atualizar = null, cfg = {}) {
   alvo.innerHTML = `<div class="card mb-5 space-y-4">
     <div class="flex items-center justify-between"><h3 class="font-semibold">Novo criativo</h3><button class="text-slate-400" data-x aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
     <form id="fg" class="space-y-3">
@@ -85,11 +90,12 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
         <p class="hint">Uma ou duas frases bastam. A IA usa o perfil de marca do cliente e as referências salvas.</p>
         ${(cliente.angulosSugeridos || []).length ? `<div class="mt-2 flex flex-wrap items-center gap-1" title="Ângulos do playbook aplicado a este cliente. Clique para acrescentar ao briefing."><span class="hint !mt-0">Ângulos sugeridos (${esc(cliente.playbookNome || 'playbook')}):</span>
           ${cliente.angulosSugeridos.map((a) => `<button type="button" class="tag hover:bg-indigo-100" data-ang="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}</div>
-      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, referência)</summary>
+      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, variações, referência)</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           <div><label class="label">Modelo pronto</label><select class="input" name="modelo">${opcoes(MODELOS_CRIATIVO, '')}</select></div>
           <div><label class="label">Framework de copy</label><select class="input" name="framework">${opcoes(FRAMEWORKS, 'livre')}</select></div>
           <div><label class="label">Formato</label><select class="input" name="formato">${opcoes(FORMATOS, 'video_curto')}</select></div>
+          <div><label class="label">Variações a gerar</label><select class="input" name="quantidade" title="Menos variações = menos custo de IA nesta geração">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === (Number(cfg.variacoesPadrao) || 4) ? 'selected' : ''}>${n}</option>`).join('')}</select><p class="hint">Menos variações = menos custo nesta geração.</p></div>
           <div><label class="label">Partir de uma referência salva</label><select class="input" name="referenciaId">
             <option value="">Nenhuma</option>${referencias.map((r) => `<option value="${r.id}" ${base?.id === r.id ? 'selected' : ''}>${esc(r.titulo || 'Referência')}${r.sinal ? ' · ' + r.sinal : ''}</option>`).join('')}</select></div>
         </div></details>
@@ -131,7 +137,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     if (!v.briefing && !v.modelo && !ref) return toast('Escreva um briefing curto, escolha um modelo ou uma referência.', 'erro');
     await ocupado(form.querySelector('.btn-ia'), async () => {
       const vars = await gerarCriativos({
-        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref,
+        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref, quantidade: Number(v.quantidade) || cfg.variacoesPadrao || 4,
         referencias: referencias.filter((r) => r.analise), resultados,
       });
       if (!vars.length) throw new Error('A IA não devolveu variações. Tente reescrever o briefing.');
@@ -192,7 +198,8 @@ function detalhe(c, cliente, cfg, recarregar) {
     alvo.innerHTML = `
     <div class="mb-3 flex flex-wrap gap-1">${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}${c.framework ? tag(c.framework, 'tag-info') : ''}
       ${c.angulo ? tag(c.angulo) : ''}${c.gatilho ? tag('gatilho: ' + c.gatilho) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma)}
-      ${c.emUsoDesde ? tag(`em uso desde ${dataBR(c.emUsoDesde)}`, 'tag-ok') : ''}</div>
+      ${c.emUsoDesde ? tag(`em uso desde ${dataBR(c.emUsoDesde)}`, 'tag-ok') : ''}${tagAprovacao(c)}</div>
+    ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
     ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
     <form id="fe" class="space-y-3">
       <p class="caption">Edite direto (sem IA) e salve como nova versão, ou peça um ajuste ao chat abaixo.</p>
@@ -207,12 +214,15 @@ function detalhe(c, cliente, cfg, recarregar) {
       <div id="chat" class="mb-2 space-y-1 text-sm">${conversa.map((t) => `<p class="${t.role === 'user' ? 'text-slate-600' : 'text-violet-700'}"><b>${t.role === 'user' ? 'Você' : 'IA'}:</b> ${esc(t.content)}</p>`).join('')}</div>
       <form id="fc" class="flex gap-2"><input class="input" name="instrucao" placeholder="O que ajustar?"><button class="btn-ia btn-sm" type="submit">Ajustar</button></form></div>
 
-    <div class="mt-5"><h4 class="mb-2 text-sm font-semibold">Checklist de qualidade <span class="font-normal text-slate-500">— necessário para aprovar</span></h4>
+    <div class="mt-5"><div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h4 class="text-sm font-semibold">Checklist de qualidade <span class="font-normal text-slate-500">— necessário para aprovar</span></h4>
+      <button class="btn-ghost btn-sm" data-checar-ia title="A IA (modelo econômico) sugere as respostas e os motivos. Você revisa antes de aplicar."><i class="fa-solid fa-wand-magic-sparkles"></i> Sugerir com IA</button></div>
+      <div data-sugestoes></div>
       <div class="grid gap-1 sm:grid-cols-2">${CHECKLIST_QUALIDADE.map(([k, q]) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" data-chk="${k}" ${c.checklist?.[k] ? 'checked' : ''}>${q}</label>`).join('')}</div></div>
 
     <div class="mt-5 flex flex-wrap items-end gap-3">
       <div><label class="label">Status</label><select class="input" data-status>${opcoes(STATUS_CRIATIVO, c.status)}</select>
-        <p class="hint">${tudoOk ? 'Checklist completo.' : 'Complete o checklist para aprovar.'}</p></div></div>
+        <p class="hint">${tudoOk ? 'Checklist completo.' : 'Complete o checklist para aprovar.'}</p></div>
+      <button class="btn-ghost" data-enviar-um title="Gera um link para o cliente final aprovar ou pedir ajuste deste criativo"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação do cliente</button></div>
 
     <div class="mt-5 rounded-lg border border-slate-200 p-3"><h4 class="mb-2 text-sm font-semibold">Peça final (arquivo)</h4>
       ${c.arquivoUrl ? `<p class="mb-2 text-sm">${tag('com arquivo', 'tag-ok')} ${esc(c.arquivoNome || '')}</p>
@@ -264,7 +274,27 @@ function detalhe(c, cliente, cfg, recarregar) {
     const checklist = { ...(c.checklist || {}), [i.dataset.chk]: i.checked };
     await db.atualizar(COL.criativos, c.id, { checklist }); c.checklist = checklist; desenhar();
   });
+  const enviarEste = () => abrirEnvio(cliente, [c], { preSelecionar: [c.id], aoMudar: () => { desenhar(); recarregar(); } });
+  on(alvo, 'click', '[data-enviar-um]', enviarEste);
+
+  // Checklist por IA (Haiku): só sugere; a pessoa revisa e clica em aplicar.
+  let sugestao = null;
+  on(alvo, 'click', '[data-checar-ia]', async (b) => {
+    await ocupado(b, async () => {
+      sugestao = await checarQualidade({ cliente, criativo: c, perguntas: CHECKLIST_QUALIDADE });
+      $('[data-sugestoes]', alvo).innerHTML = `<div class="mb-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-800">
+        <p class="mb-1"><i class="fa-solid fa-wand-magic-sparkles"></i> Sugestão da IA (modelo econômico) — revise antes de aplicar:</p>
+        <ul class="space-y-0.5">${CHECKLIST_QUALIDADE.map(([k, q]) => `<li>${sugestao[k]?.ok ? '✅' : '❌'} ${esc(q)} <span class="text-violet-600">— ${esc(sugestao[k]?.motivo || '')}</span></li>`).join('')}</ul>
+        <button class="btn-ia btn-sm mt-2" data-aplicar-sug>Aplicar estas respostas ao checklist</button></div>`;
+    });
+  });
+  on(alvo, 'click', '[data-aplicar-sug]', async () => {
+    const checklist = Object.fromEntries(CHECKLIST_QUALIDADE.map(([k]) => [k, !!sugestao?.[k]?.ok]));
+    await db.atualizar(COL.criativos, c.id, { checklist }); c.checklist = checklist; toast('Checklist atualizado com a sugestão da IA.'); desenhar();
+  });
+
   on(alvo, 'change', '[data-status]', async (s) => {
+    if (s.value === 'pronto_aprovacao') { desenhar(); return enviarEste(); } // "aguardando cliente" só existe com um link gerado
     if (s.value === 'aprovado' || s.value === 'em_uso') {
       if (!CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k])) { toast('Complete o checklist de qualidade antes de aprovar/usar.', 'erro'); return desenhar(); }
       if (acharTermosProibidos(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) { toast('Remova os termos proibidos antes de aprovar.', 'erro'); return desenhar(); }

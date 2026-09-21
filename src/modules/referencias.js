@@ -4,6 +4,46 @@ import { buscarReferencias, analisarReferencia } from '../core/ia.js';
 import { obterConfig, classificarSinal } from './configuracoes.js';
 import { esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, toast, ocupado, lerForm, num, modal } from '../core/ui.js';
 
+const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+/**
+ * Antes de gastar tokens numa busca nova: há referências salvas do MESMO nicho nos últimos N dias (de qualquer cliente)?
+ * Se houver, oferece usá-las. Retorna 'buscar' (segue com a busca) ou 'usou' (o usuário optou pelas salvas).
+ */
+async function oferecerReuso(cliente, cfg, aoCopiar) {
+  const dias = Number(cfg.diasReutilizarBusca) || 0;
+  if (!dias) return 'buscar';
+  const corte = Date.now() - dias * 864e5;
+  const alvo = norm(cliente.nicho);
+  const recentes = (await db.listar(COL.referencias)).filter((r) => norm(r.nicho) === alvo && new Date(r.criadoEm).getTime() >= corte);
+  if (!recentes.length) return 'buscar';
+  const jaTem = (r) => recentes.some((d) => d.clienteId === cliente.id && ((d.link && d.link === r.link) || d.titulo === r.titulo));
+  const copiaveis = recentes.filter((r) => r.clienteId !== cliente.id && !jaTem(r));
+  const deste = recentes.filter((r) => r.clienteId === cliente.id).length;
+  return new Promise((ok) => {
+    const m = modal('Já existem referências recentes deste nicho', `<div class="space-y-3">
+      <p class="text-sm">Encontrei <b>${recentes.length}</b> referência(s) de "<b>${esc(cliente.nicho)}</b>" salvas nos últimos ${dias} dias${deste ? ` (${deste} já estão neste cliente)` : ''}. Uma busca nova gasta tokens de IA e busca na web.</p>
+      <div class="flex flex-wrap gap-2">
+        ${copiaveis.length ? `<button class="btn-primary" data-copiar title="Copia as referências de outros clientes para este, sem custo de IA"><i class="fa-solid fa-copy"></i> Usar as salvas (copiar ${copiaveis.length} para este cliente)</button>`
+          : `<button class="btn-primary" data-ver><i class="fa-solid fa-eye"></i> Usar as que já estão salvas</button>`}
+        <button class="btn-ghost" data-buscar-mesmo title="Faz a busca na web mesmo assim (consome tokens)"><i class="fa-solid fa-magnifying-glass"></i> Buscar mesmo assim</button></div></div>`);
+    let decidido = false;
+    const fim = (v) => { if (!decidido) { decidido = true; ok(v); } m.fechar(); };
+    on(m.el, 'click', '[data-buscar-mesmo]', () => fim('buscar'));
+    on(m.el, 'click', '[data-ver]', () => fim('usou'));
+    on(m.el, 'click', '[data-copiar]', async (b) => {
+      await ocupado(b, async () => {
+        await Promise.all(copiaveis.map((r) => { const { id, clienteId, criadoEm, atualizadoEm, ...resto } = r; return db.criar(COL.referencias, { ...resto, clienteId: cliente.id, copiadaDe: clienteId }); }));
+        toast(`${copiaveis.length} referência(s) copiadas para este cliente.`);
+        aoCopiar?.();
+      });
+      fim('usou');
+    });
+    on(m.el, 'click', '[data-fechar]', () => { if (!decidido) { decidido = true; ok('usou'); } }); // fechar no X = cancelar a busca
+    m.el.addEventListener('mousedown', (e) => { if (e.target === m.el && !decidido) { decidido = true; ok('usou'); } });
+  });
+}
+
 const COR_SINAL = { forte: 'tag-ok', moderado: 'tag-warn', fraco: '' };
 
 function blocoAnalise(a) {
@@ -81,6 +121,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   // ----- busca de mercado -----
   on(root, 'click', '[data-buscar]', async (b) => {
+    if ((await oferecerReuso(cliente, cfg, recarregar)) !== 'buscar') return;
     await ocupado(b, async () => {
       const { itens, fontes } = await buscarReferencias({ cliente, diasMinimos: cfg.diasMinimosReferencia });
       const enriquecidos = itens.map((i) => ({ ...i, sinal: classificarSinal(i.diasNoAr, cfg) }));

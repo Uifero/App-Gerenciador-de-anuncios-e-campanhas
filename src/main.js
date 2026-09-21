@@ -17,6 +17,7 @@ import * as sites from './modules/sites.js';
 import * as relatorios from './modules/relatorios.js';
 import * as playbooks from './modules/playbooks.js';
 import * as onboarding from './modules/onboarding.js';
+import { viewPublica } from './modules/aprovacao.js';
 import { montarBusca } from './modules/busca.js';
 import { aplicarTema, alternarTema, temaAtual } from './core/tema.js';
 
@@ -29,10 +30,12 @@ const ABAS = {
 };
 
 const app = document.getElementById('app');
+const TITULO = 'Gerenciador de Criativos e Campanhas';
 let usuario = null;
 let seq = 0;
 
 function telaLogin() {
+  document.title = TITULO; // a página pública de aprovação troca o título; aqui volta ao normal
   app.innerHTML = `<div class="flex min-h-screen items-center justify-center p-4"><form id="login" class="card w-full max-w-sm space-y-4">
     <div class="text-center"><div class="text-4xl">🎯</div><h1 class="text-xl font-bold">Gerenciador de Criativos e Campanhas</h1><p class="caption">Acesso restrito ao administrador.</p></div>
     ${DEMO ? '<p class="rounded bg-amber-50 p-2 text-xs text-amber-800">Modo DEMO (testes locais): qualquer e-mail/senha entra; dados ficam só neste navegador.</p>' : ''}
@@ -67,6 +70,7 @@ function layout() {
 
 async function rotear() {
   if (!usuario) return;
+  document.title = TITULO;
   const minha = ++seq;
   const antigo = $('#main');
   const main = document.createElement('main');   // nó novo a cada rota: descarta listeners antigos
@@ -96,9 +100,23 @@ async function rotear() {
   }
 }
 
+// Página pública do link de aprovação (#/aprovar/<token>): funciona SEM login e mostra só a peça enviada.
+function verPublico() {
+  const m = location.hash.match(/^#\/aprovar\/([\w-]+)$/);
+  if (!m) return false;
+  viewPublica(app, m[1]);
+  return true;
+}
+
 aoMudarUsuario((u) => {
   usuario = u;
+  if (verPublico()) return;
   if (!u) { telaLogin(); return; }
   layout(); rotear();
 });
-window.addEventListener('hashchange', rotear);
+window.addEventListener('hashchange', () => {
+  if (verPublico()) return;
+  if (!usuario) { telaLogin(); return; }   // saiu do link público sem estar logado
+  if (!$('#main')) layout();               // voltando de um link público para o painel
+  rotear();
+});

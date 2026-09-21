@@ -2,6 +2,7 @@
 // Usado no dashboard (central de alertas + cards) e na tela do cliente.
 import { semaforo, horaDeEscalar, checklistLancamento } from '../lib/metricas.js';
 import { esc, diasDesde, moeda } from '../core/ui.js';
+import { usd } from './custo.js';
 
 const PONTO = { verde: 'bg-emerald-500', amarelo: 'bg-amber-400', vermelho: 'bg-rose-500', sem_meta: 'bg-slate-300', sem_dados: 'bg-slate-300' };
 const ROTULO = { verde: 'No alvo', amarelo: 'Atenção', vermelho: 'Fora da meta', sem_meta: 'Sem meta', sem_dados: 'Sem resultados' };
@@ -37,8 +38,8 @@ export function semaforoHtml(sem, metas) {
 }
 
 /** Junta os alertas de todos os clientes. itens = [{ cliente, resumo }] */
-export function agregar(itens) {
-  const out = { fadiga: [], escalar: [], vermelhos: [] };
+export function agregar(itens, orcamento = []) {
+  const out = { fadiga: [], escalar: [], vermelhos: [], orcamento };
   for (const { cliente, resumo } of itens) {
     resumo.fadiga.forEach((f) => out.fadiga.push({ cliente, ...f }));
     resumo.escalar.forEach((e) => out.escalar.push({ cliente, ...e }));
@@ -49,16 +50,17 @@ export function agregar(itens) {
 
 /** Painel único do dashboard. */
 export function painelAlertas(a) {
-  const total = a.fadiga.length + a.escalar.length + a.vermelhos.length;
+  const total = a.fadiga.length + a.escalar.length + a.vermelhos.length + (a.orcamento || []).length;
   const linha = (cor, icone, html, href) => `<li><a href="${href}" class="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"><i class="fa-solid fa-${icone} mt-0.5 ${cor}"></i><span>${html}</span></a></li>`;
   const bloco = (titulo, legenda, itens) => (itens.length ? `<div><h4 class="text-sm font-semibold">${titulo} <span class="tag">${itens.length}</span></h4><p class="hint mb-1">${legenda}</p><ul>${itens.join('')}</ul></div>` : '');
   return `<section class="card mb-6" id="central-alertas" aria-label="Central de alertas">
     <div class="mb-2 flex items-center justify-between"><h3 class="font-semibold"><i class="fa-solid fa-bell mr-1 text-slate-400"></i>Central de alertas</h3>
       ${total ? `<span class="tag tag-bad">${total} alerta(s)</span>` : '<span class="tag tag-ok">tudo em ordem</span>'}</div>
     <p class="caption mb-3">Tudo o que precisa de atenção em todos os clientes, sem entrar em cada um.</p>
-    ${total ? `<div class="grid gap-4 md:grid-cols-3">
+    ${total ? `<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       ${bloco('Clientes no vermelho', 'Resultados recentes piores que a meta em mais de 20%.', a.vermelhos.map((v) => linha('text-rose-500', 'circle-exclamation', `<b>${esc(v.cliente.nome)}</b> está fora da meta`, `#/c/${v.cliente.id}/resultados`)))}
       ${bloco('Hora de escalar', 'Criativos batendo a meta de forma consistente.', a.escalar.map((e) => linha('text-emerald-500', 'arrow-trend-up', `<b>${esc(e.cliente.nome)}</b> · “${esc(e.nome)}” está na meta há ${e.dias} dias. Considere aumentar o orçamento ou duplicar o conjunto.`, `#/c/${e.cliente.id}/resultados`)))}
+      ${bloco('Orçamento de IA', 'Gasto com IA perto ou acima do limite do mês.', (a.orcamento || []).map((o) => linha(o.pct >= 100 ? 'text-rose-500' : 'text-amber-500', 'coins', `<b>${esc(o.nome)}</b>: ${Math.round(o.pct)}% do limite (${usd(o.gasto)} de ${usd(o.orc)})`, o.escopo === 'global' ? '#/config' : `#/c/${o.clienteId}`)))}
       ${bloco('Fadiga de criativo', 'Criativos há muito tempo no ar.', a.fadiga.map((f) => linha('text-amber-500', 'hourglass-half', `<b>${esc(f.cliente.nome)}</b> · “${esc(f.nome)}” (${f.dias} dias no ar)`, `#/c/${f.cliente.id}/campanhas`)))}
     </div>` : '<p class="text-sm text-slate-500">Nenhum criativo em fadiga, nenhum cliente no vermelho e nada pedindo escala agora.</p>'}</section>`;
 }

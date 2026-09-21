@@ -6,6 +6,8 @@ import { obterConfig } from './configuracoes.js';
 import { resumoCliente, semaforoHtml, cartaoProgresso } from './alertas.js';
 import { aplicarPlaybook, rascunhoDeCliente, abrirEditor } from './playbooks.js';
 import { resumoBase, copiarEstrutura } from './duplicar.js';
+import { cartaoCusto } from './custo.js';
+import { exportarDados } from './backup.js';
 
 export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]);
 
@@ -15,6 +17,7 @@ export function montarDadosCliente(v, escopo) {
   return {
     nome: v.nome, nicho: v.nicho, estagio: v.estagio, siteReferencia: v.siteReferencia || '', escopo,
     metas: { cpa: metaCpa > 0 ? metaCpa : null, roas: metaRoas > 0 ? metaRoas : null },
+    orcamentoIaMensalUsd: num(v.orcamentoIa) > 0 ? num(v.orcamentoIa) : null,
     historico: v.estagio === 'rodando' ? { cpaMedio: num(v.cpaMedio), orcamentoDiario: num(v.orcamentoDiario), publicos: v.publicosHist || '' } : {},
     marca: {
       tomDeVoz: v.tomDeVoz || '', linguagemDor: v.linguagemDor || '', objecoes: v.objecoes || '', provasSociais: v.provasSociais || '',
@@ -97,6 +100,9 @@ export async function viewForm(el, id, { baseId = null } = {}) {
         <div class="mt-3 grid gap-3 sm:grid-cols-2"><div><label class="label">Meta de CPA (R$)</label><input class="input" type="number" step="0.01" min="0" name="metaCpa" value="${esc(metas.cpa)}"></div>
           <div><label class="label">Meta de ROAS</label><input class="input" type="number" step="0.01" min="0" name="metaRoas" value="${esc(metas.roas)}"></div></div>
         <p class="hint">O semáforo compara os resultados recentes com essa meta. Deixe em branco para não usar.</p></details>
+      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Limite de gasto com IA só para este cliente">Orçamento mensal de IA deste cliente (opcional)</summary>
+        <div class="mt-3"><label class="label">Limite por mês (US$)</label><input class="input" type="number" step="0.01" min="0" name="orcamentoIa" value="${esc(fonte?.orcamentoIaMensalUsd)}" placeholder="Sem limite">
+        <p class="hint">Ao passar do limite, cada geração de IA para este cliente pede confirmação. O limite geral fica em Configurações.</p></div></details>
     </section>
 
     <section data-passo="1" class="hidden space-y-4">
@@ -179,20 +185,21 @@ export async function viewCliente(el, id, aba, abasMap) {
   const atual = abas.find((a) => a.id === aba) || abas[0];
   const calcularResumo = async () => {
     const filtro = { clienteId: id };
-    const [cfg, criativos, resultados, campanhas, sites] = await Promise.all([
-      obterConfig(), db.listar(COL.criativos, filtro), db.listar(COL.resultados, filtro), db.listar(COL.campanhas, filtro), db.listar(COL.sites, filtro),
+    const [cfg, criativos, resultados, campanhas, sites, uso] = await Promise.all([
+      obterConfig(), db.listar(COL.criativos, filtro), db.listar(COL.resultados, filtro), db.listar(COL.campanhas, filtro), db.listar(COL.sites, filtro), db.listar(COL.usoApi, filtro),
     ]);
-    return resumoCliente(c, { criativos, resultados, campanhas, sites }, cfg);
+    return { ...resumoCliente(c, { criativos, resultados, campanhas, sites }, cfg), uso, cfg };
   };
-  const resumo = await calcularResumo();
+  const resumoP = calcularResumo(); // começa já; a aba abaixo carrega em paralelo, sem esperar os cards
 
   el.innerHTML = `<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
     <div><a href="#/" class="caption hover:text-indigo-600"><i class="fa-solid fa-arrow-left"></i> Todos os clientes</a>
       <h1 class="text-2xl font-bold text-slate-900">${esc(c.nome)} <span class="text-base font-normal text-slate-500">· ${esc(c.nicho)}</span></h1></div>
     <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="#/c/${id}/editar" title="Editar dados, marca, metas e escopo"><i class="fa-solid fa-pen"></i> Editar</a>
+      <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Exportar dados</button>
       <button class="btn-ghost btn-sm" data-mais title="Duplicar como base, playbooks e outras ações"><i class="fa-solid fa-ellipsis"></i> Mais ações</button>
       <button class="btn-danger btn-sm" data-excluir title="Apagar este cliente"><i class="fa-solid fa-trash"></i></button></div></div>
-    ${cartaoProgresso(c, resumo)}
+    <div id="cards"><div class="card mb-5 h-16 animate-pulse" aria-hidden="true"></div></div>
     <nav class="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200" aria-label="Abas do cliente">
       ${abas.map((a) => `<a href="#/c/${id}/${a.id}" title="${esc(a.legenda)}" class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${a.id === atual.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}"><i class="fa-solid fa-${a.icone} mr-1"></i>${a.nome}</a>`).join('')}
     </nav><div id="aba"></div>`;
@@ -209,14 +216,18 @@ export async function viewCliente(el, id, aba, abasMap) {
     clearTimeout(timer);
     timer = setTimeout(async () => {
       const cartao = $('#lancamento', el); if (!cartao) return;
-      const aberto = cartao.open;
-      const novo = cartaoProgresso(c, await calcularResumo());
+      const abertoP = cartao.open, abertoC = $('#custo-ia', el)?.open;
+      const r = await calcularResumo();
       if (!el.isConnected || !$('#lancamento', el)) return; // saiu da tela enquanto calculava
-      $('#lancamento', el).outerHTML = novo;
-      if (aberto) $('#lancamento', el).open = true;
+      $('#lancamento', el).outerHTML = cartaoProgresso(c, r);
+      const custo = $('#custo-ia', el); if (custo) custo.outerHTML = cartaoCusto(c, r.uso, r.cfg);
+      if (abertoP) $('#lancamento', el).open = true;
+      if (abertoC && $('#custo-ia', el)) $('#custo-ia', el).open = true;
     }, 300);
   };
   window.addEventListener('gcc:mudou', aoMudar);
+
+  on(el, 'click', '[data-exportar]', (b) => ocupado(b, () => exportarDados(c)));
 
   on(el, 'click', '[data-mais]', async () => {
     const pbs = await db.listar(COL.playbooks);
@@ -238,9 +249,14 @@ export async function viewCliente(el, id, aba, abasMap) {
     });
   });
 
+  const cartoes = resumoP.then((r) => {
+    if (!el.isConnected) return;
+    $('#cards', el).innerHTML = cartaoProgresso(c, r) + cartaoCusto(c, r.uso, r.cfg);
+  }).catch((e) => { console.error(e); if (el.isConnected) $('#cards', el).innerHTML = ''; });
+
   const modulo = abasMap[atual.id];
   const alvo = $('#aba', el);
   alvo.innerHTML = `<p class="caption">${esc(atual.legenda)}</p>`;
-  try { await modulo(alvo, c); }
+  try { await Promise.all([modulo(alvo, c), cartoes]); }
   catch (e) { console.error(e); alvo.innerHTML = `<div class="card text-rose-700">Erro ao carregar esta aba: ${esc(e.message)}</div>`; }
 }

@@ -1,7 +1,7 @@
 // Configurações globais (coleção gcc_configuracoes, documento único "global").
 import { db, COL } from '../core/storage.js';
-import { CONFIG_PADRAO } from '../lib/constantes.js';
-import { cabecalho, lerForm, num, toast, on, ocupado } from '../core/ui.js';
+import { CONFIG_PADRAO, TAREFAS_IA } from '../lib/constantes.js';
+import { cabecalho, lerForm, num, toast, on, ocupado, esc } from '../core/ui.js';
 
 const ID = 'global';
 let cache = null;
@@ -41,6 +41,22 @@ export async function view(el) {
           <p class="hint">O semáforo compara a meta com os resultados desses últimos dias. Padrão: 7.</p></div>
         <div><label class="label">Dias na meta para sugerir "hora de escalar"</label><input class="input" type="number" min="1" name="diasEscalar" value="${c.diasEscalar}">
           <p class="hint">Um criativo em uso que bate a meta por este período seguido gera o alerta. Padrão: 7.</p></div></div></details>
+    <details class="rounded-lg border border-slate-200 p-3" open><summary class="cursor-pointer text-sm font-medium text-slate-600">Custos e limites de IA</summary>
+      <div class="mt-3 space-y-3">
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div><label class="label">Orçamento mensal de IA (US$)</label><input class="input" type="number" step="0.01" min="0" name="orcamentoIa" value="${esc(c.orcamentoIaMensalUsd)}" placeholder="Sem limite">
+            <p class="hint">Ao chegar em 80% aparece um aviso no início. Ao passar do limite, cada geração pede sua confirmação. Para limitar um cliente específico, use o campo no cadastro dele.</p></div>
+          <div><label class="label">Cotação do dólar (R$)</label><input class="input" type="number" step="0.01" min="0" name="cotacao" value="${esc(c.cotacaoUsd)}">
+            <p class="hint">Só para mostrar o equivalente em R$ (estimativa).</p></div>
+          <div><label class="label">Variações por geração de criativo</label><input class="input" type="number" min="1" max="5" name="variacoes" value="${esc(c.variacoesPadrao)}">
+            <p class="hint">Padrão da tela de criativos (1 a 5). Menos variações = menos custo. Dá para mudar em cada geração.</p></div>
+          <div><label class="label">Reaproveitar buscas de mercado dos últimos (dias)</label><input class="input" type="number" min="0" name="reuso" value="${esc(c.diasReutilizarBusca)}">
+            <p class="hint">Se já houver referências salvas do nicho nesse período, o app oferece usá-las antes de gastar numa nova busca. 0 desliga.</p></div></div>
+        <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Limite de tokens de saída por tipo de operação (avançado)</summary>
+          <p class="hint mb-2">Limita o tamanho máximo da resposta de cada operação. Deixe em branco para usar o padrão. Se uma resposta vier cortada, aumente o limite.</p>
+          <div class="grid gap-2 sm:grid-cols-2">${Object.entries(TAREFAS_IA).map(([k, [nome, , padrao, modelo]]) => `<label class="text-sm"><span class="block text-slate-600">${esc(nome)} <span class="tag">${modelo}</span></span>
+            <input class="input" type="number" min="256" max="32000" name="lim_${k}" value="${esc(c.limitesTokens?.[k])}" placeholder="padrão ${padrao}"></label>`).join('')}</div></details>
+      </div></details>
     <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar configurações</button>
   </form>`;
   on(el, 'submit', '#f', async (f, ev) => {
@@ -52,6 +68,11 @@ export async function view(el) {
       diasFadiga: num(v.fadiga) || 14,
       diasSemaforo: num(v.diasSemaforo) || 7,
       diasEscalar: num(v.diasEscalar) || 7,
+      orcamentoIaMensalUsd: num(v.orcamentoIa) > 0 ? num(v.orcamentoIa) : null,
+      cotacaoUsd: num(v.cotacao) > 0 ? num(v.cotacao) : 5.5,
+      variacoesPadrao: Math.min(5, Math.max(1, Math.round(num(v.variacoes) || 4))),
+      diasReutilizarBusca: num(v.reuso) >= 0 ? num(v.reuso) : 30,
+      limitesTokens: Object.fromEntries(Object.keys(TAREFAS_IA).map((k) => [k, num(v['lim_' + k])]).filter(([, n]) => n > 0)),
     };
     if (dados.cortes.forte < dados.cortes.moderado) return toast('O corte "forte" deve ser maior ou igual ao "moderado".', 'erro');
     await ocupado(f.querySelector('button'), async () => {

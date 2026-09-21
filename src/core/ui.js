@@ -67,15 +67,15 @@ export function toast(msg, tipo = 'ok') {
   setTimeout(() => el.remove(), tipo === 'erro' ? 7000 : 3500);
 }
 
-/** Modal genérico. Retorna { el, fechar }. `corpo` é HTML. */
-export function modal(titulo, corpo, { largo = false } = {}) {
+/** Modal genérico. Retorna { el, fechar }. `corpo` é HTML. `aoFechar` roda quando fecha por QUALQUER caminho (X, clique fora, botão, código). */
+export function modal(titulo, corpo, { largo = false, aoFechar = null } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4';
   wrap.innerHTML = `<div class="my-8 w-full ${largo ? 'max-w-3xl' : 'max-w-lg'} rounded-xl bg-white p-5 shadow-xl" role="dialog" aria-modal="true">
     <div class="mb-4 flex items-center justify-between"><h3 class="text-lg font-semibold">${esc(titulo)}</h3>
     <button data-fechar class="text-slate-400 hover:text-slate-700" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
     <div data-corpo>${corpo}</div></div>`;
-  const fechar = () => wrap.remove();
+  const fechar = () => { if (!wrap.isConnected) return; wrap.remove(); aoFechar?.(); };
   wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) fechar(); });
   on(wrap, 'click', '[data-fechar]', fechar);
   document.body.appendChild(wrap);
@@ -84,11 +84,12 @@ export function modal(titulo, corpo, { largo = false } = {}) {
 
 export function confirmar(mensagem, textoBotao = 'Confirmar') {
   return new Promise((ok) => {
+    // Fechar de qualquer jeito (Cancelar, X, clicar fora) = "não"; só o botão de confirmação resolve "sim".
     const m = modal('Confirmação', `<p class="mb-5 text-sm">${esc(mensagem)}</p>
       <div class="flex justify-end gap-2"><button class="btn-ghost" data-nao>Cancelar</button>
-      <button class="btn-danger" data-sim>${esc(textoBotao)}</button></div>`);
-    on(m.el, 'click', '[data-sim]', () => { m.fechar(); ok(true); });
-    on(m.el, 'click', '[data-nao],[data-fechar]', () => ok(false));
+      <button class="btn-danger" data-sim>${esc(textoBotao)}</button></div>`, { aoFechar: () => ok(false) });
+    on(m.el, 'click', '[data-sim]', () => { ok(true); m.fechar(); });
+    on(m.el, 'click', '[data-nao]', () => m.fechar());
   });
 }
 
