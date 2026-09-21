@@ -6,6 +6,7 @@ import {
   FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
 import { $, esc, on, modal, toast, ocupado, opcoes, copiar } from '../core/ui.js';
+import { CENAS_UNBOXING } from '../lib/constantes.js';
 
 const slug = (s) => String(s || 'criativo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 40) || 'criativo';
 const chavePref = (clienteId) => `gcc_estudio_${clienteId}`;
@@ -49,7 +50,9 @@ export function abrirEstudio(criativo, cliente) {
     </div>
     <div class="mt-3 rounded-lg border border-violet-200 p-2">
       <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-medium text-violet-800"><i class="fa-solid fa-lightbulb"></i> Sem foto ou sem cenas? A IA escreve os prompts para você colar num gerador</p>
-        <button class="btn-ia btn-sm" data-sugerir-prompt>Sugerir prompts</button></div>
+        <span class="flex flex-wrap items-center gap-2"><select class="input !w-auto" data-modelo-prompt title="Modelo de roteiro">
+          <option value="roteiro">Seguir o roteiro do criativo</option><option value="unboxing">UGC: unboxing + manuseio (6 cenas de 5 s)</option></select>
+        <button class="btn-ia btn-sm" data-sugerir-prompt>Sugerir prompts</button></span></div>
       <p class="hint mt-1">O Claude não gera imagem nem vídeo: ele escreve o prompt (usa a sua assinatura). Os prompts são em inglês porque os geradores entendem melhor; a tradução aparece embaixo de cada um. Cole no Gemini, ChatGPT, Ideogram, Veo, Runway ou Kling, baixe o resultado e envie aqui em "Fotos e vídeos".</p>
       <div data-prompts class="mt-2 space-y-2"></div></div>
     <div class="mt-3 rounded-lg border border-indigo-200 p-2">
@@ -217,18 +220,30 @@ export function abrirEstudio(criativo, cliente) {
 
   // ---- prompts para geradores externos (usa a assinatura, sem custo extra) ----
   on(raiz, 'click', '[data-sugerir-prompt]', (b) => ocupado(b, async () => {
-    const r = await sugerirPromptsVisuais({ cliente, criativo });
-    est.promptsCenas = r.cenas;
+    const modelo = $('[data-modelo-prompt]', raiz).value, ugc = modelo === 'unboxing';
+    const r = await sugerirPromptsVisuais({ cliente, criativo, modelo });
+    est.promptsCenas = r.cenas; est.legendasUgc = ugc ? r.legendas : [];
+    const extra = (i) => (ugc ? `${r.legendas[i] ? `<p class="mt-1 text-xs"><b>Legenda na tela:</b> ${esc(r.legendas[i])}</p>` : ''}${r.filmagem[i] ? `<p class="text-xs text-emerald-700"><b>Como filmar:</b> ${esc(r.filmagem[i])}</p>` : ''}` : '');
     const caixa = (rotulo, texto, pt, cena = null) => `<div class="rounded-lg bg-slate-50 p-2"><div class="mb-1 flex items-center justify-between gap-2"><b class="text-xs text-slate-600">${esc(rotulo)}</b>
       <span class="flex gap-1">${cena !== null ? `<button class="btn-ia btn-sm" data-gerar-cena="${cena}" title="Gera a imagem desta cena e liga à cena do vídeo">Gerar imagem</button>` : ''}
       <button class="btn-ghost btn-sm" data-copiar-prompt>Copiar (inglês)</button></span></div><p class="whitespace-pre-wrap text-sm" data-texto-prompt>${esc(texto)}</p>
-      ${pt ? `<p class="mt-1 whitespace-pre-wrap border-t border-slate-200 pt-1 text-xs text-slate-500"><b>Tradução:</b> ${esc(pt)}</p>` : ''}</div>`;
+      ${pt ? `<p class="mt-1 whitespace-pre-wrap border-t border-slate-200 pt-1 text-xs text-slate-500"><b>Tradução:</b> ${esc(pt)}</p>` : ''}${cena !== null ? extra(cena) : ''}</div>`;
     $('[data-prompts]', raiz).innerHTML = (r.foto ? caixa('Foto estática (4:5)', r.foto, r.fotoPt) : '') + (r.cenas.length ? `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 p-2"><span class="text-sm">Vídeo com IA: uma imagem por cena (${r.cenas.length} imagens, sai da cota do dia)</span>
         <button class="btn-ia btn-sm" data-gerar-todas><i class="fa-solid fa-images"></i> Gerar imagem de todas as cenas</button></div>` : '')
-      + r.cenas.map((c, i) => caixa(`Vídeo — cena ${i + 1} (9:16)`, c, r.cenasPt[i], i)).join('')
+      + (ugc && r.legendas.length ? `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2"><span class="text-sm">Modelo UGC: ${r.cenas.length} cenas de 5 s = ${r.cenas.length * 5} s. Filme cada cena ou gere os clipes.</span>
+        <button class="btn-ghost btn-sm" data-usar-cenas-ugc><i class="fa-solid fa-list-ol"></i> Usar estas cenas na linha do tempo</button></div>` : '')
+      + r.cenas.map((c, i) => caixa(`${ugc ? `Cena ${i + 1}: ${CENAS_UNBOXING[i] || ''}` : `Vídeo — cena ${i + 1}`} (9:16)`, c, r.cenasPt[i], i)).join('')
       + (r.dicas ? `<p class="hint">${esc(r.dicas)}</p>` : '');
     if (r.foto) $('[data-prompt-ia]', raiz).value = r.foto;
   }));
+  // Cria a linha do tempo do vídeo com as legendas do modelo UGC (5 s por cena; a última é o CTA).
+  on(raiz, 'click', '[data-usar-cenas-ugc]', () => {
+    const l = est.legendasUgc || [];
+    if (!l.length) return;
+    est.cenas = l.map((texto, i) => ({ texto, dur: 5, tipo: i === l.length - 1 ? 'cta' : 'cena' }));
+    listarCenas();
+    toast(`Linha do tempo criada com ${l.length} cenas de 5 s. Envie ou gere um clipe para cada cena e ligue no seletor "Imagem/vídeo".`);
+  });
   on(raiz, 'click', '[data-copiar-prompt]', (b) => copiar($('[data-texto-prompt]', b.closest('div').parentElement).textContent));
 
   // ---- imagem por IA (gratuita, vários provedores) ----

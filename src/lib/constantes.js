@@ -45,6 +45,11 @@ export const STATUS_CRIATIVO = [
 export const STATUS_COR = { rascunho: '', pronto_aprovacao: 'tag-warn', aprovado: 'tag-info', em_uso: 'tag-ok', pausado: 'tag-warn', encerrado: 'tag-bad' };
 
 /** Perguntas do checklist de qualidade antes de aprovar um criativo. */
+/** Modelo de roteiro UGC/unboxing: 6 cenas de 5 s (30 s no total), na ordem em que costumam prender e converter. */
+export const CENAS_UNBOXING = [
+  'Gancho', 'Abrindo a caixa', 'Tocando e manuseando a peça', 'Detalhe em close', 'Uso e resultado', 'Chamada para ação',
+];
+
 export const CHECKLIST_QUALIDADE = [
   ['naoForcada', 'A linguagem está natural, sem parecer forçada?'],
   ['tomGenuino', 'O tom é genuíno, de conteúdo orgânico?'],

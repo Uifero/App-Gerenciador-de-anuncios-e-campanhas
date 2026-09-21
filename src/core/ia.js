@@ -1,7 +1,7 @@
 // Cliente de IA + prompts. Toda chamada passa pelo servidor (/api/claude), que guarda a chave.
 // Toda função aqui tem um equivalente manual nos módulos (formulários "sem IA").
 import { tokenAtual } from './auth.js';
-import { IDIOMA_NOME, MODELO_DESCRICAO } from '../lib/constantes.js';
+import { IDIOMA_NOME, MODELO_DESCRICAO, CENAS_UNBOXING } from '../lib/constantes.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
 
@@ -247,10 +247,12 @@ Saída JSON: {"nome": string, "angulos": [{"angulo": string, "hooks": [string]}]
 // ---------- prompts para geradores de imagem e vídeo (Haiku) ----------
 /**
  * O Claude não gera imagem nem vídeo: aqui ele escreve os PROMPTS para você colar num gerador (Gemini, ChatGPT, Ideogram, Veo, Runway, Kling...).
- * Devolve { foto, fotoPt, cenas: [string], cenasPt: [string], dicas }. Os prompts são em inglês (os geradores entendem muito melhor) e vêm com a
+ * modelo: 'roteiro' (segue as cenas do criativo) ou 'unboxing' (UGC: 6 cenas de 5 s, com legenda e dica de filmagem por cena).
+ * Devolve { foto, fotoPt, cenas: [string], cenasPt: [string], legendas: [string], filmagem: [string], dicas }. Os prompts são em inglês (os geradores entendem muito melhor) e vêm com a
  * tradução em português para a pessoa conferir o que está colando. Sem texto dentro da imagem.
  */
-export async function sugerirPromptsVisuais({ cliente, criativo }) {
+export async function sugerirPromptsVisuais({ cliente, criativo, modelo = 'roteiro' }) {
+  const unboxing = modelo === 'unboxing';
   const system = 'Você é diretor de arte de anúncios para redes sociais. Escreve prompts objetivos e visuais para geradores de imagem e de vídeo por IA.';
   const pedido = `Cliente: ${cliente.nome} (${cliente.nicho || 'e-commerce'}). Tom de voz: ${cliente.marca?.tomDeVoz || 'natural'}.
 Criativo:
@@ -261,13 +263,15 @@ Formato: ${criativo.formato}
 
 Escreva:
 1) "foto": UM prompt para gerar a foto estática do anúncio (vertical 4:5), em inglês, com produto, cenário, luz, enquadramento, estilo orgânico de redes sociais (não pareça banco de imagens). NÃO peça texto, letras nem logotipos dentro da imagem (o texto é colocado depois).
-2) "cenas": um prompt de vídeo por cena do roteiro (na ordem; se não houver cenas, crie de 3 a 5 cenas curtas de 3 a 6 s), em inglês, vertical 9:16, descrevendo ação, câmera e luz. Sem texto na tela.
+2) "cenas": ${unboxing ? `exatamente 6 prompts de vídeo (imagem para vídeo, 5 s cada) no modelo UNBOXING + MANUSEIO, estilo UGC gravado com celular na mão, luz natural, vertical 9:16, sem texto na tela, nesta ordem: ${CENAS_UNBOXING.map((n, i) => `${i + 1} ${n}`).join('; ')}. Baseie o gancho no hook e a última cena no CTA do criativo; nas cenas de manuseio e detalhe, descreva o que faz sentido para ESTE produto (textura, caimento, elasticidade, costura, material, tamanho). Mantenha a mesma pessoa e o mesmo produto em todas as cenas.` : 'um prompt de vídeo por cena do roteiro (na ordem; se não houver cenas, crie de 3 a 5 cenas curtas de 3 a 6 s), em inglês, vertical 9:16, descrevendo ação, câmera e luz. Sem texto na tela.'}
 3) "dicas": 2 a 3 frases em português do Brasil sobre como usar (ex.: enviar a foto real do produto como referência ao gerador, manter o mesmo personagem entre as cenas).
 4) Para cada prompt (foto e cada cena), inclua também a TRADUÇÃO fiel em português do Brasil ("fotoPt" e "cenasPt", mesma ordem e quantidade de "cenas"), para o gestor entender o que vai colar.
-Saída JSON: {"foto": string, "fotoPt": string, "cenas": [string], "cenasPt": [string], "dicas": string}. ${SO_JSON}`;
+${unboxing ? `5) "legendas": uma legenda curta por cena (até 60 caracteres, em português do Brasil, para aparecer na tela). NÃO invente depoimentos, resultados, avaliações, preços nem promessas que não estejam no criativo.
+6) "filmagem": uma dica de 1 frase, em português, de como FILMAR essa cena de verdade com o celular (ângulo, mãos, luz), na mesma ordem.` : ''}
+Saída JSON: {"foto": string, "fotoPt": string, "cenas": [string], "cenasPt": [string], "dicas": string${unboxing ? ', "legendas": [string], "filmagem": [string]' : ''}}. ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'imagem', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
   const lista = (v) => (Array.isArray(v) ? v.map(String) : []);
-  return { foto: String(d.foto || ''), fotoPt: String(d.fotoPt || ''), cenas: lista(d.cenas), cenasPt: lista(d.cenasPt), dicas: String(d.dicas || '') };
+  return { foto: String(d.foto || ''), fotoPt: String(d.fotoPt || ''), cenas: lista(d.cenas), cenasPt: lista(d.cenasPt), legendas: lista(d.legendas), filmagem: lista(d.filmagem), dicas: String(d.dicas || '') };
 }
 
 // ---------- checklist de qualidade (Haiku: tarefa curta e barata) ----------
