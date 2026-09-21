@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Painel de Comissões (app existente) — PRESERVADO como estava ----
+    match /painelComissoes/{document=**} {
+      allow read, write: if true;
+    }
+
+    // ---- Gerenciador de Criativos e Campanhas: só usuário autenticado ----
+    // Login único de administrador; contas novas devem ficar desabilitadas
+    // no console (Authentication > Configurações > desativar cadastro de usuários).
+    match /{col}/{document=**} {
+      allow read, write: if col.matches('gcc_.*') && request.auth != null;
+    }
+  }
+}

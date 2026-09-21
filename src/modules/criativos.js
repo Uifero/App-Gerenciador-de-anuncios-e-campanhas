@@ -1,0 +1,287 @@
+// Aba Criativos: gerar (IA ou manual), refinar por chat com histórico de versões, aprovar, anexar arquivo final.
+import { db, COL, enviarArquivo, removerArquivo } from '../core/storage.js';
+import { gerarCriativos, refinarCriativo, acharTermosProibidos } from '../core/ia.js';
+import { obterConfig } from './configuracoes.js';
+import {
+  FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
+} from '../lib/constantes.js';
+import {
+  esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, toast, modal, ocupado, lerForm, opcoes, copiar, confirmar,
+} from '../core/ui.js';
+
+const rotulo = (lista, v) => (lista.find(([k]) => k === v) || [, v])[1];
+
+/** Muda o status; ao virar "em_uso" registra a data de início (base do alerta de fadiga). */
+export async function definirStatus(criativo, status) {
+  const patch = { status };
+  if (status === 'em_uso' && !criativo.emUsoDesde) patch.emUsoDesde = new Date().toISOString();
+  if (status !== 'em_uso' && status !== 'pausado') patch.emUsoDesde = null;
+  await db.atualizar(COL.criativos, criativo.id, patch);
+  Object.assign(criativo, patch);
+  return patch;
+}
+
+export const view = (el, cliente) => montar(el, async (root, recarregar) => {
+  const [criativos, referencias, resultados, cfg] = await Promise.all([
+    db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
+    db.listar(COL.resultados, { clienteId: cliente.id }), obterConfig(),
+  ]);
+  let filtro = '';
+
+  const lista = () => {
+    const itens = criativos.filter((c) => !filtro || c.status === filtro);
+    return itens.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${itens.map((c) => cartao(c, cfg)).join('')}</div>`
+      : vazio('wand-magic-sparkles', 'Nenhum criativo aqui ainda', 'Comece gerando ideias a partir de um briefing curto.',
+        '<button class="btn-primary" data-novo><i class="fa-solid fa-plus"></i> Criar primeiro criativo</button>');
+  };
+
+  root.innerHTML = `${cabecalho('Criativos', 'Anúncios prontos para revisar, aprovar e subir. Cada ajuste vira uma versão.',
+    `<select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
+     <button class="btn-primary" data-novo title="Gerar ou escrever um criativo novo"><i class="fa-solid fa-plus"></i> Novo criativo</button>`)}
+    <div id="painel"></div><div id="lista">${lista()}</div>`;
+
+  const atualizar = async () => {
+    criativos.splice(0, criativos.length, ...(await db.listar(COL.criativos, { clienteId: cliente.id })));
+    $('#lista', root).innerHTML = lista();
+  };
+  on(root, 'change', '[data-filtro]', (s) => { filtro = s.value; $('#lista', root).innerHTML = lista(); });
+  on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar));
+
+  // Vindo da aba Referências: abre já com a referência escolhida como ponto de partida.
+  let preRef = null;
+  try { preRef = sessionStorage.getItem('gcc_ref'); sessionStorage.removeItem('gcc_ref'); } catch { /* sem storage */ }
+  const base = preRef && referencias.find((r) => r.id === preRef);
+  if (base) painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, base, atualizar);
+  on(root, 'click', '[data-abrir]', (b) => detalhe(criativos.find((c) => c.id === b.dataset.abrir), cliente, cfg, recarregar));
+});
+
+function cartao(c, cfg) {
+  const dias = c.status === 'em_uso' ? diasDesde(c.emUsoDesde) : null;
+  const fadiga = dias != null && dias >= cfg.diasFadiga;
+  return `<button data-abrir="${c.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
+    <div class="flex items-start justify-between gap-2"><h3 class="font-semibold leading-tight">${esc(c.nome)}</h3>${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}</div>
+    <p class="caption mt-1 line-clamp-2">“${esc(c.hook)}”</p>
+    <div class="mt-3 flex flex-wrap gap-1">
+      ${c.framework ? tag(c.framework, 'tag-info') : ''}${c.angulo ? tag(c.angulo) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma || 'pt-BR')}
+      ${c.arquivoUrl ? tag('com arquivo', 'tag-ok') : tag('sem arquivo', 'tag-warn')}
+      ${(c.versoes?.length || 1) > 1 ? tag(`v${c.versoes.length}`) : ''}${c.referenciaId ? tag('de referência', 'tag-info') : ''}
+      ${fadiga ? tag(`fadiga: ${dias}d no ar`, 'tag-bad') : ''}</div>
+    <p class="hint mt-2">${dataBR(c.criadoEm)}</p></button>`;
+}
+
+// ---------------- painel de novo criativo ----------------
+function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = null, atualizar = null) {
+  alvo.innerHTML = `<div class="card mb-5 space-y-4">
+    <div class="flex items-center justify-between"><h3 class="font-semibold">Novo criativo</h3><button class="text-slate-400" data-x aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
+    <form id="fg" class="space-y-3">
+      <div><label class="label">O que você quer comunicar?</label>
+        <textarea class="input" rows="3" name="briefing" placeholder="Ex.: legging nova que não fica transparente no agachamento — foco em quem tem vergonha de treinar na academia"></textarea>
+        <p class="hint">Uma ou duas frases bastam. A IA usa o perfil de marca do cliente e as referências salvas.</p></div>
+      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, referência)</summary>
+        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+          <div><label class="label">Modelo pronto</label><select class="input" name="modelo">${opcoes(MODELOS_CRIATIVO, '')}</select></div>
+          <div><label class="label">Framework de copy</label><select class="input" name="framework">${opcoes(FRAMEWORKS, 'livre')}</select></div>
+          <div><label class="label">Formato</label><select class="input" name="formato">${opcoes(FORMATOS, 'video_curto')}</select></div>
+          <div><label class="label">Partir de uma referência salva</label><select class="input" name="referenciaId">
+            <option value="">Nenhuma</option>${referencias.map((r) => `<option value="${r.id}" ${base?.id === r.id ? 'selected' : ''}>${esc(r.titulo || 'Referência')}${r.sinal ? ' · ' + r.sinal : ''}</option>`).join('')}</select></div>
+        </div></details>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn-ia" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar com IA</button>
+        <button class="btn-ghost" type="button" data-manual title="Escreva o criativo você mesmo, sem usar IA">Escrever sem IA</button>
+      </div>
+    </form>
+    <div id="saida"></div></div>`;
+  const form = $('#fg', alvo), saida = $('#saida', alvo);
+  on(alvo, 'click', '[data-x]', () => { alvo.innerHTML = ''; });
+
+  on(alvo, 'click', '[data-manual]', () => {
+    const v = lerForm(form);
+    saida.innerHTML = `<form id="fm" class="space-y-3 border-t border-slate-200 pt-4">
+      <p class="caption">Formulário manual — preencha e salve, sem IA.</p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div><label class="label">Nome/legenda *</label><input class="input" name="nome"></div>
+        <div><label class="label">Ângulo</label><input class="input" name="angulo" placeholder="Ex.: vergonha, economia de tempo"></div>
+        <div><label class="label">Framework</label><select class="input" name="framework">${opcoes(FRAMEWORKS, v.framework || 'livre')}</select></div>
+        <div><label class="label">Formato</label><select class="input" name="formato">${opcoes(FORMATOS, v.formato || 'video_curto')}</select></div></div>
+      <div><label class="label">Hook *</label><input class="input" name="hook"></div>
+      <div><label class="label">Copy / roteiro *</label><textarea class="input" rows="6" name="copy"></textarea></div>
+      <div><label class="label">CTA</label><input class="input" name="cta"></div>
+      <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar criativo</button></form>`;
+  });
+  on(saida, 'submit', '#fm', async (f, ev) => {
+    ev.preventDefault();
+    const v = lerForm(f);
+    if (!v.nome || !v.hook || !v.copy) return toast('Preencha nome, hook e copy.', 'erro');
+    await ocupado(f.querySelector('button'), async () => { await salvarNovo(cliente, { ...v, gatilho: '' }, {}); toast('Criativo salvo.'); recarregar(); });
+  });
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const v = lerForm(form);
+    const ref = referencias.find((r) => r.id === v.referenciaId) || null;
+    if (!v.briefing && !v.modelo && !ref) return toast('Escreva um briefing curto, escolha um modelo ou uma referência.', 'erro');
+    await ocupado(form.querySelector('.btn-ia'), async () => {
+      const vars = await gerarCriativos({
+        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref,
+        referencias: referencias.filter((r) => r.analise), resultados,
+      });
+      if (!vars.length) throw new Error('A IA não devolveu variações. Tente reescrever o briefing.');
+      saida.innerHTML = `<div class="space-y-3 border-t border-slate-200 pt-4">
+        ${iaNota(`A IA criou ${vars.length} variações com hooks e ângulos diferentes, usando o perfil de marca${ref ? ' e a referência escolhida' : ''}. Salve as que gostar; depois dá para refinar cada uma.`)}
+        ${vars.map((x, i) => variacao(x, i, cliente)).join('')}</div>`;
+      saida._vars = vars;
+      saida._ctx = { referenciaId: ref?.id || null, modelo: v.modelo || null };
+    });
+  });
+  on(saida, 'click', '[data-salvar-var]', async (b) => {
+    const x = saida._vars[Number(b.dataset.salvarVar)];
+    await ocupado(b, async () => {
+      await salvarNovo(cliente, x, saida._ctx);
+      await atualizar?.();
+      b.outerHTML = '<span class="tag tag-ok"><i class="fa-solid fa-check mr-1"></i>Salvo</span>';
+      toast('Criativo salvo. Abra-o na lista para refinar ou aprovar.');
+    });
+  });
+  on(saida, 'click', '[data-copiar-var]', (b) => { const x = saida._vars[Number(b.dataset.copiarVar)]; copiar(`${x.hook}\n\n${x.copy}\n\n${x.cta}`); });
+}
+
+function variacao(x, i, cliente) {
+  const proibidos = acharTermosProibidos(`${x.hook} ${x.copy} ${x.cta}`, cliente);
+  return `<div class="rounded-lg border border-slate-200 p-3">
+    <div class="flex flex-wrap items-center gap-1">${tag(x.angulo || 'ângulo', 'tag-info')}${x.gatilho ? tag('gatilho: ' + x.gatilho) : ''}${tag(x.framework)}${tag(rotulo(FORMATOS, x.formato))}
+      ${proibidos.length ? tag('termos proibidos: ' + proibidos.join(', '), 'tag-bad') : ''}</div>
+    <p class="mt-2 font-semibold">“${esc(x.hook)}”</p>
+    <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700">${esc(x.copy)}</p>
+    <p class="mt-1 text-sm"><b>CTA:</b> ${esc(x.cta)}</p>
+    ${x.porque ? `<p class="hint">Por quê: ${esc(x.porque)}</p>` : ''}
+    <div class="mt-2 flex gap-2"><button class="btn-primary btn-sm" data-salvar-var="${i}"><i class="fa-solid fa-floppy-disk"></i> Salvar</button>
+      <button class="btn-ghost btn-sm" data-copiar-var="${i}"><i class="fa-solid fa-copy"></i> Copiar</button></div></div>`;
+}
+
+async function salvarNovo(cliente, x, ctx) {
+  const snap = { n: 1, hook: x.hook, copy: x.copy, cta: x.cta || '', nota: 'Versão inicial', quando: new Date().toISOString() };
+  return db.criar(COL.criativos, {
+    clienteId: cliente.id, nome: x.nome, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo: x.angulo || '', gatilho: x.gatilho || '',
+    framework: x.framework || 'livre', formato: x.formato || 'video_curto', idioma: cliente.marca?.idioma || 'pt-BR',
+    status: 'rascunho', checklist: {}, versoes: [snap], referenciaId: ctx.referenciaId || null, modeloUsado: ctx.modelo || null,
+    origem: ctx.referenciaId || ctx.modelo || x.porque ? 'ia' : 'manual',
+    arquivoUrl: null, arquivoPath: null, arquivoNome: null, emUsoDesde: null,
+  });
+}
+
+
+// ---------------- detalhe / refino ----------------
+function detalhe(c, cliente, cfg, recarregar) {
+  const conversa = [];
+  const m = modal(c.nome, '<div id="d"></div>', { largo: true });
+  const alvo = $('#d', m.el);
+
+  const desenhar = () => {
+    const proibidos = acharTermosProibidos(`${c.hook} ${c.copy} ${c.cta}`, cliente);
+    const versoes = c.versoes || [];
+    const tudoOk = CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k]);
+    alvo.innerHTML = `
+    <div class="mb-3 flex flex-wrap gap-1">${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}${c.framework ? tag(c.framework, 'tag-info') : ''}
+      ${c.angulo ? tag(c.angulo) : ''}${c.gatilho ? tag('gatilho: ' + c.gatilho) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma)}
+      ${c.emUsoDesde ? tag(`em uso desde ${dataBR(c.emUsoDesde)}`, 'tag-ok') : ''}</div>
+    ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
+    <form id="fe" class="space-y-3">
+      <p class="caption">Edite direto (sem IA) e salve como nova versão, ou peça um ajuste ao chat abaixo.</p>
+      <div><label class="label">Hook</label><input class="input" name="hook" value="${esc(c.hook)}"></div>
+      <div><label class="label">Copy / roteiro</label><textarea class="input" rows="7" name="copy">${esc(c.copy)}</textarea></div>
+      <div><label class="label">CTA</label><input class="input" name="cta" value="${esc(c.cta)}"></div>
+      <div class="flex gap-2"><button class="btn-primary btn-sm" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar como nova versão</button>
+        <button class="btn-ghost btn-sm" type="button" data-copiar><i class="fa-solid fa-copy"></i> Copiar texto</button></div></form>
+
+    <div class="mt-5 rounded-lg border border-violet-200 p-3"><h4 class="mb-1 text-sm font-semibold text-violet-800"><i class="fa-solid fa-comments"></i> Refinar com IA</h4>
+      <p class="hint mb-2">Ex.: “mais curto”, “tom mais debochado”, “troque o hook por uma pergunta”. Cada ajuste vira uma versão.</p>
+      <div id="chat" class="mb-2 space-y-1 text-sm">${conversa.map((t) => `<p class="${t.role === 'user' ? 'text-slate-600' : 'text-violet-700'}"><b>${t.role === 'user' ? 'Você' : 'IA'}:</b> ${esc(t.content)}</p>`).join('')}</div>
+      <form id="fc" class="flex gap-2"><input class="input" name="instrucao" placeholder="O que ajustar?"><button class="btn-ia btn-sm" type="submit">Ajustar</button></form></div>
+
+    <div class="mt-5"><h4 class="mb-2 text-sm font-semibold">Checklist de qualidade <span class="font-normal text-slate-500">— necessário para aprovar</span></h4>
+      <div class="grid gap-1 sm:grid-cols-2">${CHECKLIST_QUALIDADE.map(([k, q]) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" data-chk="${k}" ${c.checklist?.[k] ? 'checked' : ''}>${q}</label>`).join('')}</div></div>
+
+    <div class="mt-5 flex flex-wrap items-end gap-3">
+      <div><label class="label">Status</label><select class="input" data-status>${opcoes(STATUS_CRIATIVO, c.status)}</select>
+        <p class="hint">${tudoOk ? 'Checklist completo.' : 'Complete o checklist para aprovar.'}</p></div></div>
+
+    <div class="mt-5 rounded-lg border border-slate-200 p-3"><h4 class="mb-2 text-sm font-semibold">Peça final (arquivo)</h4>
+      ${c.arquivoUrl ? `<p class="mb-2 text-sm">${tag('com arquivo', 'tag-ok')} ${esc(c.arquivoNome || '')}</p>
+        <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="${esc(c.arquivoUrl)}" target="_blank" rel="noopener" download="${esc(c.arquivoNome || 'criativo')}"><i class="fa-solid fa-download"></i> Baixar</a>
+        <button class="btn-ghost btn-sm" data-link><i class="fa-solid fa-link"></i> Copiar link compartilhável</button>
+        <button class="btn-danger btn-sm" data-rm-arq><i class="fa-solid fa-trash"></i> Remover</button></div>`
+        : `<p class="caption mb-2">${tag('sem arquivo', 'tag-warn')} Envie o vídeo ou imagem finalizado.</p>`}
+      <input type="file" data-arq accept="image/*,video/*,application/pdf" class="mt-2 block text-sm"></div>
+
+    <div class="mt-5"><h4 class="mb-2 text-sm font-semibold">Histórico de versões (${versoes.length})</h4>
+      <ol class="space-y-2">${[...versoes].reverse().map((v) => `<li class="rounded-lg bg-slate-50 p-2 text-sm"><div class="flex justify-between"><b>v${v.n} · ${esc(v.nota || '')}</b><span class="hint">${dataBR(v.quando)}</span></div>
+        <p class="line-clamp-2 text-slate-600">“${esc(v.hook)}”</p>
+        ${v.n !== versoes.length ? `<button class="btn-ghost btn-sm mt-1" data-restaurar="${v.n}">Restaurar esta versão</button>` : '<span class="tag tag-ok mt-1">atual</span>'}</li>`).join('')}</ol></div>
+    <div class="mt-5 flex justify-end"><button class="btn-danger btn-sm" data-apagar><i class="fa-solid fa-trash"></i> Apagar criativo</button></div>`;
+  };
+  desenhar();
+
+  const novaVersao = async (patch, nota) => {
+    const versoes = [...(c.versoes || [])];
+    versoes.push({ n: versoes.length + 1, hook: patch.hook, copy: patch.copy, cta: patch.cta, nota, quando: new Date().toISOString() });
+    const dados = { ...patch, versoes };
+    await db.atualizar(COL.criativos, c.id, dados);
+    Object.assign(c, dados);
+  };
+
+  on(alvo, 'submit', '#fe', async (f, ev) => {
+    ev.preventDefault();
+    const v = lerForm(f);
+    await ocupado(f.querySelector('button'), async () => { await novaVersao({ hook: v.hook, copy: v.copy, cta: v.cta }, 'Edição manual'); toast('Nova versão salva.'); desenhar(); recarregar(); });
+  });
+  on(alvo, 'click', '[data-copiar]', () => copiar(`${c.hook}\n\n${c.copy}\n\n${c.cta}`));
+  on(alvo, 'submit', '#fc', async (f, ev) => {
+    ev.preventDefault();
+    const instrucao = lerForm(f).instrucao;
+    if (!instrucao) return;
+    await ocupado(f.querySelector('button'), async () => {
+      const r = await refinarCriativo({ cliente, criativo: c, instrucao, conversa: conversa.map((t) => ({ role: t.role, content: t.content })) });
+      conversa.push({ role: 'user', content: instrucao }, { role: 'assistant', content: r.explicacao || 'Ajuste aplicado.' });
+      await novaVersao({ hook: r.hook || c.hook, copy: r.copy || c.copy, cta: r.cta || c.cta, ...(r.angulo ? { angulo: r.angulo } : {}), ...(r.gatilho ? { gatilho: r.gatilho } : {}) }, `IA: ${instrucao}`);
+      desenhar(); recarregar();
+      toast('A IA criou uma nova versão — veja o histórico abaixo.');
+    });
+  });
+  on(alvo, 'click', '[data-restaurar]', async (b) => {
+    const v = c.versoes.find((x) => x.n === Number(b.dataset.restaurar));
+    await novaVersao({ hook: v.hook, copy: v.copy, cta: v.cta }, `Restaurada a v${v.n}`); desenhar(); recarregar();
+  });
+  on(alvo, 'change', '[data-chk]', async (i) => {
+    const checklist = { ...(c.checklist || {}), [i.dataset.chk]: i.checked };
+    await db.atualizar(COL.criativos, c.id, { checklist }); c.checklist = checklist; desenhar();
+  });
+  on(alvo, 'change', '[data-status]', async (s) => {
+    if (s.value === 'aprovado' || s.value === 'em_uso') {
+      if (!CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k])) { toast('Complete o checklist de qualidade antes de aprovar/usar.', 'erro'); return desenhar(); }
+      if (acharTermosProibidos(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) { toast('Remova os termos proibidos antes de aprovar.', 'erro'); return desenhar(); }
+    }
+    await definirStatus(c, s.value); toast('Status atualizado.'); desenhar(); recarregar();
+  });
+  on(alvo, 'change', '[data-arq]', async (inp) => {
+    const f = inp.files[0]; if (!f) return;
+    await ocupado(inp, async () => {
+      const caminho = `gcc/${cliente.id}/criativos/${c.id}/${Date.now()}_${f.name.replace(/[^\w.-]/g, '_')}`;
+      const r = await enviarArquivo(caminho, f);
+      if (c.arquivoPath) await removerArquivo(c.arquivoPath);
+      const patch = { arquivoUrl: r.url, arquivoPath: r.path, arquivoNome: f.name };
+      await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch);
+      toast('Arquivo enviado.'); desenhar(); recarregar();
+    });
+  });
+  on(alvo, 'click', '[data-link]', () => copiar(c.arquivoUrl));
+  on(alvo, 'click', '[data-rm-arq]', async () => {
+    if (!(await confirmar('Remover o arquivo deste criativo?', 'Remover'))) return;
+    await removerArquivo(c.arquivoPath);
+    const patch = { arquivoUrl: null, arquivoPath: null, arquivoNome: null };
+    await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch); desenhar(); recarregar();
+  });
+  on(alvo, 'click', '[data-apagar]', async () => {
+    if (!(await confirmar('Apagar este criativo e o arquivo dele?', 'Apagar'))) return;
+    await removerArquivo(c.arquivoPath); await db.remover(COL.criativos, c.id); m.fechar(); recarregar(); toast('Criativo apagado.');
+  });
+}
