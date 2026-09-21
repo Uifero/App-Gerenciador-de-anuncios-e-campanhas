@@ -8,7 +8,9 @@ export const FORMATOS_IMAGEM = [
 export const TEMPLATES = [['destaque', 'Foto em tela cheia'], ['cartao', 'Foto + painel de cor'], ['colagem', 'Colagem (2 a 4 fotos)'], ['texto', 'Só texto (sem foto)']];
 
 const FONTE = '"Segoe UI", Inter, Roboto, Arial, sans-serif';
-const DURACAO_MAX_S = 60;
+/** Duração máxima dos vídeos do estúdio (criativos de tráfego). */
+export const LIMITE_VIDEO_S = 30;
+const DURACAO_MAX_S = LIMITE_VIDEO_S;
 
 // ---------------- roteiro -> cenas ----------------
 const limpar = (s) => String(s || '').replace(/[“”"]/g, '').replace(/\s+/g, ' ').trim();
@@ -36,7 +38,7 @@ function duracaoDe(txt) {
 /**
  * Lê o roteiro ("Cena 1 (0-3s): ... Voz: "..." / Texto na tela: ...") e devolve a linha do tempo do vídeo:
  * [{ texto, dur, tipo: 'cena' | 'cta' }]. Legenda da cena = "Texto na tela" > "Voz" > (vazia: só a imagem).
- * Sem cenas no texto, usa hook + frases da copy. Termina sempre com o CTA. Total limitado a 60 s.
+ * Sem cenas no texto, usa hook + frases da copy. Termina sempre com o CTA. Total limitado a 30 s.
  */
 export function extrairCenas({ hook = '', copy = '', cta = '' }) {
   const cenas = [];
@@ -233,8 +235,20 @@ export function formatoDeVideo() {
   return mime ? { mime, ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm' } : null;
 }
 
+/** Imagem ou vídeo que uma cena usa: o escolhido nela (cena.midia) ou, sem escolha, os materiais em rodízio. */
+export const midiaDaCena = (cena, i, midias) => cena.midia || (midias.length ? midias[i % midias.length] : null);
+
+/** Reabre o vídeo em um elemento novo: um <video> só pode ser ligado uma vez ao áudio, e cada gravação precisa do seu. */
+async function clonarVideo(m) {
+  const el = document.createElement('video');
+  el.muted = true; el.loop = true; el.playsInline = true; el.preload = 'auto';
+  await new Promise((ok, falha) => { el.onloadeddata = ok; el.onerror = () => falha(new Error(`Não consegui reabrir o vídeo "${m.nome}".`)); el.src = m.url; });
+  return { ...m, el };
+}
+
 /**
  * Grava o vídeo em tempo real (um vídeo de 24 s leva ~24 s; a aba precisa ficar visível).
+ * Cada cena: { texto, dur, tipo, midia?, inicio? (s, onde começa no vídeo de origem), vel? (velocidade, 1 = normal), som? (usar o áudio original) }.
  * opts: { cenas, midias[], cor, corTexto, logo, musica (File|null), largura, altura, aoProgresso(0..1), sinal (AbortSignal) }
  * Devolve { blob, ext, mime, duracao }.
  */
@@ -248,18 +262,35 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
   const total = cenas.reduce((s, c) => s + c.dur, 0);
   const inicios = cenas.map((_, i) => cenas.slice(0, i).reduce((s, c) => s + c.dur, 0));
 
+  // Vídeos de origem: um clone por gravação (ver clonarVideo).
+  const clones = new Map();
+  for (const [i, c] of cenas.entries()) {
+    const m = midiaDaCena(c, i, midias);
+    if (m?.tipo === 'video' && !clones.has(m)) clones.set(m, await clonarVideo(m));
+  }
+  const resolver = (c, i) => { const m = midiaDaCena(c, i, midias); return m?.tipo === 'video' ? clones.get(m) : m; };
+  const comSom = new Set(cenas.map((c, i) => (c.som ? resolver(c, i) : null)).filter((m) => m?.tipo === 'video').map((m) => m.el));
+
   let audio = null;
-  if (musica) {
+  if (musica || comSom.size) {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
     try {
-      const buf = await ac.decodeAudioData(await musica.arrayBuffer());
-      const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
-      const ganho = ac.createGain(); ganho.gain.value = 0.55;
       const destino = ac.createMediaStreamDestination();
-      src.connect(ganho); ganho.connect(destino);
+      audio = { ac, src: null, ganhos: new Map() };
+      if (musica) {
+        const buf = await ac.decodeAudioData(await musica.arrayBuffer());
+        audio.src = ac.createBufferSource(); audio.src.buffer = buf; audio.src.loop = true;
+        const ganho = ac.createGain(); ganho.gain.value = comSom.size ? 0.22 : 0.55; // música mais baixa quando há voz do vídeo
+        audio.src.connect(ganho); ganho.connect(destino);
+      }
+      for (const el of comSom) {
+        el.muted = false;
+        const g = ac.createGain(); g.gain.value = 0;
+        ac.createMediaElementSource(el).connect(g); g.connect(destino);
+        audio.ganhos.set(el, g);
+      }
       destino.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
-      audio = { ac, src, ganho };
-    } catch { ac.close(); throw new Error('Não consegui ler a música. Use um MP3 ou WAV.'); }
+    } catch (e) { ac.close(); throw new Error(musica && !comSom.size ? 'Não consegui ler a música. Use um MP3 ou WAV.' : 'Não consegui preparar o áudio: ' + (e.message || e)); }
   }
 
   const rec = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: 8_000_000 });
@@ -268,15 +299,18 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
   const parou = new Promise((ok) => { rec.onstop = ok; });
 
   const zs = zonaSegura(largura, altura);
-  let cenaAnterior = -1;
+  let cenaAnterior = -1, videoAtual = null;
   const desenhar = (t) => {
     let i = cenas.length - 1;
     while (i > 0 && t < inicios[i]) i--;
     const cena = cenas[i], p = Math.min(1, Math.max(0, (t - inicios[i]) / cena.dur)), tLocal = t - inicios[i];
-    const midia = cena.midia || (midias.length ? midias[i % midias.length] : null); // cena.midia = imagem escolhida para esta cena
+    const midia = resolver(cena, i);
     if (i !== cenaAnterior) {
       cenaAnterior = i;
-      if (midia?.tipo === 'video') { midia.el.currentTime = 0; midia.el.play().catch(() => {}); }
+      if (videoAtual && videoAtual !== midia?.el) videoAtual.pause();
+      videoAtual = midia?.tipo === 'video' ? midia.el : null;
+      if (videoAtual) { videoAtual.currentTime = Number(cena.inicio) || 0; videoAtual.playbackRate = Number(cena.vel) || 1; videoAtual.play().catch(() => {}); }
+      audio?.ganhos.forEach((g, el) => { g.gain.value = cena.som && el === videoAtual ? 1 : 0; });
     }
     ctx.fillStyle = cor; ctx.fillRect(0, 0, largura, altura);
     if (midia) cobrir(ctx, midia, 0, 0, largura, altura, midia.tipo === 'imagem' ? 1 + 0.07 * p : 1);
@@ -300,7 +334,7 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
 
   desenhar(0);
   rec.start(500);
-  if (audio) { audio.ac.resume(); audio.src.start(); }
+  if (audio) { audio.ac.resume(); audio.src?.start(); }
   const t0 = performance.now();
   await new Promise((fim) => {
     // requestAnimationFrame dá 30+ quadros/s, mas o navegador o pausa em aba oculta; o relógio de reserva garante que a gravação
@@ -322,8 +356,8 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
   const cancelado = sinal?.aborted;
   if (rec.state !== 'inactive') rec.stop();
   await parou;
-  midias.forEach((m) => m.tipo === 'video' && m.el.pause());
-  if (audio) { try { audio.src.stop(); } catch { /* já parou */ } audio.ac.close(); }
+  clones.forEach((m) => { m.el.pause(); m.el.removeAttribute('src'); m.el.load(); });
+  if (audio) { try { audio.src?.stop(); } catch { /* já parou */ } audio.ac.close(); }
   stream.getTracks().forEach((tr) => tr.stop());
   if (cancelado) throw new Error('Gravação cancelada.');
   aoProgresso(1);

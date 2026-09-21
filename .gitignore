@@ -13,3 +13,5 @@ dist/
 
 # Contador diario de imagens por IA (gerado pelo servidor)
 server/.uso-imagens.json
+
+server/.uso-videos.json

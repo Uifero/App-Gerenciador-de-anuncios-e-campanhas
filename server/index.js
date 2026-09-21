@@ -4,6 +4,7 @@
 // Também decide o modelo de cada tarefa (barato x completo), aplica prompt caching ao perfil de marca
 // e devolve o consumo de tokens + custo estimado para o app registrar em "gcc_uso_api".
 import { gerarImagem, statusImagens } from './imagens.js';
+import { animarImagem, statusVideo } from './videos.js';
 import 'dotenv/config';
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
@@ -151,7 +152,9 @@ async function viaCli({ tarefa, t, estavel, system, messages, webSearch }) {
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '1mb' }));
+// /api/video recebe a foto em base64 (até ~12 MB); as demais rotas ficam em 1 MB.
+const jsonPadrao = express.json({ limit: '1mb' });
+app.use((req, res, next) => (req.path === '/api/video' ? next() : jsonPadrao(req, res, next)));
 
 app.get('/api/saude', (_req, res) => {
   res.json({ ok: true, provedor: cliDisponivel() ? 'cli' : 'api', preferido: PROVEDOR, modelos: { leve: MODELO_LEVE, complexo: MODELO_COMPLEXO }, chaveConfigurada: Boolean(process.env.ANTHROPIC_API_KEY) });
@@ -169,6 +172,19 @@ app.post('/api/imagem', exigirLogin, async (req, res) => {
   recentes.push(agora); imagensPorUsuario.set(quem, recentes);
   try { res.json(await gerarImagem({ prompt: prompt.trim(), formato })); }
   catch (e) { console.error('[imagem]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Falha ao gerar a imagem.' }); }
+});
+
+// Foto -> vídeo com IA (Pixazo/LTX, gratuito na prévia). Só o admin logado; teto de 20 por hora por usuário.
+const videosPorUsuario = new Map();
+app.get('/api/video/status', exigirLogin, (_req, res) => res.json(statusVideo()));
+app.post('/api/video', exigirLogin, express.json({ limit: '14mb' }), async (req, res) => {
+  const { imagem, prompt, formato } = req.body || {};
+  const quem = req.usuario?.sub || req.usuario?.email || 'x', agora = Date.now();
+  const recentes = (videosPorUsuario.get(quem) || []).filter((t) => agora - t < 3_600_000);
+  if (recentes.length >= 20) return res.status(429).json({ erro: 'Limite de 20 vídeos por hora atingido.' });
+  recentes.push(agora); videosPorUsuario.set(quem, recentes);
+  try { const r = await animarImagem({ imagem, prompt, formato }); res.set('Content-Type', 'video/mp4').set('X-Provedor', encodeURIComponent(r.provedor)).send(r.video); }
+  catch (e) { console.error('[video]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Falha ao gerar o vídeo.' }); }
 });
 
 app.post('/api/claude', exigirLogin, limitar, async (req, res) => {

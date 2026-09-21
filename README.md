@@ -82,4 +82,5 @@ No detalhe de cada criativo, **"Gerar foto e vídeo"** monta o material a partir
   - **Together AI** (modelo FLUX schnell gratuito, se ainda disponível): crie a chave em together.ai.
   - **Hugging Face** (crédito mensal muito pequeno): crie um token em huggingface.co/settings/tokens.
   - **OpenAI** é paga e nunca entra sozinha: só se listada em `IMAGEM_PROVEDORES`.
-  - Não há geração de **vídeo** gratuita por API que eu tenha encontrado; o vídeo do estúdio é a montagem automática. Para vídeo por IA use os prompts nas ferramentas com créditos diários no site (Kling, Veo/Flow etc.).
+  - **Foto → vídeo com IA** (`server/videos.js`): "Animar com IA" dá movimento real a uma foto (clipe de ~5 s) usando o modelo LTX da **Pixazo** (gratuito na fase de prévia, sem cartão; limites e termos podem mudar, e o uso comercial depende dos termos deles). Crie a conta em pixazo.ai, gere a chave e coloque `PIXAZO_API_KEY` no `.env`. A Pixazo só aceita a foto por URL pública: o servidor a envia por 1 hora à hospedagem anônima litterbox.catbox.moe. **Use só fotos que o cliente autorizou.** Limite do app: `VIDEO_LIMITE_DIA` (padrão 10).
+  - Vídeo 100% gerado por IA a partir de texto não tem opção gratuita por API; para isso use os prompts nas ferramentas com créditos diários no site (Kling, Veo/Flow etc.).

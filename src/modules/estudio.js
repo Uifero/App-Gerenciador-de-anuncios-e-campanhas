@@ -3,7 +3,7 @@
 import { tokenAtual } from '../core/auth.js';
 import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
-  FORMATOS_IMAGEM, TEMPLATES, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
+  FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
 import { $, esc, on, modal, toast, ocupado, opcoes, copiar } from '../core/ui.js';
 
@@ -38,7 +38,7 @@ export function abrirEstudio(criativo, cliente) {
 
   <section class="rounded-lg border border-slate-200 p-3">
     <h4 class="mb-2 text-sm font-semibold"><i class="fa-solid fa-images"></i> 1. Materiais</h4>
-    <label class="label">Fotos e vídeos do produto (várias)</label>
+    <label class="label">Fotos e vídeos (do produto, gerados por IA ou enviados pelo cliente)</label>
     <input type="file" data-midias multiple accept="image/*,video/*" class="block text-sm">
     <div data-lista-midias class="mt-2 flex flex-wrap gap-2"></div>
     <div class="mt-3 grid gap-3 sm:grid-cols-2">
@@ -52,6 +52,18 @@ export function abrirEstudio(criativo, cliente) {
         <button class="btn-ia btn-sm" data-sugerir-prompt>Sugerir prompts</button></div>
       <p class="hint mt-1">O Claude não gera imagem nem vídeo: ele escreve o prompt (usa a sua assinatura). Os prompts são em inglês porque os geradores entendem melhor; a tradução aparece embaixo de cada um. Cole no Gemini, ChatGPT, Ideogram, Veo, Runway ou Kling, baixe o resultado e envie aqui em "Fotos e vídeos".</p>
       <div data-prompts class="mt-2 space-y-2"></div></div>
+    <div class="mt-3 rounded-lg border border-indigo-200 p-2">
+      <p class="text-sm font-medium text-indigo-800"><i class="fa-solid fa-film"></i> Animar uma foto com IA (clipe real de ~5 s)</p>
+      <p class="hint my-1">A IA dá movimento à foto (pessoa, tecido, câmera). Leva de 1 a 3 minutos. <b>A foto é enviada por 1 hora a uma hospedagem pública anônima e ao gerador</b>: use só fotos que o cliente autorizou.</p>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <div><label class="label">Foto</label><select class="input" data-animar-foto></select></div>
+        <div><label class="label">Ligar à cena</label><select class="input" data-animar-cena></select></div>
+        <div class="sm:col-span-2"><label class="label">Movimento (em inglês funciona melhor)</label>
+          <input class="input" data-animar-prompt value="The camera slowly pushes in. The person moves naturally, subtle hair and fabric movement, realistic handheld social media video."></div>
+      </div>
+      <div class="mt-2 flex flex-wrap items-center gap-2"><button class="btn-ia btn-sm" data-animar><i class="fa-solid fa-wand-magic-sparkles"></i> Animar com IA</button>
+        <span class="hint" data-status-video></span></div>
+    </div>
     <details class="mt-3 rounded-lg border border-violet-200 p-2"><summary class="cursor-pointer text-sm font-medium text-violet-800"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar imagem com IA (gratuito, vários provedores em rodízio)</summary>
       <p class="hint my-2">O app tenta cada gerador gratuito configurado e, se um atingir a cota do dia, passa ao próximo. Peça a imagem sem texto: o texto entra pelo template, com letras nítidas. Para produto real, prefira a foto verdadeira.</p>
       <p class="mb-2 text-xs text-slate-600" data-status-ia>Carregando geradores…</p>
@@ -78,6 +90,12 @@ export function abrirEstudio(criativo, cliente) {
   <section class="mt-4 rounded-lg border border-slate-200 p-3">
     <h4 class="mb-2 text-sm font-semibold"><i class="fa-solid fa-film"></i> 3. Vídeo</h4>
     <p class="hint mb-2">A linha do tempo vem do roteiro do criativo (uma cena = uma legenda). Ajuste textos e tempos abaixo. Cada cena usa uma foto/vídeo da lista, em rodízio.</p>
+    <div class="mb-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2">
+      <p class="text-sm font-medium text-emerald-800"><i class="fa-solid fa-scissors"></i> O cliente mandou um vídeo? Edite para performar melhor</p>
+      <p class="hint my-1">Envie o vídeo em "Materiais" (clique na miniatura para assistir e anotar os segundos). Depois monte a base e ajuste: <b>gancho nos 3 primeiros segundos</b> (texto grande), <b>cortes</b> nas partes paradas (uma cena = um trecho, com "início no vídeo"), <b>legendas</b> (muita gente assiste sem som), <b>velocidade</b> 1.1x a 1.25x para dar ritmo, <b>CTA no final</b>, formato 9:16 e música baixa por cima.</p>
+      <div class="flex flex-wrap items-end gap-2"><div><label class="label">Vídeo</label><select class="input" data-base-video-sel></select></div>
+        <button class="btn-ghost btn-sm" data-base-video><i class="fa-solid fa-wand-magic-sparkles"></i> Montar base com gancho e CTA</button></div>
+    </div>
     <div data-cenas class="space-y-2"></div>
     <button class="btn-ghost btn-sm mt-2" data-add-cena><i class="fa-solid fa-plus"></i> Adicionar cena</button>
     <div class="mt-3 flex flex-wrap items-end gap-3">
@@ -111,7 +129,7 @@ export function abrirEstudio(criativo, cliente) {
 
   const listarMidias = () => {
     $('[data-lista-midias]', raiz).innerHTML = est.midias.map((x, i) => `<div class="relative h-20 w-20 overflow-hidden rounded-lg border bg-slate-100">
-      ${x.tipo === 'imagem' ? `<img src="${esc(x.url)}" class="h-full w-full object-cover" alt="">` : '<div class="flex h-full items-center justify-center text-slate-500"><i class="fa-solid fa-film"></i></div>'}
+      ${x.tipo === 'imagem' ? `<img src="${esc(x.url)}" class="h-full w-full object-cover" alt="">` : `<button data-ver-midia="${i}" class="flex h-full w-full items-center justify-center bg-slate-200 text-slate-600" title="Assistir e anotar o segundo do corte"><i class="fa-solid fa-circle-play text-2xl"></i></button>`}
       <button data-rm-midia="${i}" class="absolute right-0 top-0 bg-black/60 px-1.5 text-xs text-white" title="Remover">×</button></div>`).join('')
       || '<p class="hint">Nenhuma foto ou vídeo ainda. Sem material, o app usa um fundo de cor (só texto).</p>';
     $('[data-fundo]', raiz).innerHTML = fotos().length ? opcoes(fotos().map((x, i) => [String(i), `${i + 1}. ${x.nome}`]), '0') : '<option value="0">(sem foto: usa fundo de cor)</option>';
@@ -119,16 +137,40 @@ export function abrirEstudio(criativo, cliente) {
     if (typeof listarCenas === 'function') listarCenas();
   };
 
+  const mostrarTotal = () => {
+    const t = est.cenas.reduce((a, c) => a + Number(c.dur || 0), 0), el = $('[data-total]', raiz);
+    el.textContent = `Duração total: ${t.toFixed(1)} s (máximo ${LIMITE_VIDEO_S} s)`;
+    el.classList.toggle('text-rose-600', t > LIMITE_VIDEO_S + 0.05); el.classList.toggle('font-semibold', t > LIMITE_VIDEO_S + 0.05);
+  };
   const listarCenas = () => {
-    $('[data-cenas]', raiz).innerHTML = est.cenas.map((c, i) => `<div class="flex items-start gap-2 rounded-lg bg-slate-50 p-2">
-      <span class="mt-2 w-14 shrink-0 text-xs text-slate-500">${c.tipo === 'cta' ? 'Final' : 'Cena ' + (i + 1)}</span>
-      <textarea class="input" rows="2" data-cena-texto="${i}" placeholder="(sem legenda: só a imagem)">${esc(c.texto)}</textarea>
-      ${est.midias.length ? `<select class="input !w-32 shrink-0" data-cena-midia="${i}" title="Imagem ou vídeo desta cena"><option value="">Imagem: auto</option>${est.midias.map((x, k) => `<option value="${k}" ${c.midiaIdx === k ? 'selected' : ''}>${k + 1}. ${esc(x.nome).slice(0, 14)}</option>`).join('')}</select>` : ''}
-      <input type="number" class="input !w-20 shrink-0" min="1" max="12" step="0.5" data-cena-dur="${i}" value="${c.dur}" title="Segundos">
-      <button class="btn-ghost btn-sm shrink-0" data-cena-rm="${i}" title="Remover cena">×</button></div>`).join('')
-      || '<p class="hint">Sem cenas. Adicione pelo menos uma.</p>';
-    const t = est.cenas.reduce((s, c) => s + Number(c.dur || 0), 0);
-    $('[data-total]', raiz).textContent = `Duração total: ${t.toFixed(1)} s`;
+    const velocidades = [0.8, 1, 1.1, 1.25, 1.5, 2];
+    $('[data-cenas]', raiz).innerHTML = est.cenas.map((c, i) => {
+      const m = midiaDaCena({ midia: c.midiaIdx != null ? est.midias[c.midiaIdx] : null }, i, est.midias), video = m?.tipo === 'video';
+      return `<div class="rounded-lg bg-slate-50 p-2"><div class="flex items-start gap-2">
+        <span class="mt-2 w-14 shrink-0 text-xs text-slate-500">${c.tipo === 'cta' ? 'Final' : 'Cena ' + (i + 1)}</span>
+        <textarea class="input" rows="2" data-cena-texto="${i}" placeholder="(sem legenda: só a imagem)">${esc(c.texto)}</textarea>
+        <button class="btn-ghost btn-sm shrink-0" data-cena-rm="${i}" title="Remover cena">×</button></div>
+        <div class="mt-2 flex flex-wrap items-end gap-3 sm:pl-16">
+          ${est.midias.length ? `<label class="text-xs text-slate-500">Imagem/vídeo<select class="input mt-0.5 !w-36" data-cena-midia="${i}"><option value="">auto</option>${est.midias.map((x, k) => `<option value="${k}" ${c.midiaIdx === k ? 'selected' : ''}>${k + 1}. ${esc(x.nome).slice(0, 16)}</option>`).join('')}</select></label>` : ''}
+          <label class="text-xs text-slate-500">Duração (s)<input type="number" class="input mt-0.5 !w-20" min="1" max="${LIMITE_VIDEO_S}" step="0.5" data-cena-dur="${i}" value="${c.dur}"></label>
+          ${video ? `<label class="text-xs text-slate-500" title="Segundo do vídeo de origem em que este trecho começa">Início no vídeo (s)<input type="number" class="input mt-0.5 !w-24" min="0" step="0.5" data-cena-inicio="${i}" value="${c.inicio || 0}"></label>
+            <label class="text-xs text-slate-500">Velocidade<select class="input mt-0.5 !w-24" data-cena-vel="${i}">${velocidades.map((v) => `<option value="${v}" ${(c.vel || 1) === v ? 'selected' : ''}>${v}x</option>`).join('')}</select></label>
+            <label class="flex items-center gap-1 pb-2 text-xs text-slate-600"><input type="checkbox" data-cena-som="${i}" ${c.som ? 'checked' : ''}> Som original</label>` : ''}
+        </div></div>`;
+    }).join('') || '<p class="hint">Sem cenas. Adicione pelo menos uma.</p>';
+    mostrarTotal();
+    atualizarAnimar();
+  };
+  const atualizarBase = () => {
+    const sel = $('[data-base-video-sel]', raiz), atual = sel.value;
+    const videos = est.midias.map((x, k) => [k, x]).filter(([, x]) => x.tipo === 'video');
+    sel.innerHTML = videos.length ? videos.map(([k, x]) => `<option value="${k}" ${String(k) === atual ? 'selected' : ''}>${k + 1}. ${esc(x.nome)}</option>`).join('') : '<option value="">(envie um vídeo em Materiais)</option>';
+  };
+  const atualizarAnimar = () => {
+    atualizarBase();
+    const f = $('[data-animar-foto]', raiz), c = $('[data-animar-cena]', raiz), fa = f.value, ca = c.value;
+    f.innerHTML = fotos().length ? opcoes(fotos().map((x, i) => [String(i), `${i + 1}. ${x.nome}`]), fa || '0') : '<option value="">(envie ou gere uma foto antes)</option>';
+    c.innerHTML = '<option value="">(nenhuma: escolho depois)</option>' + est.cenas.map((x, i) => x.tipo === 'cena' ? `<option value="${i}" ${ca === String(i) ? 'selected' : ''}>Cena ${i + 1}${x.texto ? ': ' + esc(x.texto).slice(0, 28) : ''}</option>` : '').join('');
   };
   listarMidias(); listarCenas();
 
@@ -243,11 +285,67 @@ export function abrirEstudio(criativo, cliente) {
     toast(`${feitas} imagens geradas e ligadas às cenas. Confira e clique em "Gerar vídeo".`);
   }));
 
+  // ---- foto -> vídeo com IA (Pixazo/LTX) ----
+  const reduzirFoto = (img, lado = 1024) => {
+    const e = Math.min(1, lado / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * e); c.height = Math.round(img.naturalHeight * e);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.9);
+  };
+  const statusVideoIa = async () => {
+    const el = $('[data-status-video]', raiz);
+    try {
+      const r = await fetch('/api/video/status', { headers: { Authorization: `Bearer ${await tokenAtual()}` } });
+      const s = await r.json();
+      el.textContent = s.configurado ? `${s.provedor}: ${s.usadoHoje}/${s.limiteDia} hoje` : 'Sem chave: crie a conta gratuita em pixazo.ai e coloque PIXAZO_API_KEY no .env (veja o README).';
+    } catch { el.textContent = 'Servidor de IA indisponível.'; }
+  };
+  statusVideoIa();
+  on(raiz, 'click', '[data-animar]', (b) => ocupado(b, async () => {
+    const foto = fotos()[Number($('[data-animar-foto]', raiz).value)];
+    if (!foto) throw new Error('Envie ou gere uma foto antes.');
+    b.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Animando… (1 a 3 min)';
+    const r = await fetch('/api/video', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await tokenAtual()}` },
+      body: JSON.stringify({ imagem: reduzirFoto(foto.el), prompt: $('[data-animar-prompt]', raiz).value.trim(), formato: formatoVideoIa() }),
+    });
+    if (!r.ok || !(r.headers.get('content-type') || '').startsWith('video/')) throw new Error((await r.json().catch(() => ({}))).erro || 'Falha ao gerar o vídeo.');
+    const m = await carregarMidia(new File([await r.blob()], `ia-video-${est.midias.length + 1}.mp4`, { type: 'video/mp4' }));
+    est.midias.push(m);
+    const cena = $('[data-animar-cena]', raiz).value;
+    if (cena !== '') est.cenas[Number(cena)].midiaIdx = est.midias.length - 1;
+    listarMidias(); statusVideoIa();
+    toast(`Clipe pronto e adicionado aos materiais${cena !== '' ? ', ligado à cena ' + (Number(cena) + 1) : ''}. Clique em "Gerar vídeo" para montar.`);
+  }));
+
   // ---- cenas ----
   on(raiz, 'input', '[data-cena-texto]', (t) => { est.cenas[Number(t.dataset.cenaTexto)].texto = t.value; });
   on(raiz, 'input', '[data-cena-dur]', (t) => {
     est.cenas[Number(t.dataset.cenaDur)].dur = Math.min(12, Math.max(1, Number(t.value) || 1));
-    $('[data-total]', raiz).textContent = `Duração total: ${est.cenas.reduce((s, c) => s + c.dur, 0).toFixed(1)} s`;
+    mostrarTotal();
+  });
+  on(raiz, 'input', '[data-cena-inicio]', (t) => { est.cenas[Number(t.dataset.cenaInicio)].inicio = Math.max(0, Number(t.value) || 0); });
+  on(raiz, 'change', '[data-cena-vel]', (t) => { est.cenas[Number(t.dataset.cenaVel)].vel = Number(t.value) || 1; });
+  on(raiz, 'change', '[data-cena-som]', (t) => { est.cenas[Number(t.dataset.cenaSom)].som = t.checked; });
+  on(raiz, 'click', '[data-ver-midia]', (b) => {
+    const x = est.midias[Number(b.dataset.verMidia)];
+    const v = modal(`Assistir: ${x.nome}`, `<video src="${esc(x.url)}" controls playsinline class="mx-auto max-h-[70vh] w-full rounded-lg bg-black"></video><p class="hint mt-2">Anote o segundo em que cada trecho começa e use em "Início no vídeo" de cada cena.</p>`);
+    return v;
+  });
+  // Base de edição para o vídeo do cliente: gancho (3 s) + corpo + CTA, tudo dentro do limite de 30 s.
+  on(raiz, 'click', '[data-base-video]', () => {
+    const k = Number($('[data-base-video-sel]', raiz).value), m = est.midias[k];
+    if (!m || m.tipo !== 'video') return toast('Envie o vídeo do cliente em "Materiais" primeiro.', 'erro');
+    const d = Number.isFinite(m.el.duration) ? m.el.duration : LIMITE_VIDEO_S;
+    const cta = $('[data-cta]', raiz).value.trim(), gancho = Math.min(3, d), fimCta = cta ? 3 : 0;
+    const corpo = Math.max(0, Math.min(d - gancho, LIMITE_VIDEO_S - gancho - fimCta));
+    est.cenas = [
+      { texto: $('[data-hook]', raiz).value.trim(), dur: gancho, tipo: 'cena', midiaIdx: k, inicio: 0, vel: 1, som: true },
+      ...(corpo >= 1 ? [{ texto: '', dur: corpo, tipo: 'cena', midiaIdx: k, inicio: gancho, vel: 1, som: true }] : []),
+      ...(cta ? [{ texto: cta, dur: fimCta, tipo: 'cta', midiaIdx: k, inicio: Math.min(gancho + corpo, Math.max(0, d - fimCta)), vel: 1, som: true }] : []),
+    ];
+    listarCenas();
+    toast(`Base montada (${est.cenas.reduce((a, c) => a + c.dur, 0).toFixed(0)} s): gancho com o hook, o vídeo do cliente e o CTA. Ajuste os cortes e legendas.`);
   });
   on(raiz, 'click', '[data-cena-rm]', (b) => { est.cenas.splice(Number(b.dataset.cenaRm), 1); listarCenas(); });
   on(raiz, 'click', '[data-add-cena]', () => {
@@ -260,6 +358,8 @@ export function abrirEstudio(criativo, cliente) {
   on(raiz, 'click', '[data-baixar-video]', () => est.ultimo && baixar(est.ultimo.blob, est.ultimo.nome));
   on(raiz, 'click', '[data-gravar]', async (b) => {
     if (!est.cenas.length) return toast('Adicione pelo menos uma cena.', 'erro');
+    const totalCenas = est.cenas.reduce((a, c) => a + Number(c.dur || 0), 0);
+    if (totalCenas > LIMITE_VIDEO_S + 0.05) return toast(`O vídeo tem ${totalCenas.toFixed(1)} s. O máximo é ${LIMITE_VIDEO_S} s: reduza a duração de alguma cena.`, 'erro');
     const [largura, altura] = dims(est.formatoVideo);
     est.ctrl = new AbortController();
     const barra = $('[data-barra]', raiz), prog = $('[data-progresso]', raiz), cancelar = $('[data-cancelar]', raiz);
