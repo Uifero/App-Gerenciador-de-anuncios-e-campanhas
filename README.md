@@ -46,6 +46,14 @@ Para testar com a API simulada ou forçar a API: `IA_PROVEDOR=api`.
 - **Limites:** tokens de saída por tipo de operação (Configurações > Custos e limites de IA), orçamento mensal global e por cliente
   (aviso a 80% no início; ao passar do limite, cada geração pede confirmação), variações por geração e reaproveitamento de buscas de mercado recentes.
 
+## Publicar para o cliente abrir o link de aprovação
+O link de aprovação abre a própria página do app (`#/aprovar/<token>`) e lê/grava direto no Firestore, então precisa de: (1) as **regras publicadas**
+e (2) o **frontend em um endereço público** (o servidor de IA NÃO é necessário para o cliente, só para você gerar com IA). Defina `VITE_URL_PUBLICA` com esse endereço
+antes de gerar links. **Cuidado com o Firebase Hosting:** o projeto `app-comissoes-vortex` já hospeda o Painel de Comissões no site padrão; publicar aqui
+sem criar um **site separado** (`firebase hosting:sites:create <nome>` + target) sobrescreveria o painel. Alternativas: Netlify/Vercel/Cloudflare Pages (`npm run build`, pasta `dist`,
+com as variáveis `VITE_FIREBASE_*`). Um túnel temporário (Cloudflare Tunnel/ngrok) também serve, mas só funciona com o seu computador ligado.
+O site exportável do cliente é um arquivo HTML independente do app: hospede-o onde quiser (não precisa do painel no ar).
+
 ## Backup
 "Exportar dados" (início = tudo; dentro do cliente = só ele) baixa um JSON. Não inclui os arquivos do Storage (só os links) nem os
 tokens dos links de aprovação. Ainda não há importação/restauração pela interface.

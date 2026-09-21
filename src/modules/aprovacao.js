@@ -17,7 +17,13 @@ export function novoToken() {
   const b = crypto.getRandomValues(new Uint8Array(24));
   return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-export const linkDe = (token) => `${location.origin}${location.pathname}#/aprovar/${token}`;
+/**
+ * Endereço que o CLIENTE vai abrir. Se você usa o painel em localhost, defina VITE_URL_PUBLICA (ex.: https://aprovar.seudominio.com/)
+ * com a URL onde o app está publicado; senão o link usaria localhost e só abriria no seu computador.
+ */
+const BASE_PUBLICA = (import.meta.env.VITE_URL_PUBLICA || '').replace(/#.*$/, '');
+export const linkDe = (token) => `${BASE_PUBLICA || location.origin + location.pathname}#/aprovar/${token}`;
+export const linkSoLocal = () => !BASE_PUBLICA && /^(localhost|127.|[::1])/.test(location.hostname);
 
 /** Só vai para o cliente final o que passou no crivo interno: checklist completo e sem termos proibidos. */
 export function motivoBloqueio(c, cliente) {
@@ -90,6 +96,7 @@ export function abrirEnvio(cliente, criativos, { preSelecionar = [], aoMudar } =
       ${novo ? `<div class="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800"><b>Link criado.</b> Envie ao cliente; ele abre sem login e só vê as peças selecionadas.
         <div class="mt-2 flex gap-2"><input class="input" readonly value="${esc(novo.link)}" data-link-novo><button class="btn-primary btn-sm shrink-0" data-copiar-novo><i class="fa-solid fa-copy"></i> Copiar</button></div>
         <p class="hint">Válido por ${novo.dias} dias. O cliente pode apenas aprovar ou pedir ajuste, com um comentário.</p></div>` : ''}
+      ${linkSoLocal() ? '<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800"><i class="fa-solid fa-triangle-exclamation"></i> Você está usando o painel em <b>localhost</b>: o link gerado só abre neste computador. Publique o app e defina <code>VITE_URL_PUBLICA</code> (veja o README) para o cliente conseguir abrir.</div>' : ''}
       <p class="caption mb-2">Escolha as peças. O cliente vê uma cópia do que está agora; editar depois não muda o que ele vê (gere um novo link).</p>
       <div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
         ${elegiveis.length ? elegiveis.map((c) => { const b = motivoBloqueio(c, cliente); return `<label class="flex items-start gap-2 rounded px-2 py-1.5 text-sm ${b ? 'opacity-60' : 'hover:bg-slate-50'}">
