@@ -1,0 +1,22 @@
+# Publicação no Netlify (frontend estático). O servidor de IA NÃO roda aqui: o painel de IA continua no seu computador;
+# o Netlify serve a página pública do link de aprovação e (se quiser) o painel para login.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# O roteamento do app usa hash (#/...), mas mantemos o fallback para o index.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
