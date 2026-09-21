@@ -247,7 +247,8 @@ Saída JSON: {"nome": string, "angulos": [{"angulo": string, "hooks": [string]}]
 // ---------- prompts para geradores de imagem e vídeo (Haiku) ----------
 /**
  * O Claude não gera imagem nem vídeo: aqui ele escreve os PROMPTS para você colar num gerador (Gemini, ChatGPT, Ideogram, Veo, Runway, Kling...).
- * Devolve { foto: string, cenas: [string], dicas: string }. Prompts em inglês (funcionam melhor nos geradores) e sem texto dentro da imagem.
+ * Devolve { foto, fotoPt, cenas: [string], cenasPt: [string], dicas }. Os prompts são em inglês (os geradores entendem muito melhor) e vêm com a
+ * tradução em português para a pessoa conferir o que está colando. Sem texto dentro da imagem.
  */
 export async function sugerirPromptsVisuais({ cliente, criativo }) {
   const system = 'Você é diretor de arte de anúncios para redes sociais. Escreve prompts objetivos e visuais para geradores de imagem e de vídeo por IA.';
@@ -262,9 +263,11 @@ Escreva:
 1) "foto": UM prompt para gerar a foto estática do anúncio (vertical 4:5), em inglês, com produto, cenário, luz, enquadramento, estilo orgânico de redes sociais (não pareça banco de imagens). NÃO peça texto, letras nem logotipos dentro da imagem (o texto é colocado depois).
 2) "cenas": um prompt de vídeo por cena do roteiro (na ordem; se não houver cenas, crie de 3 a 5 cenas curtas de 3 a 6 s), em inglês, vertical 9:16, descrevendo ação, câmera e luz. Sem texto na tela.
 3) "dicas": 2 a 3 frases em português do Brasil sobre como usar (ex.: enviar a foto real do produto como referência ao gerador, manter o mesmo personagem entre as cenas).
-Saída JSON: {"foto": string, "cenas": [string], "dicas": string}. ${SO_JSON}`;
+4) Para cada prompt (foto e cada cena), inclua também a TRADUÇÃO fiel em português do Brasil ("fotoPt" e "cenasPt", mesma ordem e quantidade de "cenas"), para o gestor entender o que vai colar.
+Saída JSON: {"foto": string, "fotoPt": string, "cenas": [string], "cenasPt": [string], "dicas": string}. ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'imagem', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
-  return { foto: String(d.foto || ''), cenas: Array.isArray(d.cenas) ? d.cenas.map(String) : [], dicas: String(d.dicas || '') };
+  const lista = (v) => (Array.isArray(v) ? v.map(String) : []);
+  return { foto: String(d.foto || ''), fotoPt: String(d.fotoPt || ''), cenas: lista(d.cenas), cenasPt: lista(d.cenasPt), dicas: String(d.dicas || '') };
 }
 
 // ---------- checklist de qualidade (Haiku: tarefa curta e barata) ----------

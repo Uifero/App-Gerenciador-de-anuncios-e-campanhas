@@ -10,3 +10,6 @@ dist/
 
 # Local Netlify folder
 .netlify
+
+# Contador diario de imagens por IA (gerado pelo servidor)
+server/.uso-imagens.json

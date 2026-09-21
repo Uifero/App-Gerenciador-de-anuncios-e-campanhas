@@ -3,6 +3,7 @@
 // ID token do Firebase; aqui validamos o token e só então chamamos a Claude.
 // Também decide o modelo de cada tarefa (barato x completo), aplica prompt caching ao perfil de marca
 // e devolve o consumo de tokens + custo estimado para o app registrar em "gcc_uso_api".
+import { gerarImagem, statusImagens } from './imagens.js';
 import 'dotenv/config';
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
@@ -156,29 +157,18 @@ app.get('/api/saude', (_req, res) => {
   res.json({ ok: true, provedor: cliDisponivel() ? 'cli' : 'api', preferido: PROVEDOR, modelos: { leve: MODELO_LEVE, complexo: MODELO_COMPLEXO }, chaveConfigurada: Boolean(process.env.ANTHROPIC_API_KEY) });
 });
 
-// Imagem por IA (opcional, gerador externo): só o admin logado, com teto de 10 imagens por hora para conter gasto.
+// Imagem por IA com vários provedores gratuitos em rodízio (ver server/imagens.js). Só o admin logado; teto de 60 por hora por usuário.
 const imagensPorUsuario = new Map();
+app.get('/api/imagem/status', exigirLogin, (_req, res) => res.json({ provedores: statusImagens() }));
 app.post('/api/imagem', exigirLogin, async (req, res) => {
-  const chave = process.env.OPENAI_API_KEY;
-  if (!chave) return res.status(503).json({ erro: 'Imagem por IA não configurada: defina OPENAI_API_KEY no .env do servidor. Enquanto isso, use as fotos do produto com os templates.' });
-  const { prompt, tamanho } = req.body || {};
+  const { prompt, formato } = req.body || {};
   if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 1500) return res.status(400).json({ erro: 'Descrição da imagem inválida (até 1500 caracteres).' });
   const quem = req.usuario?.sub || req.usuario?.email || 'x', agora = Date.now();
   const recentes = (imagensPorUsuario.get(quem) || []).filter((t) => agora - t < 3_600_000);
-  if (recentes.length >= 10) return res.status(429).json({ erro: 'Limite de 10 imagens por hora atingido.' });
+  if (recentes.length >= 60) return res.status(429).json({ erro: 'Limite de 60 imagens por hora atingido.' });
   recentes.push(agora); imagensPorUsuario.set(quem, recentes);
-  const size = ['1024x1024', '1024x1536', '1536x1024'].includes(tamanho) ? tamanho : '1024x1536';
-  try {
-    const r = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${chave}` },
-      body: JSON.stringify({ model: process.env.IMAGEM_MODELO || 'gpt-image-1', prompt: prompt.trim(), size, n: 1 }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) return res.status(502).json({ erro: 'Falha ao gerar a imagem: ' + (j.error?.message || `HTTP ${r.status}`) });
-    const b64 = j.data?.[0]?.b64_json;
-    if (!b64) return res.status(502).json({ erro: 'O gerador não devolveu a imagem.' });
-    res.json({ imagem: 'data:image/png;base64,' + b64 });
-  } catch (e) { console.error('[imagem]', e?.message); res.status(502).json({ erro: 'Não consegui falar com o gerador de imagens.' }); }
+  try { res.json(await gerarImagem({ prompt: prompt.trim(), formato })); }
+  catch (e) { console.error('[imagem]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Falha ao gerar a imagem.' }); }
 });
 
 app.post('/api/claude', exigirLogin, limitar, async (req, res) => {

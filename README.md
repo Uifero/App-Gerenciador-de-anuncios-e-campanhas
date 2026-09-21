@@ -76,4 +76,10 @@ No detalhe de cada criativo, **"Gerar foto e vídeo"** monta o material a partir
 - **Foto (PNG):** 3 templates (foto em tela cheia, foto + painel de cor, só texto) nos formatos 1:1, 4:5 e 9:16, com logo e cores da marca.
 - **Vídeo (MP4):** a linha do tempo vem do roteiro ("Cena 1 (0-3s): … Voz: …"), com legendas animadas, fotos/vídeos em rodízio, música opcional e CTA final. A gravação é em tempo real e a aba precisa ficar visível. Se o navegador só gravar WebM, converta para MP4 (Meta/TikTok pedem MP4).
 - Os arquivos são **baixados no computador** (não usam o Storage). As fotos de origem escolhidas no estúdio não ficam salvas.
-- **Imagem por IA (opcional):** defina `OPENAI_API_KEY` no `.env` do servidor; limite de 10 imagens/hora.
+- **Prompts (assinatura):** "Sugerir prompts" faz o Claude escrever prompts de imagem e de vídeo para colar em geradores externos. O Claude não gera imagem nem vídeo.
+- **Imagem por IA gratuita, em rodízio** (`server/imagens.js`): tenta os provedores na ordem de `IMAGEM_PROVEDORES` (só os que têm chave no `.env`); se um falhar ou passar do limite diário do app, usa o próximo. Cotas gratuitas mudam: confira nos sites.
+  - **Cloudflare Workers AI** (10.000 "neurons"/dia gratuitos, dividido entre todos os modelos): crie conta em cloudflare.com, copie o *Account ID* e crie um API Token com permissão "Workers AI".
+  - **Together AI** (modelo FLUX schnell gratuito, se ainda disponível): crie a chave em together.ai.
+  - **Hugging Face** (crédito mensal muito pequeno): crie um token em huggingface.co/settings/tokens.
+  - **OpenAI** é paga e nunca entra sozinha: só se listada em `IMAGEM_PROVEDORES`.
+  - Não há geração de **vídeo** gratuita por API que eu tenha encontrado; o vídeo do estúdio é a montagem automática. Para vídeo por IA use os prompts nas ferramentas com créditos diários no site (Kling, Veo/Flow etc.).
