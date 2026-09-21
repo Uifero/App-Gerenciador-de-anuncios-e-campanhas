@@ -41,6 +41,7 @@ export const TAREFAS = {
   hooks:       { modelo: MODELO_LEVE,     max: 2000 },
   refino:      { modelo: MODELO_LEVE,     max: 3000 },
   checklist:   { modelo: MODELO_LEVE,     max: 1200 },
+  imagem:      { modelo: MODELO_LEVE,     max: 1800 },
   criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium' },
   campanha:    { modelo: MODELO_COMPLEXO, max: 5000,  effort: 'medium' },
   referencias: { modelo: MODELO_COMPLEXO, max: 10000, effort: 'medium', web: true },

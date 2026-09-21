@@ -8,7 +8,7 @@ import { verificarOrcamento, registrarUso } from '../modules/custo.js';
 /**
  * Chamada única à IA (via servidor). O servidor escolhe o modelo pela `tarefa` (Haiku x Sonnet), aplica o limite de tokens
  * e o cache do bloco `estavel`. Aqui: confere o orçamento mensal antes e registra o consumo depois (gcc_uso_api).
- *  - tarefa: hooks | refino | checklist | criativos | campanha | referencias | analise | site | pacote | playbook
+ *  - tarefa: hooks | refino | checklist | imagem | criativos | campanha | referencias | analise | site | pacote | playbook
  *  - cliente: quem originou a chamada (para o custo por cliente); null em tarefas globais
  *  - estavel: texto que se repete entre chamadas do mesmo cliente (regras + perfil de marca) -> vai para o cache
  *  - system: instrução específica desta tarefa (muda a cada chamada, fica depois do cache)
@@ -242,6 +242,29 @@ ${REGRA_CRITICA(cliente)}`;
 Monte um playbook com 5 a 6 ângulos, do que mais costuma funcionar para o que costuma funcionar menos, e 3 hooks nativos/orgânicos por ângulo (1-2 frases faladas cada).
 Saída JSON: {"nome": string, "angulos": [{"angulo": string, "hooks": [string]}], "notas": string (2-3 frases: quando usar, cuidados do nicho)}. ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'playbook', system, messages: [{ role: 'user', content: pedido }] })).dados;
+}
+
+// ---------- prompts para geradores de imagem e vídeo (Haiku) ----------
+/**
+ * O Claude não gera imagem nem vídeo: aqui ele escreve os PROMPTS para você colar num gerador (Gemini, ChatGPT, Ideogram, Veo, Runway, Kling...).
+ * Devolve { foto: string, cenas: [string], dicas: string }. Prompts em inglês (funcionam melhor nos geradores) e sem texto dentro da imagem.
+ */
+export async function sugerirPromptsVisuais({ cliente, criativo }) {
+  const system = 'Você é diretor de arte de anúncios para redes sociais. Escreve prompts objetivos e visuais para geradores de imagem e de vídeo por IA.';
+  const pedido = `Cliente: ${cliente.nome} (${cliente.nicho || 'e-commerce'}). Tom de voz: ${cliente.marca?.tomDeVoz || 'natural'}.
+Criativo:
+Hook: ${criativo.hook}
+Copy/roteiro: ${criativo.copy}
+CTA: ${criativo.cta}
+Formato: ${criativo.formato}
+
+Escreva:
+1) "foto": UM prompt para gerar a foto estática do anúncio (vertical 4:5), em inglês, com produto, cenário, luz, enquadramento, estilo orgânico de redes sociais (não pareça banco de imagens). NÃO peça texto, letras nem logotipos dentro da imagem (o texto é colocado depois).
+2) "cenas": um prompt de vídeo por cena do roteiro (na ordem; se não houver cenas, crie de 3 a 5 cenas curtas de 3 a 6 s), em inglês, vertical 9:16, descrevendo ação, câmera e luz. Sem texto na tela.
+3) "dicas": 2 a 3 frases em português do Brasil sobre como usar (ex.: enviar a foto real do produto como referência ao gerador, manter o mesmo personagem entre as cenas).
+Saída JSON: {"foto": string, "cenas": [string], "dicas": string}. ${SO_JSON}`;
+  const d = (await gerarJSON({ tarefa: 'imagem', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
+  return { foto: String(d.foto || ''), cenas: Array.isArray(d.cenas) ? d.cenas.map(String) : [], dicas: String(d.dicas || '') };
 }
 
 // ---------- checklist de qualidade (Haiku: tarefa curta e barata) ----------

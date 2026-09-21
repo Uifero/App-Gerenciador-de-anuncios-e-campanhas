@@ -1,10 +1,11 @@
 // Estúdio de peças: entrega o material pronto (foto PNG e vídeo) a partir do criativo, direto no navegador.
 // Os arquivos são baixados no computador (não dependem do Storage); as fotos/vídeos de origem ficam só na sessão.
 import { tokenAtual } from '../core/auth.js';
+import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
   FORMATOS_IMAGEM, TEMPLATES, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
-import { $, esc, on, modal, toast, ocupado, opcoes } from '../core/ui.js';
+import { $, esc, on, modal, toast, ocupado, opcoes, copiar } from '../core/ui.js';
 
 const slug = (s) => String(s || 'criativo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 40) || 'criativo';
 const chavePref = (clienteId) => `gcc_estudio_${clienteId}`;
@@ -46,6 +47,11 @@ export function abrirEstudio(criativo, cliente) {
       <div><label class="label">Cor da marca</label><input type="color" data-cor value="${esc(est.cor)}" class="h-9 w-16 rounded border"></div>
       <div><label class="label">Cor do texto</label><input type="color" data-cor-texto value="${esc(est.corTexto)}" class="h-9 w-16 rounded border"></div>
     </div>
+    <div class="mt-3 rounded-lg border border-violet-200 p-2">
+      <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-medium text-violet-800"><i class="fa-solid fa-lightbulb"></i> Sem foto ou sem cenas? A IA escreve os prompts para você colar num gerador</p>
+        <button class="btn-ia btn-sm" data-sugerir-prompt>Sugerir prompts</button></div>
+      <p class="hint mt-1">O Claude não gera imagem nem vídeo: ele escreve o prompt (usa a sua assinatura). Cole no Gemini, ChatGPT, Ideogram, Veo, Runway ou Kling, baixe o resultado e envie aqui em "Fotos e vídeos".</p>
+      <div data-prompts class="mt-2 space-y-2"></div></div>
     <details class="mt-3 rounded-lg border border-violet-200 p-2"><summary class="cursor-pointer text-sm font-medium text-violet-800"><i class="fa-solid fa-wand-magic-sparkles"></i> Sem foto? Gerar imagem com IA (opcional, pago por imagem)</summary>
       <p class="hint my-2">Usa um gerador de imagens externo (chave <code>OPENAI_API_KEY</code> no servidor). Peça a imagem sem texto: o texto entra pelo template, com letras nítidas. Para produto real, prefira a foto verdadeira.</p>
       <div class="flex gap-2"><input class="input" data-prompt-ia value="${esc(`Foto publicitária vertical, estilo orgânico de redes sociais, para anúncio de ${cliente.nicho || 'produto'}: ${criativo.hook}. Sem texto, sem logotipos.`)}">
@@ -158,6 +164,17 @@ export function abrirEstudio(criativo, cliente) {
     for (const [i, f] of lista.entries()) { baixar(await pngDe(est.formato, { midia: f }), `${slug(criativo.nome)}-${est.formato}-foto${i + 1}.png`); await new Promise((r) => setTimeout(r, 400)); }
     toast(`${lista.length} peça(s) baixada(s). Se o navegador pedir, permita downloads múltiplos.`);
   }));
+
+  // ---- prompts para geradores externos (usa a assinatura, sem custo extra) ----
+  on(raiz, 'click', '[data-sugerir-prompt]', (b) => ocupado(b, async () => {
+    const r = await sugerirPromptsVisuais({ cliente, criativo });
+    const caixa = (rotulo, texto) => `<div class="rounded-lg bg-slate-50 p-2"><div class="mb-1 flex items-center justify-between"><b class="text-xs text-slate-600">${esc(rotulo)}</b>
+      <button class="btn-ghost btn-sm" data-copiar-prompt>Copiar</button></div><p class="whitespace-pre-wrap text-sm" data-texto-prompt>${esc(texto)}</p></div>`;
+    $('[data-prompts]', raiz).innerHTML = (r.foto ? caixa('Foto estática (4:5)', r.foto) : '') + r.cenas.map((c, i) => caixa(`Vídeo — cena ${i + 1} (9:16)`, c)).join('')
+      + (r.dicas ? `<p class="hint">${esc(r.dicas)}</p>` : '');
+    if (r.foto) $('[data-prompt-ia]', raiz).value = r.foto;
+  }));
+  on(raiz, 'click', '[data-copiar-prompt]', (b) => copiar($('[data-texto-prompt]', b.closest('div').parentElement).textContent));
 
   // ---- imagem por IA (opcional) ----
   on(raiz, 'click', '[data-gerar-ia]', (b) => ocupado(b, async () => {
