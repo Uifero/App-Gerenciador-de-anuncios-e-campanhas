@@ -12,9 +12,11 @@ npm run dev               # web em :5173 + servidor de IA em :8787
 Login = usuário criado no Firebase Auth (Console > Authentication). Desative o cadastro de novos usuários lá.
 
 ### IA em desenvolvimento: assinatura primeiro, API depois
-Com `IA_PROVEDOR=auto` (padrão do `.env.example`), em **desenvolvimento** o servidor usa primeiro a sua assinatura do Claude, chamando a CLI
-`claude -p` (sem custo por token; precisa estar logado no Claude Code), e só cai para a API da Anthropic se a CLI falhar **e** houver `ANTHROPIC_API_KEY`.
-O cabeçalho mostra o selo "IA: assinatura". Em **produção** a CLI é ignorada e só a API é usada. Diferenças no modo assinatura: mais lento
+Com `IA_PROVEDOR=auto` (padrão), o servidor usa **sempre primeiro** a sua assinatura do Claude, chamando a CLI `claude -p` (sem custo por token;
+precisa estar logado no Claude Code na máquina do servidor), e só recorre à API da Anthropic quando não dá para usar a assinatura (CLI ausente/sem login,
+limite da assinatura, erro) **e** há `ANTHROPIC_API_KEY`. Depois de uma falha a CLI fica em pausa por alguns minutos (as chamadas vão direto à API).
+O cabeçalho mostra "IA: assinatura" enquanto ela está em uso. Num servidor de produção sem o Claude logado, tudo cai para a API automaticamente.
+Atenção: a assinatura é pessoal — confira os termos do seu plano antes de depender dela para atender outras pessoas. Diferenças no modo assinatura: mais lento
 (10–60 s por chamada), sem prompt caching nem limite de tokens por operação, e o custo é registrado como US$ 0 (os tokens são registrados).
 Para testar com a API simulada ou forçar a API: `IA_PROVEDOR=api`.
 
