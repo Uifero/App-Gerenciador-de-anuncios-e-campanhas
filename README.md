@@ -23,9 +23,8 @@ Para testar com a API simulada ou forçar a API: `IA_PROVEDOR=api`.
 ## Segurança (leia antes de publicar)
 - **A chave da Anthropic nunca vai ao navegador.** O frontend chama `/api/claude`; `server/index.js` valida o ID token do
   Firebase (JWKS público do Google, sem credencial de admin) e só então chama a API. Defina `ADMIN_EMAIL` para aceitar só o administrador.
-- **`firestore.rules` PRESERVA a regra aberta do Painel de Comissões** (`painelComissoes`) e restringe `gcc_*` a usuário autenticado.
-  Publique com `firebase deploy --only firestore:rules,storage` — cuidado: se você editar as regras do painel, faça-o neste mesmo arquivo,
-  pois um deploy sobrescreve todas as regras do projeto.
+- **`firestore.rules` restringe `gcc_*` a usuário autenticado** (projeto Firebase próprio: `app-gerenciador-de-anuncios`).
+  Publique com `firebase deploy --only firestore:rules,storage`.
 - **Link de aprovação (público, sem login):** só funciona depois de publicar as regras. Elas abrem, para o público, apenas
   (1) a leitura do documento do link pelo token (nunca listagem, e só até expirar) e (2) a gravação da própria resposta
   (`aprovado`/`ajuste` + comentário de até 1000 caracteres) numa peça que pertence ao link. Nada mais é acessível. O token tem 192 bits aleatórios;
@@ -49,8 +48,7 @@ Para testar com a API simulada ou forçar a API: `IA_PROVEDOR=api`.
 ## Publicar para o cliente abrir o link de aprovação
 O link de aprovação abre a própria página do app (`#/aprovar/<token>`) e lê/grava direto no Firestore, então precisa de: (1) as **regras publicadas**
 e (2) o **frontend em um endereço público** (o servidor de IA NÃO é necessário para o cliente, só para você gerar com IA). Defina `VITE_URL_PUBLICA` com esse endereço
-antes de gerar links. **Cuidado com o Firebase Hosting:** o projeto `app-comissoes-vortex` já hospeda o Painel de Comissões no site padrão; publicar aqui
-sem criar um **site separado** (`firebase hosting:sites:create <nome>` + target) sobrescreveria o painel. Alternativas: Netlify/Vercel/Cloudflare Pages (`npm run build`, pasta `dist`,
+antes de gerar links. Hospedagem: Netlify/Vercel/Cloudflare Pages (`npm run build`, pasta `dist`,
 com as variáveis `VITE_FIREBASE_*`). Um túnel temporário (Cloudflare Tunnel/ngrok) também serve, mas só funciona com o seu computador ligado.
 O site exportável do cliente é um arquivo HTML independente do app: hospede-o onde quiser (não precisa do painel no ar).
 
