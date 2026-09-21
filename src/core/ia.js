@@ -69,6 +69,7 @@ export function contextoCliente(c) {
     m.objecoes && `Objeções comuns: ${m.objecoes}`,
     m.provasSociais && `Provas sociais disponíveis (únicas que podem ser citadas): ${m.provasSociais}`,
     m.usp && `Diferencial (USP): ${m.usp}`,
+    c.angulosSugeridos?.length && `Ângulos que costumam funcionar nesse tipo de produto (playbook "${c.playbookNome || ''}"): ${c.angulosSugeridos.join('; ')}`,
   ];
   if (c.estagio === 'rodando') {
     l.push(h.cpaMedio && `CPA médio atual: R$ ${h.cpaMedio}`, h.orcamentoDiario && `Orçamento diário atual: R$ ${h.orcamentoDiario}`,
@@ -181,4 +182,16 @@ export async function gerarTextosPacote({ cliente, produtos, plataforma }) {
   const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})`).join(', ') || 'a definir'}.
 Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}]}. ${SO_JSON}`;
   return (await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 10000 })).dados;
+}
+
+// ---------- playbooks ----------
+export async function gerarPlaybook({ tipoProduto, idioma = 'pt-BR' }) {
+  const cliente = { marca: { idioma, termosProibidos: '' } };
+  const system = `Você é estrategista de tráfego pago e monta playbooks: a sequência de ângulos e hooks que costuma funcionar para um tipo de produto.
+
+${REGRA_CRITICA(cliente)}`;
+  const pedido = `Tipo de produto/nicho: ${tipoProduto}.
+Monte um playbook com 5 a 6 ângulos, do que mais costuma funcionar para o que costuma funcionar menos, e 3 hooks nativos/orgânicos por ângulo (1-2 frases faladas cada).
+Saída JSON: {"nome": string, "angulos": [{"angulo": string, "hooks": [string]}], "notas": string (2-3 frases: quando usar, cuidados do nicho)}. ${SO_JSON}`;
+  return (await gerarJSON({ system, messages: [{ role: 'user', content: pedido }], maxTokens: 4000 })).dados;
 }

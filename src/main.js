@@ -15,6 +15,12 @@ import * as resultados from './modules/resultados.js';
 import * as produtos from './modules/produtos.js';
 import * as sites from './modules/sites.js';
 import * as relatorios from './modules/relatorios.js';
+import * as playbooks from './modules/playbooks.js';
+import * as onboarding from './modules/onboarding.js';
+import { montarBusca } from './modules/busca.js';
+import { aplicarTema, alternarTema, temaAtual } from './core/tema.js';
+
+aplicarTema();
 
 // Registro das abas do cliente (id do escopo -> renderizador).
 const ABAS = {
@@ -42,14 +48,21 @@ function telaLogin() {
   });
 }
 
+function iconeTema() { return temaAtual() === 'escuro' ? 'sun' : 'moon'; }
+
 function layout() {
-  app.innerHTML = `<header class="border-b border-slate-200 bg-white"><div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+  app.innerHTML = `<header class="sticky top-0 z-30 border-b border-slate-200 bg-white"><div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
     <a href="#/" class="font-bold text-slate-900">🎯 Gerenciador de Criativos e Campanhas</a>
-    <nav class="flex items-center gap-1 text-sm"><a class="btn-ghost btn-sm" href="#/" title="Visão geral de todos os clientes"><i class="fa-solid fa-house"></i> Início</a>
-      <a class="btn-ghost btn-sm" href="#/config" title="Ajustes globais"><i class="fa-solid fa-gear"></i> Configurações</a>
-      <button class="btn-ghost btn-sm" id="sair" title="Encerrar a sessão"><i class="fa-solid fa-right-from-bracket"></i> Sair</button></nav></div></header>
+    <div id="busca-slot" class="order-last w-full md:order-none md:ml-2 md:flex-1"></div>
+    <nav class="ml-auto flex items-center gap-1 text-sm"><a class="btn-ghost btn-sm" href="#/" title="Visão geral de todos os clientes"><i class="fa-solid fa-house"></i> <span class="hidden sm:inline">Início</span></a>
+      <a class="btn-ghost btn-sm" href="#/playbooks" title="Receitas de ângulos e hooks por tipo de produto"><i class="fa-solid fa-book-open"></i> <span class="hidden sm:inline">Playbooks</span></a>
+      <a class="btn-ghost btn-sm" href="#/config" title="Ajustes globais"><i class="fa-solid fa-gear"></i> <span class="hidden sm:inline">Configurações</span></a>
+      <button class="btn-ghost btn-sm" id="tema" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro"><i class="fa-solid fa-${iconeTema()}"></i></button>
+      <button class="btn-ghost btn-sm" id="sair" title="Encerrar a sessão"><i class="fa-solid fa-right-from-bracket"></i> <span class="hidden sm:inline">Sair</span></button></nav></div></header>
     <main id="main" class="mx-auto max-w-6xl px-4 py-6"></main>`;
   $('#sair').addEventListener('click', () => sair());
+  $('#tema').addEventListener('click', (e) => { alternarTema(); e.currentTarget.innerHTML = `<i class="fa-solid fa-${iconeTema()}"></i>`; });
+  montarBusca($('#busca-slot'), () => rotear());
 }
 
 async function rotear() {
@@ -64,7 +77,14 @@ async function rotear() {
   try {
     if (!partes.length) await dashboard.view(main);
     else if (partes[0] === 'config') await configuracoes.view(main);
-    else if (partes[0] === 'clientes' && partes[1] === 'novo') await clientes.viewForm(main, null);
+    else if (partes[0] === 'playbooks') await playbooks.view(main);
+    else if (partes[0] === 'clientes' && partes[1] === 'novo' && partes[2] === 'assistente') await onboarding.view(main);
+    else if (partes[0] === 'clientes' && partes[1] === 'novo' && partes[2] === 'completo') {
+      let baseId = null;   // vindo de "Duplicar como base"
+      try { baseId = sessionStorage.getItem('gcc_base'); sessionStorage.removeItem('gcc_base'); } catch { /* sem storage */ }
+      await clientes.viewForm(main, null, { baseId });
+    }
+    else if (partes[0] === 'clientes' && partes[1] === 'novo') await clientes.viewNovo(main);
     else if (partes[0] === 'c' && partes[2] === 'editar') await clientes.viewForm(main, partes[1]);
     else if (partes[0] === 'c') await clientes.viewCliente(main, partes[1], partes[2], ABAS);
     else main.innerHTML = '<p class="caption">Página não encontrada. <a class="text-indigo-600" href="#/">Voltar ao início</a></p>';

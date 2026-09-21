@@ -53,6 +53,12 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const base = preRef && referencias.find((r) => r.id === preRef);
   if (base) painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, base, atualizar);
   on(root, 'click', '[data-abrir]', (b) => detalhe(criativos.find((c) => c.id === b.dataset.abrir), cliente, cfg, recarregar));
+
+  // Vindo da busca global: abre direto o criativo encontrado.
+  let abrirId = null;
+  try { abrirId = sessionStorage.getItem('gcc_abrir_criativo'); sessionStorage.removeItem('gcc_abrir_criativo'); } catch { /* sem storage */ }
+  const alvoBusca = abrirId && criativos.find((c) => c.id === abrirId);
+  if (alvoBusca) detalhe(alvoBusca, cliente, cfg, recarregar);
 });
 
 function cartao(c, cfg) {
@@ -76,7 +82,9 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     <form id="fg" class="space-y-3">
       <div><label class="label">O que você quer comunicar?</label>
         <textarea class="input" rows="3" name="briefing" placeholder="Ex.: legging nova que não fica transparente no agachamento — foco em quem tem vergonha de treinar na academia"></textarea>
-        <p class="hint">Uma ou duas frases bastam. A IA usa o perfil de marca do cliente e as referências salvas.</p></div>
+        <p class="hint">Uma ou duas frases bastam. A IA usa o perfil de marca do cliente e as referências salvas.</p>
+        ${(cliente.angulosSugeridos || []).length ? `<div class="mt-2 flex flex-wrap items-center gap-1" title="Ângulos do playbook aplicado a este cliente. Clique para acrescentar ao briefing."><span class="hint !mt-0">Ângulos sugeridos (${esc(cliente.playbookNome || 'playbook')}):</span>
+          ${cliente.angulosSugeridos.map((a) => `<button type="button" class="tag hover:bg-indigo-100" data-ang="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}</div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, referência)</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           <div><label class="label">Modelo pronto</label><select class="input" name="modelo">${opcoes(MODELOS_CRIATIVO, '')}</select></div>
@@ -93,6 +101,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     <div id="saida"></div></div>`;
   const form = $('#fg', alvo), saida = $('#saida', alvo);
   on(alvo, 'click', '[data-x]', () => { alvo.innerHTML = ''; });
+  on(alvo, 'click', '[data-ang]', (b) => { const t = form.elements.briefing; t.value = (t.value ? t.value + '\n' : '') + 'Ângulo: ' + b.dataset.ang; t.focus(); });
 
   on(alvo, 'click', '[data-manual]', () => {
     const v = lerForm(form);

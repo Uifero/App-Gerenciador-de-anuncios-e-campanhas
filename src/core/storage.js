@@ -9,7 +9,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'fire
 export const COL = {
   config: 'gcc_configuracoes', clientes: 'gcc_clientes', criativos: 'gcc_criativos', hooks: 'gcc_hooks',
   referencias: 'gcc_referencias', campanhas: 'gcc_campanhas', resultados: 'gcc_resultados',
-  produtos: 'gcc_produtos', sites: 'gcc_sites',
+  produtos: 'gcc_produtos', sites: 'gcc_sites', playbooks: 'gcc_playbooks',
 };
 
 const agora = () => new Date().toISOString();
@@ -55,6 +55,9 @@ const remoto = {
 
 const drv = DEMO ? local : remoto;
 
+/** Avisa a interface que uma coleção mudou (ex.: o card de progresso do cliente se recalcula). */
+const avisar = (col) => { try { window.dispatchEvent(new CustomEvent('gcc:mudou', { detail: { col } })); } catch { /* fora do navegador */ } };
+
 export const db = {
   /** Lista documentos; `filtro` é igualdade simples (ex.: {clienteId}). Ordena por criadoEm desc. */
   async listar(col, filtro) {
@@ -65,10 +68,11 @@ export const db = {
   async criar(col, dados, id) {
     const d = semUndefined({ ...dados, criadoEm: agora(), atualizadoEm: agora() });
     const nid = await drv.criar(col, d, id);
+    avisar(col);
     return { id: nid, ...d };
   },
-  async atualizar(col, id, patch) { await drv.atualizar(col, id, semUndefined({ ...patch, atualizadoEm: agora() })); },
-  remover: (col, id) => drv.remover(col, id),
+  async atualizar(col, id, patch) { await drv.atualizar(col, id, semUndefined({ ...patch, atualizadoEm: agora() })); avisar(col); },
+  async remover(col, id) { await drv.remover(col, id); avisar(col); },
 };
 
 // ---------- arquivos ----------

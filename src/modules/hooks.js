@@ -10,6 +10,11 @@ const estrelas = (n) => (n ? '★'.repeat(n) + '☆'.repeat(5 - n) : 'sem nota')
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const todos = await db.listar(COL.hooks);
   let escopo = 'cliente', cat = '', busca = '';
+  // Vindo da busca global: mostra o hook encontrado (em qualquer escopo) e o destaca.
+  let destaque = null;
+  try { destaque = sessionStorage.getItem('gcc_abrir_hook'); sessionStorage.removeItem('gcc_abrir_hook'); } catch { /* sem storage */ }
+  const hookBusca = destaque && todos.find((h) => h.id === destaque);
+  if (hookBusca) escopo = hookBusca.clienteId === 'generico' ? 'generico' : hookBusca.clienteId === cliente.id ? 'cliente' : 'todos';
 
   const visiveis = () => todos.filter((h) => {
     if (escopo === 'cliente' && h.clienteId !== cliente.id) return false;
@@ -20,9 +25,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const lista = () => {
     const itens = visiveis();
     if (!itens.length) return vazio('bolt', 'Nenhum hook por aqui', 'Gere com IA ou escreva o seu. Hooks bons podem ser reaproveitados em outros clientes.');
-    return `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${itens.map((h) => `<div class="card">
+    return `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${itens.map((h) => `<div class="card ${h.id === destaque ? 'ring-2 ring-indigo-500' : ''}" data-hook-id="${h.id}">
       <p class="font-medium">“${esc(h.texto)}”</p>
-      <div class="mt-2 flex flex-wrap gap-1">${tag(nomeCat(h.categoria), 'tag-info')}${tag(h.clienteId === 'generico' ? 'genérico' : 'de ' + (h.clienteNome || 'cliente'))}${tag(estrelas(h.nota))}</div>
+      <div class="mt-2 flex flex-wrap gap-1">${h.angulo ? tag('ângulo: ' + h.angulo, 'tag-info') : tag(nomeCat(h.categoria), 'tag-info')}${tag(h.clienteId === 'generico' ? 'genérico' : 'de ' + (h.clienteNome || 'cliente'))}${tag(estrelas(h.nota))}</div>
       <p class="hint mt-2">${dataBR(h.criadoEm)}</p>
       <div class="mt-2 flex flex-wrap gap-1">
         <button class="btn-ghost btn-sm" data-copiar="${h.id}" title="Copiar o texto"><i class="fa-solid fa-copy"></i></button>
@@ -36,11 +41,12 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     '<button class="btn-ia" data-ia title="A IA cria vários hooks com o perfil de marca do cliente"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar com IA</button><button class="btn-ghost" data-manual title="Escreva um hook você mesmo">Adicionar manual</button>')}
     <div id="painel"></div>
     <div class="mb-4 flex flex-wrap gap-2">
-      <select class="input !w-auto" data-escopo><option value="cliente">Deste cliente</option><option value="generico">Genéricos</option><option value="todos">Todos os clientes</option></select>
+      <select class="input !w-auto" data-escopo><option value="cliente" ${escopo === 'cliente' ? 'selected' : ''}>Deste cliente</option><option value="generico" ${escopo === 'generico' ? 'selected' : ''}>Genéricos</option><option value="todos" ${escopo === 'todos' ? 'selected' : ''}>Todos os clientes</option></select>
       <select class="input !w-auto" data-cat><option value="">Todas as categorias</option>${opcoes(CATEGORIAS_HOOK, '')}</select>
       <input class="input !w-56" data-busca placeholder="Buscar no texto…"></div>
     <div id="lista">${lista()}</div>`;
   const redesenhar = () => { $('#lista', root).innerHTML = lista(); };
+  if (hookBusca) $(`[data-hook-id="${hookBusca.id}"]`, root)?.scrollIntoView({ block: 'center' });
   on(root, 'change', '[data-escopo]', (s) => { escopo = s.value; redesenhar(); });
   on(root, 'change', '[data-cat]', (s) => { cat = s.value; redesenhar(); });
   on(root, 'input', '[data-busca]', (i) => { busca = i.value; redesenhar(); });

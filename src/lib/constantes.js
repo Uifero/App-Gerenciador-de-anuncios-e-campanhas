@@ -64,4 +64,11 @@ export const STATUS_CAMPANHA = [['planejada', 'Planejada'], ['ativa', 'Ativa'], 
 export const PLATAFORMAS = [['nuvemshop', 'Nuvemshop'], ['shopify', 'Shopify']];
 export const STATUS_SITE = [['rascunho', 'Rascunho'], ['pronto', 'Pronto para entrega'], ['publicado', 'Publicado/Entregue']];
 
-export const CONFIG_PADRAO = { diasMinimosReferencia: 15, cortes: { moderado: 15, forte: 30 }, diasFadiga: 14 };
+export const CONFIG_PADRAO = {
+  diasMinimosReferencia: 15, cortes: { moderado: 15, forte: 30 }, diasFadiga: 14,
+  diasSemaforo: 7,  // janela (dias) de resultados recentes usada no semáforo
+  diasEscalar: 7,   // dias seguidos batendo a meta para sugerir "hora de escalar"
+};
+
+/** Escopo padrão de um cliente (módulos entregues). */
+export const ESCOPO_PADRAO = { criativos: true, hooks: true, referencias: true, campanhas: true, resultados: true, produtos: false, site: false, relatorio: true };
