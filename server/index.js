@@ -281,6 +281,8 @@ if (IS_PROD && fs.existsSync(dist)) {
 }
 
 // Só sobe o servidor quando executado diretamente (permite importar TAREFAS/calcularCusto em testes).
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Sob o PM2, argv[1] é o ProcessContainerFork.js do PM2; o script real vem em pm_exec_path.
+const principal = process.env.pm_exec_path || process.argv[1];
+if (principal && path.resolve(principal) === fileURLToPath(import.meta.url)) {
   app.listen(PORT, () => console.log(`[api] http://localhost:${PORT}  provedor=${PROVEDOR === 'cli' ? 'assinatura (API como reserva)' : 'API'}  leve=${MODELO_LEVE}  complexo=${MODELO_COMPLEXO}  auth-bypass=${AUTH_BYPASS}`));
 }
