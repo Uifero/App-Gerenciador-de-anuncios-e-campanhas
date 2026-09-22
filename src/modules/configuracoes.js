@@ -40,7 +40,11 @@ export async function view(el) {
         <div><label class="label">Janela do semáforo (dias)</label><input class="input" type="number" min="1" name="diasSemaforo" value="${c.diasSemaforo}">
           <p class="hint">O semáforo compara a meta com os resultados desses últimos dias. Padrão: 7.</p></div>
         <div><label class="label">Dias na meta para sugerir "hora de escalar"</label><input class="input" type="number" min="1" name="diasEscalar" value="${c.diasEscalar}">
-          <p class="hint">Um criativo em uso que bate a meta por este período seguido gera o alerta. Padrão: 7.</p></div></div></details>
+          <p class="hint">Um criativo em uso que bate a meta por este período seguido gera o alerta. Padrão: 7.</p></div>
+        <div><label class="label">Dias sem resposta do cliente para alertar</label><input class="input" type="number" min="1" name="diasAprovacaoPendente" value="${esc(c.diasAprovacaoPendente)}">
+          <p class="hint">Criativo enviado para aprovação e sem resposta do cliente por este tempo entra na Central de Alertas. Padrão: 5.</p></div>
+        <div><label class="label">Dias sem decisão para alertar</label><input class="input" type="number" min="1" name="diasCriativoSemDecisao" value="${esc(c.diasCriativoSemDecisao)}">
+          <p class="hint">Criativo em rascunho (nunca enviado) por este tempo entra na Central de Alertas. Padrão: 10.</p></div></div></details>
     <details class="rounded-lg border border-slate-200 p-3" open><summary class="cursor-pointer text-sm font-medium text-slate-600">Custos e limites de IA</summary>
       <div class="mt-3 space-y-3">
         <div class="grid gap-3 sm:grid-cols-2">
@@ -68,6 +72,8 @@ export async function view(el) {
       diasFadiga: num(v.fadiga) || 14,
       diasSemaforo: num(v.diasSemaforo) || 7,
       diasEscalar: num(v.diasEscalar) || 7,
+      diasAprovacaoPendente: num(v.diasAprovacaoPendente) || 5,
+      diasCriativoSemDecisao: num(v.diasCriativoSemDecisao) || 10,
       orcamentoIaMensalUsd: num(v.orcamentoIa) > 0 ? num(v.orcamentoIa) : null,
       cotacaoUsd: num(v.cotacao) > 0 ? num(v.cotacao) : 5.5,
       variacoesPadrao: Math.min(5, Math.max(1, Math.round(num(v.variacoes) || 4))),

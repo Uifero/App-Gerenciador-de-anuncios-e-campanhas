@@ -70,7 +70,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     <div class="mt-2 flex flex-wrap gap-1">
       <button class="btn-primary btn-sm" data-criativo="${r.id}" title="Abre a aba Criativos já usando esta referência como ponto de partida"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar criativo</button>
       ${!r.analise ? `<button class="btn-ia btn-sm" data-analisar="${r.id}">Analisar com IA</button>` : ''}
-      <button class="btn-danger btn-sm" data-apagar="${r.id}"><i class="fa-solid fa-trash"></i></button></div></div>`;
+      <button class="btn-danger btn-sm" data-apagar="${r.id}" title="Apagar esta referência"><i class="fa-solid fa-trash"></i></button></div></div>`;
 
   root.innerHTML = `${cabecalho('Referências', 'Seu swipe file: anúncios de mercado com análise. As salvas alimentam a geração de criativos.',
     `<button class="btn-ia" data-buscar title="Pesquisa na web anúncios ativos de empresas de destaque no nicho (mínimo ${cfg.diasMinimosReferencia} dias no ar)"><i class="fa-solid fa-magnifying-glass"></i> Buscar exemplos de mercado</button>

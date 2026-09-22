@@ -73,6 +73,8 @@ export const CONFIG_PADRAO = {
   diasMinimosReferencia: 15, cortes: { moderado: 15, forte: 30 }, diasFadiga: 14,
   diasSemaforo: 7,  // janela (dias) de resultados recentes usada no semáforo
   diasEscalar: 7,   // dias seguidos batendo a meta para sugerir "hora de escalar"
+  diasAprovacaoPendente: 5,   // dias sem resposta do cliente a um link de aprovação para virar alerta
+  diasCriativoSemDecisao: 10, // dias em rascunho (nunca enviado nem decidido) para virar alerta
   // --- Fase 3: custo e limites de IA ---
   orcamentoIaMensalUsd: null, // orçamento global do mês em US$ (null = sem limite)
   cotacaoUsd: 5.5,            // só para exibir o equivalente em R$ (estimativa editável)

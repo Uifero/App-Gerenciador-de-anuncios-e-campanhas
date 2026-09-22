@@ -1,5 +1,14 @@
 // Estúdio de peças: entrega o material pronto (foto PNG e vídeo) a partir do criativo, direto no navegador.
 // Os arquivos são baixados no computador (não dependem do Storage); as fotos/vídeos de origem ficam só na sessão.
+//
+// DECISÃO DE NAVEGAÇÃO (registrada, não é esquecimento): diferente dos demais módulos de entrega — que são uma
+// entrada em MODULOS, controlada por `escopo` e com rota própria (#/c/:id/:aba) — o Estúdio é aberto como um modal
+// de dentro do detalhe de UM criativo (abrirEstudio(criativo, cliente) em criativos.js), sem rota e fora do escopo.
+// Motivo: ele não é um repositório de itens do cliente como as outras abas, é uma ferramenta de exportação pontual
+// ligada a UM criativo específico (usa o hook/copy/roteiro dele para montar a peça); nada aqui fica salvo no
+// Firestore para listar depois. Reavaliar isso (virar aba própria) só faria sentido se o Estúdio passasse a guardar
+// um histórico de peças geradas por cliente — não é o caso hoje.
+
 import { tokenAtual } from '../core/auth.js';
 import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
@@ -7,8 +16,10 @@ import {
 } from '../lib/estudio.js';
 import { $, esc, on, modal, toast, ocupado, opcoes, copiar } from '../core/ui.js';
 import { CENAS_UNBOXING } from '../lib/constantes.js';
+import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
 
-const slug = (s) => String(s || 'criativo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 40) || 'criativo';
+/** slug() de lib/csv.js devolve '' para um nome vazio; aqui é nome de arquivo, então cai num nome genérico. */
+const nomeArquivo = (s) => (slug(s) || 'criativo').slice(0, 40);
 const chavePref = (clienteId) => `gcc_estudio_${clienteId}`;
 const lerPref = (clienteId) => { try { return JSON.parse(localStorage.getItem(chavePref(clienteId)) || '{}'); } catch { return {}; } };
 const gravarPref = (clienteId, p) => { try { localStorage.setItem(chavePref(clienteId), JSON.stringify(p)); } catch { /* sem armazenamento: só não lembra */ } };
@@ -48,15 +59,13 @@ export function abrirEstudio(criativo, cliente) {
       <div><label class="label">Cor da marca</label><input type="color" data-cor value="${esc(est.cor)}" class="h-9 w-16 rounded border"></div>
       <div><label class="label">Cor do texto</label><input type="color" data-cor-texto value="${esc(est.corTexto)}" class="h-9 w-16 rounded border"></div>
     </div>
-    <div class="mt-3 rounded-lg border border-violet-200 p-2">
-      <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-medium text-violet-800"><i class="fa-solid fa-lightbulb"></i> Sem foto ou sem cenas? A IA escreve os prompts para você colar num gerador</p>
-        <span class="flex flex-wrap items-center gap-2"><select class="input !w-auto" data-modelo-prompt title="Modelo de roteiro">
+    <details class="mt-3 rounded-lg border border-violet-200 p-2"><summary class="cursor-pointer text-sm font-medium text-violet-800"><i class="fa-solid fa-lightbulb"></i> Sem foto ou sem cenas? A IA escreve os prompts para você colar num gerador</summary>
+      <div class="mt-2 flex flex-wrap items-center justify-end gap-2"><select class="input !w-auto" data-modelo-prompt title="Modelo de roteiro">
           <option value="roteiro">Seguir o roteiro do criativo</option><option value="unboxing">UGC: unboxing + manuseio (6 cenas de 5 s)</option></select>
-        <button class="btn-ia btn-sm" data-sugerir-prompt>Sugerir prompts</button></span></div>
+        <button class="btn-ia btn-sm" data-sugerir-prompt>Sugerir prompts</button></div>
       <p class="hint mt-1">O Claude não gera imagem nem vídeo: ele escreve o prompt (usa a sua assinatura). Os prompts são em inglês porque os geradores entendem melhor; a tradução aparece embaixo de cada um. Cole no Gemini, ChatGPT, Ideogram, Veo, Runway ou Kling, baixe o resultado e envie aqui em "Fotos e vídeos".</p>
-      <div data-prompts class="mt-2 space-y-2"></div></div>
-    <div class="mt-3 rounded-lg border border-indigo-200 p-2">
-      <p class="text-sm font-medium text-indigo-800"><i class="fa-solid fa-film"></i> Animar uma foto com IA (clipe real de ~5 s)</p>
+      <div data-prompts class="mt-2 space-y-2"></div></details>
+    <details class="mt-3 rounded-lg border border-indigo-200 p-2"><summary class="cursor-pointer text-sm font-medium text-indigo-800"><i class="fa-solid fa-film"></i> Animar uma foto com IA (clipe real de ~5 s)</summary>
       <p class="hint my-1">A IA dá movimento à foto (pessoa, tecido, câmera). Leva de 1 a 3 minutos. <b>A foto é enviada por 1 hora a uma hospedagem pública anônima e ao gerador</b>: use só fotos que o cliente autorizou.</p>
       <div class="grid gap-2 sm:grid-cols-2">
         <div><label class="label">Foto</label><select class="input" data-animar-foto></select></div>
@@ -66,7 +75,7 @@ export function abrirEstudio(criativo, cliente) {
       </div>
       <div class="mt-2 flex flex-wrap items-center gap-2"><button class="btn-ia btn-sm" data-animar><i class="fa-solid fa-wand-magic-sparkles"></i> Animar com IA</button>
         <span class="hint" data-status-video></span></div>
-    </div>
+    </details>
     <details class="mt-3 rounded-lg border border-violet-200 p-2"><summary class="cursor-pointer text-sm font-medium text-violet-800"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar imagem com IA (gratuito, vários provedores em rodízio)</summary>
       <p class="hint my-2">O app tenta cada gerador gratuito configurado e, se um atingir a cota do dia, passa ao próximo. Peça a imagem sem texto: o texto entra pelo template, com letras nítidas. Para produto real, prefira a foto verdadeira.</p>
       <p class="mb-2 text-xs text-slate-600" data-status-ia>Carregando geradores…</p>
@@ -205,16 +214,16 @@ export function abrirEstudio(criativo, cliente) {
     desenharPeca(c.getContext('2d'), w, h, { ...cfgPeca(), ...extra });
     return canvasParaPng(c);
   };
-  on(raiz, 'click', '[data-baixar-foto]', (b) => ocupado(b, async () => { baixar(await pngDe(est.formato), `${slug(criativo.nome)}-${est.formato}.png`); toast('Foto baixada.'); }));
+  on(raiz, 'click', '[data-baixar-foto]', (b) => ocupado(b, async () => { baixar(await pngDe(est.formato), `${nomeArquivo(criativo.nome)}-${est.formato}.png`); toast('Foto baixada.'); }));
   on(raiz, 'click', '[data-baixar-todas]', (b) => ocupado(b, async () => {
-    for (const [f] of FORMATOS_IMAGEM) { baixar(await pngDe(f), `${slug(criativo.nome)}-${f}.png`); await new Promise((r) => setTimeout(r, 400)); }
+    for (const [f] of FORMATOS_IMAGEM) { baixar(await pngDe(f), `${nomeArquivo(criativo.nome)}-${f}.png`); await new Promise((r) => setTimeout(r, 400)); }
     toast('3 fotos baixadas. Se o navegador pedir, permita downloads múltiplos.');
   }));
 
   on(raiz, 'click', '[data-baixar-por-foto]', (b) => ocupado(b, async () => {
     const lista = fotos();
     if (!lista.length) throw new Error('Envie pelo menos uma foto em "Materiais".');
-    for (const [i, f] of lista.entries()) { baixar(await pngDe(est.formato, { midia: f }), `${slug(criativo.nome)}-${est.formato}-foto${i + 1}.png`); await new Promise((r) => setTimeout(r, 400)); }
+    for (const [i, f] of lista.entries()) { baixar(await pngDe(est.formato, { midia: f }), `${nomeArquivo(criativo.nome)}-${est.formato}-foto${i + 1}.png`); await new Promise((r) => setTimeout(r, 400)); }
     toast(`${lista.length} peça(s) baixada(s). Se o navegador pedir, permita downloads múltiplos.`);
   }));
 
@@ -388,7 +397,7 @@ export function abrirEstudio(criativo, cliente) {
         });
         if (est.urlVideo) URL.revokeObjectURL(est.urlVideo);
         est.urlVideo = URL.createObjectURL(r.blob);
-        const nome = `${slug(criativo.nome)}-${est.formatoVideo}.${r.ext}`;
+        const nome = `${nomeArquivo(criativo.nome)}-${est.formatoVideo}.${r.ext}`;
         $('[data-resultado]', raiz).innerHTML = `<video src="${esc(est.urlVideo)}" controls playsinline class="mx-auto max-h-[420px] rounded-lg bg-black"></video>
           <div class="mt-2 flex flex-wrap items-center gap-2"><button class="btn-primary btn-sm" data-baixar-video><i class="fa-solid fa-download"></i> Baixar ${esc(r.ext.toUpperCase())} (${r.duracao.toFixed(0)} s)</button></div>
           ${r.ext === 'webm' ? '<p class="mt-2 text-sm text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> Este navegador só gravou em WebM. O Meta Ads e o TikTok pedem MP4: atualize o Chrome/Edge ou converta o arquivo antes de subir.</p>' : ''}`;

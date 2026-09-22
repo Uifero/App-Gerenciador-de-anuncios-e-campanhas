@@ -9,6 +9,9 @@ import { acharTermosProibidos } from '../core/ia.js';
 import { CHECKLIST_QUALIDADE, FORMATOS } from '../lib/constantes.js';
 import { esc, $, on, modal, toast, copiar, ocupado, confirmar, dataBR, tag } from '../core/ui.js';
 
+/** Dias de validade padrão do link e limite de segurança para não sincronizar respostas de links muito antigos. */
+const VALIDADE_MAX_DIAS = 60;
+
 const rotuloFormato = (v) => (FORMATOS.find(([k]) => k === v) || [, v])[1];
 const DIA = 864e5;
 
@@ -53,27 +56,36 @@ export const revogarLink = (token) => db.remover(COL.aprovacoes, token);
 
 /**
  * Traz as respostas do cliente final para o painel: guarda `aprovacaoCliente` no criativo e move o status
- * (aprovou -> "Aprovado"; pediu ajuste -> volta a "Rascunho"). Retorna quantos criativos mudaram.
+ * (aprovou -> "Aprovado"; pediu ajuste -> volta a "Rascunho").
+ * Devolve { mudou, falhas }: quantos criativos foram atualizados e, se algum não pôde ser salvo, uma lista de
+ * { id, nome, erro } — um criativo com problema NÃO impede os outros de sincronizar (antes, um erro no meio da lista
+ * interrompia o restante; a leitura das respostas e cada gravação agora são isoladas e independentes).
  */
 export async function sincronizarAprovacoes(cliente, criativos) {
-  // Só criativos enviados nos últimos 60 dias (validade máxima do link): evita uma leitura extra a cada visita, para sempre.
-  const comLink = criativos.filter((c) => c.aprovacaoToken && Date.now() - new Date(c.aprovacaoEnviadaEm || 0).getTime() < 60 * DIA);
-  if (!comLink.length) return 0;
-  const respostas = await db.listar(COL.respostas, { clienteId: cliente.id });
+  // Só criativos enviados nos últimos VALIDADE_MAX_DIAS dias (validade máxima do link): evita uma leitura extra a cada visita, para sempre.
+  const comLink = criativos.filter((c) => c.aprovacaoToken && Date.now() - new Date(c.aprovacaoEnviadaEm || 0).getTime() < VALIDADE_MAX_DIAS * DIA);
+  if (!comLink.length) return { mudou: 0, falhas: [] };
+  const respostas = await db.listar(COL.respostas, { clienteId: cliente.id }); // se isto falhar (ex.: sem permissão), o erro sobe para quem chamou
   let mudou = 0;
+  const falhas = [];
   for (const c of comLink) {
-    const r = respostas.find((x) => x.token === c.aprovacaoToken && x.criativoId === c.id);
-    if (!r || r.em === c.aprovacaoCliente?.em) continue;
-    const anterior = c.aprovacaoCliente?.status;
-    const seguePendente = c.status === 'pronto_aprovacao';
-    const seguiaResposta = anterior && c.status === (anterior === 'aprovado' ? 'aprovado' : 'rascunho'); // cliente mudou de ideia e o admin não mexeu depois
-    const patch = { aprovacaoCliente: { status: r.status, comentario: r.comentario || '', em: r.em } };
-    if (seguePendente || seguiaResposta) patch.status = r.status === 'aprovado' ? 'aprovado' : 'rascunho';
-    await db.atualizar(COL.criativos, c.id, patch);
-    Object.assign(c, patch);
-    mudou++;
+    try {
+      const r = respostas.find((x) => x.token === c.aprovacaoToken && x.criativoId === c.id);
+      if (!r || r.em === c.aprovacaoCliente?.em) continue;
+      const anterior = c.aprovacaoCliente?.status;
+      const seguePendente = c.status === 'pronto_aprovacao';
+      const seguiaResposta = anterior && c.status === (anterior === 'aprovado' ? 'aprovado' : 'rascunho'); // cliente mudou de ideia e o admin não mexeu depois
+      const patch = { aprovacaoCliente: { status: r.status, comentario: r.comentario || '', em: r.em } };
+      if (seguePendente || seguiaResposta) patch.status = r.status === 'aprovado' ? 'aprovado' : 'rascunho';
+      await db.atualizar(COL.criativos, c.id, patch);
+      Object.assign(c, patch);
+      mudou++;
+    } catch (e) {
+      console.warn('[aprovação] não foi possível sincronizar a resposta do criativo', c.id, e);
+      falhas.push({ id: c.id, nome: c.nome, erro: e.message || String(e) });
+    }
   }
-  return mudou;
+  return { mudou, falhas };
 }
 
 /** Tag/resumo da resposta do cliente para os cards e o detalhe. */

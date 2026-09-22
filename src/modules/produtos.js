@@ -1,6 +1,7 @@
 // Aba Produtos: catálogo do cliente (base do site e do CSV de importação).
-import { db, COL, enviarArquivo, removerArquivo } from '../core/storage.js';
+import { db, COL, removerArquivo } from '../core/storage.js';
 import { esc, $, on, montar, cabecalho, vazio, tag, dataBR, moeda, toast, ocupado, lerForm, num, confirmar, modal } from '../core/ui.js';
+import { enviarArquivoOuAvisar } from '../lib/uploads.js';
 
 /** "Cor: Preto, Branco\nTamanho: P, M" -> [{nome:'Cor', valores:['Preto','Branco']}, ...] */
 export function parseVariacoes(txt) {
@@ -32,7 +33,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     <div><label class="label">Variações (uma por linha)</label><textarea class="input" rows="2" name="variacoes" placeholder="Cor: Preto, Branco&#10;Tamanho: P, M, G">${esc(variacoesTexto(p.variacoes))}</textarea>
       <p class="hint">Formato "Nome: valor, valor". Até 3 tipos de variação.</p></div>
     <div><label class="label">Fotos</label><input type="file" name="fotos" accept="image/*" multiple class="block text-sm">
-      ${(p.fotos || []).length ? `<div class="mt-2 flex flex-wrap gap-2">${p.fotos.map((f, i) => `<span class="relative"><img src="${esc(f.url)}" class="h-16 w-16 rounded object-cover" alt=""><button type="button" data-rmfoto="${i}" class="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1 text-xs text-white">×</button></span>`).join('')}</div>` : ''}</div>
+      ${(p.fotos || []).length ? `<div class="mt-2 flex flex-wrap gap-2">${p.fotos.map((f, i) => `<span class="relative"><img src="${esc(f.url)}" class="h-16 w-16 rounded object-cover" alt=""><button type="button" data-rmfoto="${i}" title="Remover esta foto" class="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1 text-xs text-white">×</button></span>`).join('')}</div>` : ''}</div>
     <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (promoção, destaque)</summary>
       <div class="mt-3 space-y-3"><div><label class="label">Preço promocional (R$)</label><input class="input" type="number" step="0.01" min="0" name="precoPromocional" value="${esc(p.precoPromocional)}">
         <p class="hint">Aparece na seção "Sale" do site e como "preço promocional" no CSV.</p></div>
@@ -59,7 +60,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         const id = p ? p.id : (await db.criar(COL.produtos, { ...dados, fotos })).id;
         const novas = [...f.elements.fotos.files];
         for (const arq of novas) {
-          const r = await enviarArquivo(`gcc/${cliente.id}/produtos/${id}/${Date.now()}_${arq.name.replace(/[^\w.-]/g, '_')}`, arq);
+          const r = await enviarArquivoOuAvisar(`gcc/${cliente.id}/produtos/${id}/${Date.now()}_${arq.name.replace(/[^\w.-]/g, '_')}`, arq);
           fotos.push({ url: r.url, path: r.path });
         }
         await db.atualizar(COL.produtos, id, { ...dados, fotos });

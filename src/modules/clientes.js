@@ -6,8 +6,9 @@ import { obterConfig } from './configuracoes.js';
 import { resumoCliente, semaforoHtml, cartaoProgresso } from './alertas.js';
 import { aplicarPlaybook, rascunhoDeCliente, abrirEditor } from './playbooks.js';
 import { resumoBase, copiarEstrutura } from './duplicar.js';
-import { cartaoCusto } from './custo.js';
+import { cartaoCusto, totalArquivadoDoCliente } from './custo.js';
 import { exportarDados } from './backup.js';
+import { contarDependentesCliente, apagarClienteEmCascata } from '../lib/cascata.js';
 
 export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]);
 
@@ -185,10 +186,11 @@ export async function viewCliente(el, id, aba, abasMap) {
   const atual = abas.find((a) => a.id === aba) || abas[0];
   const calcularResumo = async () => {
     const filtro = { clienteId: id };
-    const [cfg, criativos, resultados, campanhas, sites, uso] = await Promise.all([
-      obterConfig(), db.listar(COL.criativos, filtro), db.listar(COL.resultados, filtro), db.listar(COL.campanhas, filtro), db.listar(COL.sites, filtro), db.listar(COL.usoApi, filtro),
+    const [cfg, criativos, resultados, campanhas, sites, uso, usoArquivado] = await Promise.all([
+      obterConfig(), db.listar(COL.criativos, filtro), db.listar(COL.resultados, filtro), db.listar(COL.campanhas, filtro), db.listar(COL.sites, filtro),
+      db.listar(COL.usoApi, filtro), totalArquivadoDoCliente(id),
     ]);
-    return { ...resumoCliente(c, { criativos, resultados, campanhas, sites }, cfg), uso, cfg };
+    return { ...resumoCliente(c, { criativos, resultados, campanhas, sites }, cfg), uso, usoArquivado, cfg };
   };
   const resumoP = calcularResumo(); // começa já; a aba abaixo carrega em paralelo, sem esperar os cards
 
@@ -204,9 +206,18 @@ export async function viewCliente(el, id, aba, abasMap) {
       ${abas.map((a) => `<a href="#/c/${id}/${a.id}" title="${esc(a.legenda)}" class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${a.id === atual.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}"><i class="fa-solid fa-${a.icone} mr-1"></i>${a.nome}</a>`).join('')}
     </nav><div id="aba"></div>`;
 
-  on(el, 'click', '[data-excluir]', async () => {
-    if (!(await confirmar(`Apagar "${c.nome}"? Os criativos, hooks e demais dados ligados a ele ficam órfãos e deixam de aparecer.`, 'Apagar'))) return;
-    await db.remover(COL.clientes, id); toast('Cliente apagado.'); location.hash = '#/';
+  on(el, 'click', '[data-excluir]', async (btn) => {
+    const n = await contarDependentesCliente(id);
+    const partes = [
+      n.criativos && `${n.criativos} criativo(s)`, n.hooks && `${n.hooks} hook(s)`, n.referencias && `${n.referencias} referência(s)`,
+      n.campanhas && `${n.campanhas} campanha(s)`, n.resultados && `${n.resultados} resultado(s)`, n.produtos && `${n.produtos} produto(s)`,
+      n.sites && `${n.sites} site(s)`, n.aprovacoes && `${n.aprovacoes} link(s) de aprovação`, n.respostas && `${n.respostas} resposta(s) de cliente`,
+    ].filter(Boolean);
+    const msg = partes.length
+      ? `Apagar "${c.nome}" e tudo o que está ligado a ele — ${partes.join(', ')}? Esta ação não pode ser desfeita. Se quiser guardar esses dados, exporte um backup antes.`
+      : `Apagar "${c.nome}"? Esta ação não pode ser desfeita.`;
+    if (!(await confirmar(msg, 'Apagar tudo'))) return;
+    await ocupado(btn, async () => { await apagarClienteEmCascata(id); toast('Cliente e todos os dados ligados a ele foram apagados.'); location.hash = '#/'; });
   });
 
   // Mantém o card de progresso/semáforo em dia quando qualquer aba grava algo (só recalcula o card, não a aba).
@@ -220,7 +231,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       const r = await calcularResumo();
       if (!el.isConnected || !$('#lancamento', el)) return; // saiu da tela enquanto calculava
       $('#lancamento', el).outerHTML = cartaoProgresso(c, r);
-      const custo = $('#custo-ia', el); if (custo) custo.outerHTML = cartaoCusto(c, r.uso, r.cfg);
+      const custo = $('#custo-ia', el); if (custo) custo.outerHTML = cartaoCusto(c, r.uso, r.cfg, r.usoArquivado);
       if (abertoP) $('#lancamento', el).open = true;
       if (abertoC && $('#custo-ia', el)) $('#custo-ia', el).open = true;
     }, 300);
@@ -251,7 +262,7 @@ export async function viewCliente(el, id, aba, abasMap) {
 
   const cartoes = resumoP.then((r) => {
     if (!el.isConnected) return;
-    $('#cards', el).innerHTML = cartaoProgresso(c, r) + cartaoCusto(c, r.uso, r.cfg);
+    $('#cards', el).innerHTML = cartaoProgresso(c, r) + cartaoCusto(c, r.uso, r.cfg, r.usoArquivado);
   }).catch((e) => { console.error(e); if (el.isConnected) $('#cards', el).innerHTML = ''; });
 
   const modulo = abasMap[atual.id];

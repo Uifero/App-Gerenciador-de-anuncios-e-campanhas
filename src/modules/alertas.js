@@ -19,6 +19,12 @@ export function resumoCliente(c, d, cfg) {
     escalar: horaDeEscalar(rs, crs, c.metas, cfg),
     fadiga: crs.filter((x) => x.status === 'em_uso' && (diasDesde(x.emUsoDesde) ?? 0) >= cfg.diasFadiga)
       .map((x) => ({ criativoId: x.id, nome: x.nome, dias: diasDesde(x.emUsoDesde) })),
+    // Enviado ao cliente (link de aprovação) e sem resposta há muito tempo: o gargalo está do lado do cliente.
+    aprovacaoPendente: crs.filter((x) => x.status === 'pronto_aprovacao' && (diasDesde(x.aprovacaoEnviadaEm) ?? 0) >= (cfg.diasAprovacaoPendente ?? 5))
+      .map((x) => ({ criativoId: x.id, nome: x.nome, dias: diasDesde(x.aprovacaoEnviadaEm) })),
+    // Ainda em rascunho (nunca enviado, nem aprovado nem rejeitado) há muito tempo: o gargalo está do lado de cá.
+    semDecisao: crs.filter((x) => x.status === 'rascunho' && (diasDesde(x.criadoEm) ?? 0) >= (cfg.diasCriativoSemDecisao ?? 10))
+      .map((x) => ({ criativoId: x.id, nome: x.nome, dias: diasDesde(x.criadoEm) })),
     lancamento: checklistLancamento({ cliente: c, criativos: crs, campanhas: cps, site }),
   };
 }
@@ -39,18 +45,20 @@ export function semaforoHtml(sem, metas) {
 
 /** Junta os alertas de todos os clientes. itens = [{ cliente, resumo }] */
 export function agregar(itens, orcamento = []) {
-  const out = { fadiga: [], escalar: [], vermelhos: [], orcamento };
+  const out = { fadiga: [], escalar: [], vermelhos: [], orcamento, aprovacaoPendente: [], semDecisao: [] };
   for (const { cliente, resumo } of itens) {
     resumo.fadiga.forEach((f) => out.fadiga.push({ cliente, ...f }));
     resumo.escalar.forEach((e) => out.escalar.push({ cliente, ...e }));
+    resumo.aprovacaoPendente.forEach((a) => out.aprovacaoPendente.push({ cliente, ...a }));
+    resumo.semDecisao.forEach((s) => out.semDecisao.push({ cliente, ...s }));
     if (resumo.sem.estado === 'vermelho') out.vermelhos.push({ cliente, sem: resumo.sem });
   }
   return out;
 }
 
-/** Painel único do dashboard. */
+/** Painel único do dashboard: "o que precisa de atenção hoje" entre todos os clientes. */
 export function painelAlertas(a) {
-  const total = a.fadiga.length + a.escalar.length + a.vermelhos.length + (a.orcamento || []).length;
+  const total = a.fadiga.length + a.escalar.length + a.vermelhos.length + (a.orcamento || []).length + a.aprovacaoPendente.length + a.semDecisao.length;
   const linha = (cor, icone, html, href) => `<li><a href="${href}" class="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"><i class="fa-solid fa-${icone} mt-0.5 ${cor}"></i><span>${html}</span></a></li>`;
   const bloco = (titulo, legenda, itens) => (itens.length ? `<div><h4 class="text-sm font-semibold">${titulo} <span class="tag">${itens.length}</span></h4><p class="hint mb-1">${legenda}</p><ul>${itens.join('')}</ul></div>` : '');
   return `<section class="card mb-6" id="central-alertas" aria-label="Central de alertas">
@@ -60,9 +68,11 @@ export function painelAlertas(a) {
     ${total ? `<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       ${bloco('Clientes no vermelho', 'Resultados recentes piores que a meta em mais de 20%.', a.vermelhos.map((v) => linha('text-rose-500', 'circle-exclamation', `<b>${esc(v.cliente.nome)}</b> está fora da meta`, `#/c/${v.cliente.id}/resultados`)))}
       ${bloco('Hora de escalar', 'Criativos batendo a meta de forma consistente.', a.escalar.map((e) => linha('text-emerald-500', 'arrow-trend-up', `<b>${esc(e.cliente.nome)}</b> · “${esc(e.nome)}” está na meta há ${e.dias} dias. Considere aumentar o orçamento ou duplicar o conjunto.`, `#/c/${e.cliente.id}/resultados`)))}
+      ${bloco('Aguardando o cliente', 'Enviado para aprovação e sem resposta há muito tempo — vale cobrar.', a.aprovacaoPendente.map((x) => linha('text-amber-500', 'paper-plane', `<b>${esc(x.cliente.nome)}</b> · “${esc(x.nome)}” aguarda resposta há ${x.dias} dias`, `#/c/${x.cliente.id}/criativos`)))}
+      ${bloco('Sem decisão', 'Criativo criado e nunca enviado, nem aprovado nem rejeitado — parado do nosso lado.', a.semDecisao.map((x) => linha('text-slate-500', 'circle-question', `<b>${esc(x.cliente.nome)}</b> · “${esc(x.nome)}” parado há ${x.dias} dias`, `#/c/${x.cliente.id}/criativos`)))}
       ${bloco('Orçamento de IA', 'Gasto com IA perto ou acima do limite do mês.', (a.orcamento || []).map((o) => linha(o.pct >= 100 ? 'text-rose-500' : 'text-amber-500', 'coins', `<b>${esc(o.nome)}</b>: ${Math.round(o.pct)}% do limite (${usd(o.gasto)} de ${usd(o.orc)})`, o.escopo === 'global' ? '#/config' : `#/c/${o.clienteId}`)))}
       ${bloco('Fadiga de criativo', 'Criativos há muito tempo no ar.', a.fadiga.map((f) => linha('text-amber-500', 'hourglass-half', `<b>${esc(f.cliente.nome)}</b> · “${esc(f.nome)}” (${f.dias} dias no ar)`, `#/c/${f.cliente.id}/campanhas`)))}
-    </div>` : '<p class="text-sm text-slate-500">Nenhum criativo em fadiga, nenhum cliente no vermelho e nada pedindo escala agora.</p>'}</section>`;
+    </div>` : '<p class="text-sm text-slate-500">Nenhum criativo em fadiga, nenhum cliente no vermelho e nada pedindo escala, resposta ou decisão agora.</p>'}</section>`;
 }
 
 /** Barra de progresso do checklist de lançamento (dentro do cliente). */

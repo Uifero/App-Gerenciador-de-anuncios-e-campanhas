@@ -1,9 +1,11 @@
 // Aba Criativos: gerar (IA ou manual), refinar por chat com histórico de versões, aprovar, anexar arquivo final.
-import { db, COL, enviarArquivo, removerArquivo } from '../core/storage.js';
+import { db, COL, removerArquivo } from '../core/storage.js';
 import { gerarCriativos, refinarCriativo, checarQualidade, acharTermosProibidos } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
 import { abrirEnvio, sincronizarAprovacoes, tagAprovacao } from './aprovacao.js';
 import { abrirEstudio } from './estudio.js';
+import { apagarCriativoEmCascata } from '../lib/cascata.js';
+import { enviarArquivoOuAvisar } from '../lib/uploads.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -28,8 +30,15 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
     db.listar(COL.resultados, { clienteId: cliente.id }), obterConfig(),
   ]);
-  // Traz para o painel o que o cliente final respondeu pelo link de aprovação (falha aqui não impede de usar a aba).
-  try { await sincronizarAprovacoes(cliente, criativos); } catch (e) { console.warn('[aprovação] não foi possível sincronizar as respostas:', e); }
+  // Traz para o painel o que o cliente final respondeu pelo link de aprovação (falha aqui não impede de usar a aba,
+  // mas fica visível em vez de silenciosa: uma resposta que não aparece aqui era a causa mais provável de "não confirmado").
+  try {
+    const r = await sincronizarAprovacoes(cliente, criativos);
+    if (r.falhas.length) toast(`Não consegui atualizar ${r.falhas.length} resposta(s) de aprovação. Recarregue a página para tentar de novo.`, 'erro');
+  } catch (e) {
+    console.warn('[aprovação] não foi possível sincronizar as respostas:', e);
+    toast('Não consegui verificar as respostas de aprovação do cliente agora (veja o console). As peças continuam com o último status salvo.', 'erro');
+  }
   let filtro = '';
 
   const lista = () => {
@@ -229,7 +238,8 @@ function detalhe(c, cliente, cfg, recarregar) {
       <p class="hint mb-2">Gera a foto (PNG) e o vídeo prontos para subir no gerenciador de anúncios, a partir deste criativo.</p>
       <button class="btn-primary btn-sm" data-estudio><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar foto e vídeo</button></div>
 
-    <div class="mt-5 rounded-lg border border-slate-200 p-3"><h4 class="mb-2 text-sm font-semibold">Peça final (arquivo)</h4>
+    <details class="mt-5 rounded-lg border border-slate-200 p-3" ${c.arquivoUrl ? 'open' : ''}><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (anexo e histórico)</summary>
+    <div class="mt-3"><h4 class="mb-2 text-sm font-semibold">Peça final (arquivo)</h4>
       ${c.arquivoUrl ? `<p class="mb-2 text-sm">${tag('com arquivo', 'tag-ok')} ${esc(c.arquivoNome || '')}</p>
         <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="${esc(c.arquivoUrl)}" target="_blank" rel="noopener" download="${esc(c.arquivoNome || 'criativo')}"><i class="fa-solid fa-download"></i> Baixar</a>
         <button class="btn-ghost btn-sm" data-link><i class="fa-solid fa-link"></i> Copiar link compartilhável</button>
@@ -241,7 +251,8 @@ function detalhe(c, cliente, cfg, recarregar) {
       <ol class="space-y-2">${[...versoes].reverse().map((v) => `<li class="rounded-lg bg-slate-50 p-2 text-sm"><div class="flex justify-between"><b>v${v.n} · ${esc(v.nota || '')}</b><span class="hint">${dataBR(v.quando)}</span></div>
         <p class="line-clamp-2 text-slate-600">“${esc(v.hook)}”</p>
         ${v.n !== versoes.length ? `<button class="btn-ghost btn-sm mt-1" data-restaurar="${v.n}">Restaurar esta versão</button>` : '<span class="tag tag-ok mt-1">atual</span>'}</li>`).join('')}</ol></div>
-    <div class="mt-5 flex justify-end"><button class="btn-danger btn-sm" data-apagar><i class="fa-solid fa-trash"></i> Apagar criativo</button></div>`;
+    <div class="mt-5 flex justify-end"><button class="btn-danger btn-sm" data-apagar><i class="fa-solid fa-trash"></i> Apagar criativo</button></div>
+    </details>`;
   };
   desenhar();
 
@@ -311,7 +322,7 @@ function detalhe(c, cliente, cfg, recarregar) {
     const f = inp.files[0]; if (!f) return;
     await ocupado(inp, async () => {
       const caminho = `gcc/${cliente.id}/criativos/${c.id}/${Date.now()}_${f.name.replace(/[^\w.-]/g, '_')}`;
-      const r = await enviarArquivo(caminho, f);
+      const r = await enviarArquivoOuAvisar(caminho, f);
       if (c.arquivoPath) await removerArquivo(c.arquivoPath);
       const patch = { arquivoUrl: r.url, arquivoPath: r.path, arquivoNome: f.name };
       await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch);
@@ -326,7 +337,7 @@ function detalhe(c, cliente, cfg, recarregar) {
     await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch); desenhar(); recarregar();
   });
   on(alvo, 'click', '[data-apagar]', async () => {
-    if (!(await confirmar('Apagar este criativo e o arquivo dele?', 'Apagar'))) return;
-    await removerArquivo(c.arquivoPath); await db.remover(COL.criativos, c.id); m.fechar(); recarregar(); toast('Criativo apagado.');
+    if (!(await confirmar('Apagar este criativo? Também apaga o arquivo anexado, os resultados registrados para ele e as respostas de aprovação recebidas. Esta ação não pode ser desfeita.', 'Apagar'))) return;
+    await apagarCriativoEmCascata(c.id, c.arquivoPath); m.fechar(); recarregar(); toast('Criativo e os dados ligados a ele foram apagados.');
   });
 }

@@ -36,3 +36,40 @@ export async function exportarDados(cliente = null) {
   toast(`Exportado: ${total} documento(s) em ${Object.keys(dados.colecoes).length} coleções.`);
   return total;
 }
+
+// ---------------- importação / restauração ----------------
+
+/** Lê e valida um arquivo escolhido pelo usuário. Lança um erro com mensagem clara se não for um backup válido deste app. */
+export async function lerArquivoBackup(file) {
+  let texto;
+  try { texto = await file.text(); } catch { throw new Error('Não consegui ler o arquivo.'); }
+  let dados;
+  try { dados = JSON.parse(texto); } catch { throw new Error('Arquivo inválido: não é um JSON válido.'); }
+  if (dados?.app !== 'gerenciador-criativos-campanhas' || !dados.colecoes) throw new Error('Este arquivo não parece ser um backup deste app.');
+  if (dados.versao !== 1) throw new Error(`Versão do backup (${dados.versao}) não é compatível com este app.`);
+  return dados;
+}
+
+/** [coleção, quantos documentos seriam gravados] — para mostrar antes de confirmar. Respostas de aprovação não
+ * entram: o backup não guarda o token/id delas (por segurança), então não dá para restaurá-las corretamente. */
+export function resumoRestauracao(dados) {
+  return Object.entries(dados.colecoes).filter(([col]) => col !== COL.respostas).map(([col, itens]) => [col, (itens || []).length]).filter(([, n]) => n > 0);
+}
+
+/**
+ * Restaura um backup: grava cada documento de volta na mesma coleção e com o mesmo id, por CIMA de qualquer
+ * documento existente com esse id (upsert — é uma restauração, não uma mesclagem). Mantém `criadoEm`/`atualizadoEm`
+ * originais (grava com `db.definir`, que não mexe em datas). Devolve o total de documentos restaurados.
+ */
+export async function restaurarBackup(dados) {
+  let total = 0;
+  for (const [col, itens] of Object.entries(dados.colecoes)) {
+    if (col === COL.respostas) continue; // sem id/token no arquivo: não é possível restaurar com segurança
+    for (const { id, ...doc } of itens || []) {
+      if (!id) continue;
+      await db.definir(col, id, doc);
+      total++;
+    }
+  }
+  return total;
+}

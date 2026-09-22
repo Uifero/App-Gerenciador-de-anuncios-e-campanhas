@@ -54,28 +54,51 @@ O site exportável do cliente é um arquivo HTML independente do app: hospede-o 
 
 ## Backup
 "Exportar dados" (início = tudo; dentro do cliente = só ele) baixa um JSON. Não inclui os arquivos do Storage (só os links) nem os
-tokens dos links de aprovação. Ainda não há importação/restauração pela interface.
+tokens dos links de aprovação (por segurança). "Importar backup" (início) lê esse mesmo arquivo e grava cada documento de volta,
+**por cima de qualquer um existente com o mesmo id** — é uma restauração, não uma mesclagem; use para recuperar de uma perda de
+dados, não como rotina. As respostas de aprovação não são restauradas (o arquivo não guarda o token/id delas).
+
+## Storage (upload de arquivo final e fotos de produto)
+Enviar o arquivo final de um criativo ou fotos de produto usa o Firebase Storage do projeto, que **exige o plano Blaze**
+(pago por uso; tem cota gratuita generosa, mas exige cartão cadastrado no projeto Firebase). Enquanto o Storage não estiver
+ativado no console do projeto, o upload falha e a interface mostra um aviso explicando isso — o resto do app funciona
+normalmente sem essas duas telas. Para ativar: Console do Firebase > Storage > "Vamos começar" (isso muda o projeto para o
+plano Blaze) e depois `firebase deploy --only storage` para publicar `storage.rules`.
+
+## Custo de IA: arquivamento mensal
+`gcc_uso_api` guarda um documento por chamada de IA. Para não crescer para sempre, meses **fechados** (qualquer mês que não
+seja o atual) são resumidos automaticamente num único documento em `gcc_uso_api_resumo` (total de tokens/custo, por cliente e
+por tipo de operação) e os registros individuais daquele mês são apagados. Isso acontece sozinho, em segundo plano, na
+primeira vez que o Início é aberto depois da virada do mês (cobre até 6 meses de atraso). O mês corrente nunca é fechado — o
+card "Custo de IA" do início e do cliente continuam mostrando o gasto do mês em curso normalmente; o card do cliente soma o
+total arquivado dos meses fechados ao total acumulado, mas sem o detalhe por operação desses meses (só o total).
 
 ## Produção
-`npm run build` e `npm start` (Express serve `dist/` + `/api`). Precisa de um host Node (Render, Railway, Cloud Run, VPS).
-Firebase Hosting sozinho não roda o servidor de IA.
+Hospedagem decidida: **VPS sempre ligado, processo mantido pelo PM2** (`npm run build` e depois `pm2 start server/index.js
+--name gcc -- ` com `NODE_ENV=production`, ou um `ecosystem.config.js` do PM2 apontando pra isso). O Express serve `dist/` +
+`/api` no mesmo processo. Firebase Hosting sozinho não roda o servidor de IA. Como o processo fica sempre no ar (sem
+escalar a zero nem trocar de instância), os limitadores de taxa e os contadores de cota diária do Estúdio (em memória e em
+`server/.uso-imagens.json`/`.uso-videos.json`) continuam funcionando como estão — não há necessidade de movê-los para o
+Firestore nessa hospedagem.
 
 ## Estrutura
 - `src/core`: firebase, auth, storage (dados + arquivos), ui, ia (prompts), tema
 - `src/modules`: uma responsabilidade por arquivo (clientes, onboarding, criativos, hooks, referencias, campanhas, resultados, produtos, sites,
-  relatorios, dashboard, alertas, playbooks, duplicar, busca, custo, backup, aprovacao, configuracoes)
-- `src/lib`: constantes, regras puras (metricas), geração de site, CSV, PDF
-- `server/`: proxy autenticado para a Anthropic (modelo por tarefa, cache, custo, busca web)
+  relatorios, dashboard, alertas, playbooks, duplicar, busca, custo, backup, aprovacao, configuracoes, estudio)
+- `src/lib`: constantes, regras puras (metricas), geração de site, CSV, PDF, exclusão em cascata (cascata.js), envio de arquivo com mensagem clara (uploads.js)
+- `server/`: proxy autenticado para a Anthropic (modelo por tarefa, cache, custo, busca web), geração de imagem/vídeo por IA
 
 Coleções Firestore: `gcc_configuracoes`, `gcc_clientes`, `gcc_criativos`, `gcc_hooks`, `gcc_referencias`, `gcc_campanhas`, `gcc_resultados`,
-`gcc_produtos`, `gcc_sites`, `gcc_playbooks`, `gcc_uso_api`, `gcc_aprovacoes`, `gcc_aprovacao_respostas`.
-Arquivos no Storage: `gcc/{clienteId}/...`.
+`gcc_produtos`, `gcc_sites`, `gcc_playbooks`, `gcc_uso_api`, `gcc_uso_api_resumo` (arquivo mensal, ver "Custo de IA: arquivamento mensal"),
+`gcc_aprovacoes`, `gcc_aprovacao_respostas`.
+Arquivos no Storage: `gcc/{clienteId}/...` (exige o plano Blaze — ver "Storage").
 
 ## Estúdio de peças (foto e vídeo prontos para a campanha)
 No detalhe de cada criativo, **"Gerar foto e vídeo"** monta o material a partir do texto do criativo, direto no navegador (sem custo por peça):
 - **Foto (PNG):** 3 templates (foto em tela cheia, foto + painel de cor, só texto) nos formatos 1:1, 4:5 e 9:16, com logo e cores da marca.
 - **Vídeo (MP4):** a linha do tempo vem do roteiro ("Cena 1 (0-3s): … Voz: …"), com legendas animadas, fotos/vídeos em rodízio, música opcional e CTA final. A gravação é em tempo real e a aba precisa ficar visível. Se o navegador só gravar WebM, converta para MP4 (Meta/TikTok pedem MP4).
 - Os arquivos são **baixados no computador** (não usam o Storage). As fotos de origem escolhidas no estúdio não ficam salvas.
+- **Navegação (decisão, não esquecimento):** o Estúdio abre como modal de dentro do criativo, sem rota própria e fora do `escopo` do cliente — ele não guarda um histórico de peças no Firestore (é uma exportação pontual ligada a um criativo), então não segue o padrão de aba dos demais módulos. Ver comentário no topo de `src/modules/estudio.js`.
 - **Prompts (assinatura):** "Sugerir prompts" faz o Claude escrever prompts de imagem e de vídeo para colar em geradores externos. O Claude não gera imagem nem vídeo.
 - **Imagem por IA gratuita, em rodízio** (`server/imagens.js`): tenta os provedores na ordem de `IMAGEM_PROVEDORES` (só os que têm chave no `.env`); se um falhar ou passar do limite diário do app, usa o próximo. Cotas gratuitas mudam: confira nos sites.
   - **Cloudflare Workers AI** (10.000 "neurons"/dia gratuitos, dividido entre todos os modelos): crie conta em cloudflare.com, copie o *Account ID* e crie um API Token com permissão "Workers AI".

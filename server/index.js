@@ -7,6 +7,7 @@ import { gerarImagem, statusImagens } from './imagens.js';
 import { animarImagem, statusVideo } from './videos.js';
 import 'dotenv/config';
 import express from 'express';
+import helmet from 'helmet';
 import Anthropic from '@anthropic-ai/sdk';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import path from 'node:path';
@@ -152,6 +153,12 @@ async function viaCli({ tarefa, t, estavel, system, messages, webSearch }) {
 
 const app = express();
 app.disable('x-powered-by');
+// Cabeçalhos de segurança básicos (helmet). CSP fica desligada por enquanto: o app serve um <script> inline
+// (detecção de tema em index.html) e o navegador fala direto com domínios do Firebase/Google — uma política
+// restritiva quebraria login e leitura de dados. Ativar com um allowlist dedicado é trabalho futuro deliberado,
+// não um esquecimento. As demais proteções do helmet (X-Frame-Options, X-Content-Type-Options, HSTS, etc.)
+// ficam ativas com os padrões da lib.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false, crossOriginEmbedderPolicy: false }));
 // /api/video recebe a foto em base64 (até ~12 MB); as demais rotas ficam em 1 MB.
 const jsonPadrao = express.json({ limit: '1mb' });
 app.use((req, res, next) => (req.path === '/api/video' ? next() : jsonPadrao(req, res, next)));
