@@ -115,9 +115,15 @@ const idiomaLinha = (cliente) => `IDIOMA DOS TEXTOS (obrigatório): ${IDIOMA_NOM
 const SO_JSON = 'Responda APENAS com JSON válido, sem texto antes ou depois, sem cercas de código.';
 
 // ---------- criativos ----------
-export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base }) {
+/** Descrição estruturada do produto (aba Produtos), além do que já foi escrito no briefing — reforça preço/categoria. */
+function contextoProduto(p) {
+  if (!p) return '';
+  return `\nPRODUTO SELECIONADO (dados exatos do catálogo — use-os, não invente outros): "${p.nome}"${p.categoria ? `, categoria ${p.categoria}` : ''}${p.preco ? `, preço R$ ${p.preco}` : ''}${p.precoPromocional ? ` (promocional R$ ${p.precoPromocional})` : ''}.${p.descricao ? ` Descrição: ${p.descricao}` : ''}`;
+}
+
+export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base, produto }) {
   const n = Math.min(5, Math.max(1, Number(quantidade) || 4));
-  const system = `Você é um copywriter e estrategista de tráfego pago sênior. Cria anúncios que parecem conteúdo orgânico.${contextoReferencias(referencias)}${contextoResultados(resultados)}`;
+  const system = `Você é um copywriter e estrategista de tráfego pago sênior. Cria anúncios que parecem conteúdo orgânico.${contextoReferencias(referencias)}${contextoResultados(resultados)}${contextoProduto(produto)}`;
   const pedido = [
     n === 1 ? 'Gere 1 variação de criativo.' : `Gere ${n} variações de criativo, cada uma com hook e ângulo diferentes.`,
     briefing && `Briefing: ${briefing}`,
@@ -272,6 +278,23 @@ Saída JSON: {"foto": string, "fotoPt": string, "cenas": [string], "cenasPt": [s
   const d = (await gerarJSON({ tarefa: 'imagem', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
   const lista = (v) => (Array.isArray(v) ? v.map(String) : []);
   return { foto: String(d.foto || ''), fotoPt: String(d.fotoPt || ''), cenas: lista(d.cenas), cenasPt: lista(d.cenasPt), legendas: lista(d.legendas), filmagem: lista(d.filmagem), dicas: String(d.dicas || '') };
+}
+
+// ---------- insights (explica em texto os padrões já calculados localmente, sem inventar números novos) ----------
+/**
+ * A IA NÃO calcula o padrão (isso é feito sem IA, em insights.js, direto dos números) — ela só lê os grupos já
+ * prontos (ângulo/framework/formato com ROAS/CPA médio e nº de amostras) e escreve uma explicação curta e
+ * recomendações acionáveis. `padroesNicho` (opcional) já vem sem nenhuma identificação de outro cliente.
+ */
+export async function explicarInsights({ cliente, padroes, padroesNicho }) {
+  const system = 'Você é um estrategista de mídia paga que interpreta dados de performance e sugere próximos passos claros e realistas. Nunca invente números que não estejam nos dados fornecidos.';
+  const resumirGrupos = (p) => Object.entries(p || {}).filter(([, l]) => l.length).map(([campo, l]) =>
+    `${campo}: ` + l.slice(0, 5).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio?.toFixed(2) ?? 'n/d'}, ${g.amostras} amostra(s))`).join('; ')).join('\n');
+  const pedido = `Padrões deste cliente (já calculados, média ponderada pelo gasto):\n${resumirGrupos(padroes) || '(nenhum com amostra suficiente)'}
+${padroesNicho ? `\nPadrões agregados de OUTROS clientes do mesmo nicho (${cliente.nicho}), sem identificar quem são:\n${resumirGrupos(padroesNicho) || '(nenhum com amostra suficiente)'}` : ''}
+Explique em português do Brasil, de forma curta e direta, o que esses números sugerem e o que testar a seguir para ${cliente.nome}. Use só os dados acima — não invente ângulos, frameworks nem números novos. Se os dados forem poucos, diga isso e sugira registrar mais resultados.
+Saída JSON: {"resumo": string (2-4 frases), "recomendacoes": [string] (1 a 3 ações práticas)}. ${SO_JSON}`;
+  return (await gerarJSON({ tarefa: 'insights', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
 // ---------- checklist de qualidade (Haiku: tarefa curta e barata) ----------

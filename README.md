@@ -84,7 +84,7 @@ Firestore nessa hospedagem.
 ## Estrutura
 - `src/core`: firebase, auth, storage (dados + arquivos), ui, ia (prompts), tema
 - `src/modules`: uma responsabilidade por arquivo (clientes, onboarding, criativos, hooks, referencias, campanhas, resultados, produtos, sites,
-  relatorios, dashboard, alertas, playbooks, duplicar, busca, custo, backup, aprovacao, configuracoes, estudio)
+  relatorios, dashboard, alertas, playbooks, duplicar, busca, custo, backup, aprovacao, configuracoes, estudio, insights)
 - `src/lib`: constantes, regras puras (metricas), geração de site, CSV, PDF, exclusão em cascata (cascata.js), envio de arquivo com mensagem clara (uploads.js)
 - `server/`: proxy autenticado para a Anthropic (modelo por tarefa, cache, custo, busca web), geração de imagem/vídeo por IA
 
@@ -107,3 +107,14 @@ No detalhe de cada criativo, **"Gerar foto e vídeo"** monta o material a partir
   - **OpenAI** é paga e nunca entra sozinha: só se listada em `IMAGEM_PROVEDORES`.
   - **Foto → vídeo com IA** (`server/videos.js`): "Animar com IA" dá movimento real a uma foto (clipe de ~5 s) usando o modelo LTX da **Pixazo** (gratuito na fase de prévia, sem cartão; limites e termos podem mudar, e o uso comercial depende dos termos deles). Crie a conta em pixazo.ai, gere a chave e coloque `PIXAZO_API_KEY` no `.env`. A Pixazo só aceita a foto por URL pública: o servidor a envia por 1 hora à hospedagem anônima litterbox.catbox.moe. **Use só fotos que o cliente autorizou.** Limite do app: `VIDEO_LIMITE_DIA` (padrão 10).
   - Vídeo 100% gerado por IA a partir de texto não tem opção gratuita por API; para isso use os prompts nas ferramentas com créditos diários no site (Kling, Veo/Flow etc.).
+
+## Insights (Performance + IA)
+- **Atribuição por versão:** cada versão salva de um criativo (histórico já existente) agora também guarda o ângulo/framework/gatilho/formato daquele momento. Ao registrar um resultado, o app descobre sozinho qual versão estava ativa na data informada e atribui a ela — editar o criativo depois não muda a atribuição dos resultados já registrados.
+- **Card "Insights" (aba Resultados):** calcula, **sem IA e sem custo**, o ROAS/CPA médio (ponderado pelo gasto) por ângulo, framework e formato — só do próprio cliente e, quando há outro cliente do mesmo nicho com resultados, também o padrão agregado deles (nunca mostra de qual cliente veio cada número). O botão "Pedir explicação à IA" é opcional: a IA só lê esses números prontos e escreve uma explicação — nunca calcula um padrão novo.
+- **Sugestão proativa:** ao criar um criativo, se houver um ângulo/framework comprovado em clientes de nicho semelhante que este cliente ainda não testou, aparece como uma tag clicável (mesmo padrão das sugestões de playbook) com a origem explicada no `title`.
+- **Central de Alertas:** ganhou o bloco "Padrão comprovado ainda não testado", calculado a partir dos dados que o dashboard já carrega (sem leitura extra no Firestore).
+
+## Site, campanhas e produtos integrados
+- **Campanha → site:** ao criar uma campanha, o campo "URL de destino" já vem preenchido com o link publicado do cliente (Site/Loja, qualquer um dos dois modos); sem site publicado, o formulário avisa em vez de deixar em branco. O checklist final mostra essa URL já com `utm_source/utm_medium/utm_campaign`.
+- **Criativos aprovados → prova social do site:** no detalhe de um criativo aprovado, marque "Usar como prova social no site"; na aba Site/Loja, o botão "Atualizar depoimentos com estes N criativo(s)" traz o hook (e o vídeo/imagem anexado, se houver) como depoimento — sem sobrescrever os depoimentos escritos à mão.
+- **Produto → criativo:** ao criar um criativo, um seletor de produto (cadastrado em Produtos) prefixa o briefing com nome/categoria/preço/descrição, editável antes de gerar.

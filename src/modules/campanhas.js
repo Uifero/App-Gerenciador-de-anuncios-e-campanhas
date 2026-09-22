@@ -12,16 +12,27 @@ import {
 const COR_STATUS = { planejada: '', ativa: 'tag-ok', pausada: 'tag-warn', encerrada: 'tag-bad' };
 const nomeStatus = (v) => (STATUS_CAMPANHA.find(([k]) => k === v) || [, v])[1];
 
+/** URL de destino com parâmetros UTM básicos (fonte/campanha), só para o checklist — a pessoa pode ajustar na hora. */
+function urlComUtm(url, nomeCampanha) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    u.searchParams.set('utm_source', 'meta'); u.searchParams.set('utm_medium', 'paid'); u.searchParams.set('utm_campaign', nomeCampanha || '');
+    return u.toString();
+  } catch { return url; } // URL sem protocolo válido: devolve como veio, sem travar o checklist
+}
+
 /** Checklist padrão (usado no modo manual e como complemento quando a IA não traz um). */
 export function checklistPadrao(c, cliente) {
   const e = c.estruturaTeste || {};
   const pubs = (c.publicos || []).map((p) => p.nome).join(', ') || 'a definir';
+  const destino = urlComUtm(c.urlDestino, c.nome);
   return [
     `Criar campanha "${c.nome}" com objetivo ${c.objetivo || 'Vendas'} (${cliente.estagio === 'novo' ? 'teste inicial' : 'otimização/escala'}).`,
     `Definir orçamento diário total: ${c.orcamentoDiario ? 'R$ ' + c.orcamentoDiario : 'a definir'}${c.orcamentoNota ? ' — ' + c.orcamentoNota : ''}.`,
     `Criar ${e.conjuntos || 'os conjuntos de anúncios'} com os públicos: ${pubs}.`,
     `Subir os criativos aprovados (${(c.criativos || []).length}) ${e.criativosPorConjunto ? '— ' + e.criativosPorConjunto : 'em conjuntos separados para testar cada ângulo'}.`,
-    'Conferir pixel/evento de conversão e URL de destino com parâmetros UTM.',
+    destino ? `Conferir pixel/evento de conversão. URL de destino (já com UTM): ${destino}` : 'Conferir pixel/evento de conversão e URL de destino com parâmetros UTM (nenhum site publicado ainda para sugerir o link).',
     `Deixar rodar ${e.duracaoDias || 3}+ dias antes de mexer${e.criterioDecisao ? '. Critério: ' + e.criterioDecisao : ''}.`,
     'Marcar cada criativo como "em uso" aqui no app para acompanhar a fadiga.',
   ];
@@ -29,10 +40,18 @@ export function checklistPadrao(c, cliente) {
 const checklistFinal = (c, cliente) => (c.checklistMeta?.length ? c.checklistMeta : checklistPadrao(c, cliente));
 const textoChecklist = (c, cliente) => `CHECKLIST — ${c.nome}\n` + checklistFinal(c, cliente).map((t, i) => `${i + 1}. ${t}`).join('\n');
 
+/** Site publicado do cliente, se houver: custom (link salvo) ou pacote de plataforma (plataforma configurada + link salvo). */
+export function siteDestino(sites) {
+  const site = sites.find((s) => s.linkPublicado);
+  return site ? { url: site.linkPublicado, modo: site.modo } : null;
+}
+
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [campanhas, criativos, cfg] = await Promise.all([
-    db.listar(COL.campanhas, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }), obterConfig(),
+  const [campanhas, criativos, sites, cfg] = await Promise.all([
+    db.listar(COL.campanhas, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
+    db.listar(COL.sites, { clienteId: cliente.id }), obterConfig(),
   ]);
+  const destino = siteDestino(sites);
   const fadigados = criativos.filter((c) => c.status === 'em_uso' && (diasDesde(c.emUsoDesde) ?? 0) >= cfg.diasFadiga);
 
   root.innerHTML = `${cabecalho('Campanhas', 'Estrutura de teste, públicos e orçamento — pronta para replicar no Gerenciador de Anúncios do Meta.',
@@ -53,6 +72,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <div><label class="label">Nome *</label><input class="input" name="nome" placeholder="Ex.: Teste de ângulos — Legging"></div>
       <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Objetivo</label><input class="input" name="objetivo" value="Vendas"></div>
         <div><label class="label">Orçamento diário (R$)</label><input class="input" type="number" step="0.01" name="orcamento" value="${esc(cliente.historico?.orcamentoDiario)}"></div></div>
+      <div><label class="label">URL de destino</label><input class="input" name="urlDestino" value="${esc(destino?.url || '')}" placeholder="https://…">
+        ${destino ? `<p class="hint">Preenchido com o site publicado deste cliente (${destino.modo === 'custom' ? 'site personalizado' : 'pacote de plataforma'}). Ajuste se quiser apontar para outra página.</p>`
+          : `<p class="hint text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> Nenhum site publicado ainda para este cliente — preencha manualmente ou publique um link na aba Site/Loja.</p>`}</div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Estrutura manual (usada no botão "sem IA")</summary>
         <div class="mt-3 space-y-3"><div><label class="label">Públicos (um por linha)</label><textarea class="input" rows="3" name="publicos" placeholder="Interesse fitness feminino&#10;Lookalike 1% compradores"></textarea></div>
           <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Conjuntos de anúncios</label><input class="input" name="conjuntos" placeholder="Ex.: 3 conjuntos, 1 por público"></div>
@@ -65,7 +87,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       const btn = ev.submitter; const v = lerForm(f);
       if (!v.nome) return toast('Dê um nome à campanha.', 'erro');
       await ocupado(btn, async () => {
-        const base = { clienteId: cliente.id, nome: v.nome, objetivo: v.objetivo, orcamentoDiario: num(v.orcamento), status: 'planejada', criativos: [] };
+        const base = { clienteId: cliente.id, nome: v.nome, objetivo: v.objetivo, orcamentoDiario: num(v.orcamento), urlDestino: v.urlDestino || null, status: 'planejada', criativos: [] };
         if (btn.dataset.modo === 'ia') {
           const aprovados = criativos.filter((c) => ['aprovado', 'em_uso', 'pausado'].includes(c.status));
           const e = await gerarEstruturaCampanha({ cliente, criativos: aprovados, objetivo: v.objetivo, orcamentoDiario: v.orcamento });
@@ -109,6 +131,9 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
         <p class="text-sm">${e.campanhas ? `Campanhas: ${esc(e.campanhas)} · ` : ''}${e.conjuntos ? `Conjuntos: ${esc(e.conjuntos)}` : ''}</p>
         ${e.duracaoDias ? `<p class="text-sm">Duração: ${esc(e.duracaoDias)} dias</p>` : ''}${e.criterioDecisao ? `<p class="text-sm">Decisão: ${esc(e.criterioDecisao)}</p>` : ''}</div></div>
 
+    <div class="mt-3"><label class="label">URL de destino</label><input class="input" data-url-destino value="${esc(c.urlDestino || '')}" placeholder="https://…">
+      <p class="hint">${c.urlDestino ? 'Usada no checklist abaixo, já com parâmetros UTM.' : 'Sem link ainda — publique o site do cliente ou preencha manualmente.'}</p></div>
+
     <div class="mt-4"><h4 class="mb-2 text-sm font-semibold">Criativos desta campanha</h4>
       ${(c.criativos || []).length ? `<div class="space-y-2">${c.criativos.map((k) => {
         const cr = doCli(k.id); if (!cr) return '';
@@ -143,6 +168,7 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
   });
   on(alvo, 'click', '[data-pausar]', async (b) => { await definirStatus(doCli(b.dataset.pausar), 'pausado'); desenhar(); recarregar(); });
   on(alvo, 'click', '[data-copiar]', () => copiar(textoChecklist(c, cliente)));
+  on(alvo, 'change', '[data-url-destino]', (i) => salvar({ urlDestino: i.value.trim() || null }));
   on(alvo, 'change', '[data-status]', (s) => salvar({ status: s.value }));
   on(alvo, 'click', '[data-apagar]', async () => {
     if (!(await confirmar('Apagar esta campanha?', 'Apagar'))) return;

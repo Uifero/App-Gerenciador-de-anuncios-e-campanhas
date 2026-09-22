@@ -10,9 +10,26 @@ import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, ler
 
 const nomePlat = (v) => (PLATAFORMAS.find(([k]) => k === v) || [, v])[1];
 
+const extDoArquivo = (nome) => String(nome || '').split('.').pop().toLowerCase();
+/** Criativo aprovado -> depoimento (nome do cliente, hook como texto, mídia anexada se houver). */
+export function criativoParaDepoimento(cliente, criativo) {
+  return {
+    nome: cliente.nome, texto: criativo.hook || criativo.copy?.slice(0, 200) || '', origem: 'criativo', criativoId: criativo.id,
+    midiaUrl: criativo.arquivoUrl || null, midiaTipo: criativo.arquivoUrl ? (['mp4', 'mov', 'webm'].includes(extDoArquivo(criativo.arquivoNome)) ? 'video' : 'imagem') : null,
+  };
+}
+/** Substitui só os depoimentos de origem "criativo" pelos novos; os escritos à mão (sem origem) ficam intactos. */
+export function mesclarDepoimentos(atuais = [], novos = []) {
+  return [...atuais.filter((d) => d.origem !== 'criativo'), ...novos];
+}
+
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [produtos, sites] = await Promise.all([db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.sites, { clienteId: cliente.id })]);
+  const [produtos, sites, criativos] = await Promise.all([
+    db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
+  ]);
   let site = sites[0] || null;
+  // Criativos aprovados marcados "usar como prova social" (toggle na aba Criativos) — candidatos a depoimento do site.
+  const marcados = criativos.filter((c) => c.provaSocial && ['aprovado', 'em_uso', 'pausado'].includes(c.status));
 
   const salvarSite = async (patch) => {
     if (site) { await db.atualizar(COL.sites, site.id, patch); Object.assign(site, patch); }
@@ -54,8 +71,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           ${custom ? `<div class="grid grid-cols-2 gap-3"><div><label class="label">Cor principal</label><input type="color" class="h-10 w-full rounded" name="corPrimaria" value="${esc(cfg.corPrimaria || '#4f46e5')}"></div>
             <div><label class="label">Cor de fundo</label><input type="color" class="h-10 w-full rounded" name="corFundo" value="${esc(cfg.corFundo || '#ffffff')}"></div></div>
             <div><label class="label">WhatsApp (com DDD)</label><input class="input" name="whatsapp" value="${esc(cfg.whatsapp)}" placeholder="5511999999999"></div>` : ''}
-          <div><label class="label">Depoimentos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
-            <p class="hint">Use depoimentos reais. Os gerados por IA são apenas modelos.</p></div>
+          <div><label class="label">Depoimentos escritos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => d.origem !== 'criativo').map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
+            <p class="hint">Use depoimentos reais. Os gerados por IA são apenas modelos. Os depoimentos puxados de criativos (abaixo) não aparecem aqui — são geridos à parte.</p></div>
           <div><label class="label">Newsletter — título</label><input class="input" name="newsletterTitulo" value="${esc(c.newsletterTitulo)}"></div>
           <div><label class="label">Política de trocas</label><textarea class="input" rows="2" name="trocas">${esc(c.politicas?.trocas)}</textarea></div>
           <div><label class="label">Política de envio</label><textarea class="input" rows="2" name="envio">${esc(c.politicas?.envio)}</textarea></div>
@@ -69,25 +86,44 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         ${custom ? `
           <p class="caption">Baixe o site (um único arquivo <code>index.html</code>). Abra no navegador para conferir e depois publique em qualquer hospedagem estática.</p>
           <button class="btn-primary" data-baixar-site ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-download"></i> Baixar site (index.html)</button>
-          <button class="btn-ghost" data-preview ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-eye"></i> Pré-visualizar</button>
-          <div><label class="label">Link publicado (opcional)</label><input class="input" name="link" data-link value="${esc(site.linkPublicado)}" placeholder="https://…"></div>`
+          <button class="btn-ghost" data-preview ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-eye"></i> Pré-visualizar</button>`
         : `
           <div><label class="label">Plataforma</label><select class="input" data-plat>${opcoes(PLATAFORMAS, site.plataforma)}</select></div>
           <button class="btn-primary" data-csv ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-file-csv"></i> Baixar catálogo (CSV)</button>
           <button class="btn-ia" data-pacote ${semProdutos ? 'disabled' : ''} title="A IA gera banners, briefing do tema e textos de página"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar banners e briefing do tema</button>
           ${site.pacote ? `<button class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Baixar banners e briefing (.txt)</button>` : ''}`}
+        <div><label class="label">Link publicado (opcional)</label><input class="input" name="link" data-link value="${esc(site.linkPublicado)}" placeholder="https://…">
+          <p class="hint">Assim que preenchido, a aba Campanhas passa a sugerir este link como destino da campanha automaticamente.</p></div>
         <div><label class="label">Status</label><select class="input" data-status>${opcoes(STATUS_SITE, site.status)}</select></div>
         <hr class="border-slate-200">
         <p class="caption">O manual de handoff é o passo a passo para quem vai publicar/importar${custom ? ' e ligar o checkout' : ''}.</p>
         <button class="btn-primary" data-manual><i class="fa-solid fa-file-pdf"></i> Gerar manual de handoff (PDF)</button></div></div>
+
+    <div class="card mt-4"><h3 class="mb-1 font-semibold">Prova social a partir de criativos aprovados</h3>
+      <p class="caption mb-3">Em vez de montar depoimentos do zero: marque "usar como prova social" no detalhe de um criativo aprovado (aba Criativos) e traga aqui, com o vídeo/imagem anexado quando houver.</p>
+      ${marcados.length ? `<div class="space-y-1 text-sm mb-3">${marcados.map((cr) => `<div class="flex items-center gap-2"><i class="fa-solid fa-circle-check text-emerald-500"></i><b>${esc(cr.nome)}</b> ${cr.arquivoUrl ? tag('com mídia', 'tag-ok') : tag('só texto (hook)')}</div>`).join('')}</div>
+        <button class="btn-primary btn-sm" data-sync-prova><i class="fa-solid fa-arrows-rotate"></i> Atualizar depoimentos com estes ${marcados.length} criativo(s)</button>`
+        : `<p class="hint">Nenhum criativo aprovado marcado ainda. Abra um criativo aprovado (Criativos) e marque "Usar como prova social no site".</p>`}
+      ${(c.depoimentos || []).some((d) => d.origem === 'criativo') ? `<div class="mt-3 grid gap-2 sm:grid-cols-2">${(c.depoimentos || []).filter((d) => d.origem === 'criativo').map((d) => `
+        <div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><b>${esc(d.nome)}</b>${d.midiaUrl ? ` ${tag('com mídia', 'tag-ok')}` : ''}<p class="line-clamp-2 text-slate-600">“${esc(d.texto)}”</p></div>`).join('')}</div>` : ''}
+    </div>
     ${site.pacote ? `<div class="card mt-4"><h3 class="mb-2 font-semibold">Banners e briefing do tema</h3>${iaNota('Criado pela IA para a plataforma escolhida. Use os textos nos banners e o briefing para configurar o tema.')}
       ${pacoteHTML(site.pacote)}</div>` : ''}`;
 
   on(root, 'click', '[data-trocar]', async () => { await salvarSite({ modo: null }); recarregar(); });
 
+  on(root, 'click', '[data-sync-prova]', (b) => ocupado(b, async () => {
+    const novos = marcados.map((cr) => criativoParaDepoimento(cliente, cr));
+    const depoimentos = mesclarDepoimentos(c.depoimentos, novos);
+    await salvarSite({ conteudo: { ...c, depoimentos } });
+    toast(`Prova social atualizada: ${novos.length} criativo(s).`); recarregar();
+  }));
+
   const lerConteudo = () => {
     const v = lerForm($('#fc', root));
-    const dep = listaDeLinhas(v.depoimentos).map((l) => { const [nome, ...t] = l.split('|'); return { nome: nome.trim(), texto: t.join('|').trim() }; }).filter((d) => d.texto);
+    const escritos = listaDeLinhas(v.depoimentos).map((l) => { const [nome, ...t] = l.split('|'); return { nome: nome.trim(), texto: t.join('|').trim() }; }).filter((d) => d.texto);
+    // Preserva os depoimentos puxados de criativos: este formulário só edita os escritos à mão.
+    const dep = [...escritos, ...(c.depoimentos || []).filter((d) => d.origem === 'criativo')];
     return {
       conteudo: { ...c, heroTitulo: v.heroTitulo, heroSubtitulo: v.heroSubtitulo, heroCta: v.heroCta, storytelling: v.storytelling, depoimentos: dep,
         newsletterTitulo: v.newsletterTitulo, politicas: { trocas: v.trocas, envio: v.envio, privacidade: v.privacidade } },

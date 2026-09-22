@@ -6,6 +6,7 @@ import { abrirEnvio, sincronizarAprovacoes, tagAprovacao } from './aprovacao.js'
 import { abrirEstudio } from './estudio.js';
 import { apagarCriativoEmCascata } from '../lib/cascata.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
+import { padroesPorNicho, sugestaoNaoTestada } from './insights.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -14,6 +15,8 @@ import {
 } from '../core/ui.js';
 
 const rotulo = (lista, v) => (lista.find(([k]) => k === v) || [, v])[1];
+/** Status em que o criativo já passou pelo crivo interno — os mesmos usados em campanhas.js para "disponível". */
+const APROVADOS = ['aprovado', 'em_uso', 'pausado'];
 
 /** Muda o status; ao virar "em_uso" registra a data de início (base do alerta de fadiga). */
 export async function definirStatus(criativo, status) {
@@ -26,10 +29,17 @@ export async function definirStatus(criativo, status) {
 }
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [criativos, referencias, resultados, cfg] = await Promise.all([
+  const [criativos, referencias, resultados, produtos, cfg] = await Promise.all([
     db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
-    db.listar(COL.resultados, { clienteId: cliente.id }), obterConfig(),
+    db.listar(COL.resultados, { clienteId: cliente.id }), db.listar(COL.produtos, { clienteId: cliente.id }), obterConfig(),
   ]);
+  // Sugestão proativa (Insights): um ângulo/framework comprovado em clientes de nicho semelhante que este
+  // cliente ainda não testou em nenhum criativo. Falha aqui não impede o resto da tela (é só uma sugestão).
+  let sugestaoInsight = null;
+  try {
+    const nicho = await padroesPorNicho(cliente.nicho, cliente.id);
+    sugestaoInsight = sugestaoNaoTestada(nicho.padroes, criativos);
+  } catch (e) { console.warn('[insights] sugestão de ângulo/framework indisponível:', e); }
   // Traz para o painel o que o cliente final respondeu pelo link de aprovação (falha aqui não impede de usar a aba,
   // mas fica visível em vez de silenciosa: uma resposta que não aparece aqui era a causa mais provável de "não confirmado").
   try {
@@ -59,14 +69,14 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     $('#lista', root).innerHTML = lista();
   };
   on(root, 'change', '[data-filtro]', (s) => { filtro = s.value; $('#lista', root).innerHTML = lista(); });
-  on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg));
+  on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg, produtos, sugestaoInsight));
   on(root, 'click', '[data-enviar]', () => abrirEnvio(cliente, criativos, { preSelecionar: criativos.filter((c) => c.status === 'rascunho').map((c) => c.id), aoMudar: recarregar }));
 
   // Vindo da aba Referências: abre já com a referência escolhida como ponto de partida.
   let preRef = null;
   try { preRef = sessionStorage.getItem('gcc_ref'); sessionStorage.removeItem('gcc_ref'); } catch { /* sem storage */ }
   const base = preRef && referencias.find((r) => r.id === preRef);
-  if (base) painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, base, atualizar, cfg);
+  if (base) painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, base, atualizar, cfg, produtos, sugestaoInsight);
   on(root, 'click', '[data-abrir]', (b) => detalhe(criativos.find((c) => c.id === b.dataset.abrir), cliente, cfg, recarregar));
 
   // Vindo da busca global: abre direto o criativo encontrado.
@@ -91,15 +101,26 @@ function cartao(c, cfg) {
 }
 
 // ---------------- painel de novo criativo ----------------
-function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = null, atualizar = null, cfg = {}) {
+/** Descrição curta do produto para prefixar o briefing (editável depois) — nome, categoria, preço e descrição. */
+export function resumoProduto(p) {
+  return [p.nome, p.categoria && `(${p.categoria})`, p.preco && `R$ ${p.preco}`, p.descricao].filter(Boolean).join(' — ');
+}
+
+function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = null, atualizar = null, cfg = {}, produtos = [], sugestaoInsight = null) {
   alvo.innerHTML = `<div class="card mb-5 space-y-4">
     <div class="flex items-center justify-between"><h3 class="font-semibold">Novo criativo</h3><button class="text-slate-400" data-x aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
     <form id="fg" class="space-y-3">
+      ${produtos.length ? `<div><label class="label">Produto (opcional)</label><select class="input" name="produtoId" data-produto>
+          <option value="">Nenhum — descrever no briefing</option>${produtos.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select>
+        <p class="hint">Preenche o briefing com os dados do produto (editável antes de gerar). Cadastrado na aba Produtos.</p></div>` : ''}
       <div><label class="label">O que você quer comunicar?</label>
         <textarea class="input" rows="3" name="briefing" placeholder="Ex.: legging nova que não fica transparente no agachamento — foco em quem tem vergonha de treinar na academia"></textarea>
         <p class="hint">Uma ou duas frases bastam. A IA usa o perfil de marca do cliente e as referências salvas.</p>
         ${(cliente.angulosSugeridos || []).length ? `<div class="mt-2 flex flex-wrap items-center gap-1" title="Ângulos do playbook aplicado a este cliente. Clique para acrescentar ao briefing."><span class="hint !mt-0">Ângulos sugeridos (${esc(cliente.playbookNome || 'playbook')}):</span>
-          ${cliente.angulosSugeridos.map((a) => `<button type="button" class="tag hover:bg-indigo-100" data-ang="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}</div>
+          ${cliente.angulosSugeridos.map((a) => `<button type="button" class="tag hover:bg-indigo-100" data-ang="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}
+        ${sugestaoInsight ? `<div class="mt-2 flex flex-wrap items-center gap-1" title="${esc(`Insights: ${sugestaoInsight.rotulo} "${sugestaoInsight.grupo.valor}" teve ROAS médio ${sugestaoInsight.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x em ${sugestaoInsight.grupo.amostras} resultado(s) de clientes de nicho semelhante — e este cliente ainda não testou.`)}">
+          <span class="hint !mt-0"><i class="fa-solid fa-chart-simple"></i> Insights sugere (ainda não testado aqui):</span>
+          <button type="button" class="tag tag-info hover:bg-indigo-100" data-insight="${esc(sugestaoInsight.grupo.valor)}" data-insight-campo="${sugestaoInsight.campo}">${esc(sugestaoInsight.rotulo)}: ${esc(sugestaoInsight.grupo.valor)} (ROAS ${sugestaoInsight.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x)</button></div>` : ''}</div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, variações, referência)</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           <div><label class="label">Modelo pronto</label><select class="input" name="modelo">${opcoes(MODELOS_CRIATIVO, '')}</select></div>
@@ -118,6 +139,15 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
   const form = $('#fg', alvo), saida = $('#saida', alvo);
   on(alvo, 'click', '[data-x]', () => { alvo.innerHTML = ''; });
   on(alvo, 'click', '[data-ang]', (b) => { const t = form.elements.briefing; t.value = (t.value ? t.value + '\n' : '') + 'Ângulo: ' + b.dataset.ang; t.focus(); });
+  on(alvo, 'click', '[data-insight]', (b) => {
+    const rotulo = b.dataset.insightCampo === 'framework' ? 'Framework' : 'Ângulo';
+    const t = form.elements.briefing; t.value = (t.value ? t.value + '\n' : '') + `${rotulo}: ${b.dataset.insight}`; t.focus();
+    if (b.dataset.insightCampo === 'framework' && form.elements.framework) form.elements.framework.value = b.dataset.insight;
+  });
+  on(alvo, 'change', '[data-produto]', (s) => {
+    const p = produtos.find((x) => x.id === s.value); if (!p) return;
+    const t = form.elements.briefing; t.value = (t.value ? t.value + '\n' : '') + 'Produto: ' + resumoProduto(p); t.focus();
+  });
 
   on(alvo, 'click', '[data-manual]', () => {
     const v = lerForm(form);
@@ -144,10 +174,11 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     ev.preventDefault();
     const v = lerForm(form);
     const ref = referencias.find((r) => r.id === v.referenciaId) || null;
-    if (!v.briefing && !v.modelo && !ref) return toast('Escreva um briefing curto, escolha um modelo ou uma referência.', 'erro');
+    const produto = produtos.find((p) => p.id === v.produtoId) || null;
+    if (!v.briefing && !v.modelo && !ref) return toast('Escreva um briefing curto, escolha um modelo, um produto ou uma referência.', 'erro');
     await ocupado(form.querySelector('.btn-ia'), async () => {
       const vars = await gerarCriativos({
-        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref, quantidade: Number(v.quantidade) || cfg.variacoesPadrao || 4,
+        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref, produto, quantidade: Number(v.quantidade) || cfg.variacoesPadrao || 4,
         referencias: referencias.filter((r) => r.analise), resultados,
       });
       if (!vars.length) throw new Error('A IA não devolveu variações. Tente reescrever o briefing.');
@@ -155,7 +186,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
         ${iaNota(`A IA criou ${vars.length} variações com hooks e ângulos diferentes, usando o perfil de marca${ref ? ' e a referência escolhida' : ''}. Salve as que gostar; depois dá para refinar cada uma.`)}
         ${vars.map((x, i) => variacao(x, i, cliente)).join('')}</div>`;
       saida._vars = vars;
-      saida._ctx = { referenciaId: ref?.id || null, modelo: v.modelo || null };
+      saida._ctx = { referenciaId: ref?.id || null, modelo: v.modelo || null, produtoId: v.produtoId || null };
     });
   });
   on(saida, 'click', '[data-salvar-var]', async (b) => {
@@ -184,13 +215,16 @@ function variacao(x, i, cliente) {
 }
 
 async function salvarNovo(cliente, x, ctx) {
-  const snap = { n: 1, hook: x.hook, copy: x.copy, cta: x.cta || '', nota: 'Versão inicial', quando: new Date().toISOString() };
+  const angulo = x.angulo || '', framework = x.framework || 'livre', gatilho = x.gatilho || '', formato = x.formato || 'video_curto';
+  // A versão já nasce com ângulo/framework/gatilho/formato: é o que permite, mais tarde, saber com QUAL ângulo/framework
+  // um resultado registrado foi gerado (ver versaoAtivaEm em resultados.js) mesmo que o criativo mude depois.
+  const snap = { n: 1, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo, framework, gatilho, formato, nota: 'Versão inicial', quando: new Date().toISOString() };
   return db.criar(COL.criativos, {
-    clienteId: cliente.id, nome: x.nome, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo: x.angulo || '', gatilho: x.gatilho || '',
-    framework: x.framework || 'livre', formato: x.formato || 'video_curto', idioma: cliente.marca?.idioma || 'pt-BR',
+    clienteId: cliente.id, nome: x.nome, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo, gatilho,
+    framework, formato, idioma: cliente.marca?.idioma || 'pt-BR',
     status: 'rascunho', checklist: {}, versoes: [snap], referenciaId: ctx.referenciaId || null, modeloUsado: ctx.modelo || null,
-    origem: ctx.referenciaId || ctx.modelo || x.porque ? 'ia' : 'manual',
-    arquivoUrl: null, arquivoPath: null, arquivoNome: null, emUsoDesde: null,
+    origem: ctx.referenciaId || ctx.modelo || x.porque ? 'ia' : 'manual', produtoId: ctx.produtoId || null,
+    arquivoUrl: null, arquivoPath: null, arquivoNome: null, emUsoDesde: null, provaSocial: false,
   });
 }
 
@@ -234,6 +268,9 @@ function detalhe(c, cliente, cfg, recarregar) {
         <p class="hint">${tudoOk ? 'Checklist completo.' : 'Complete o checklist para aprovar.'}</p></div>
       <button class="btn-ghost" data-enviar-um title="Gera um link para o cliente final aprovar ou pedir ajuste deste criativo"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação do cliente</button></div>
 
+    ${APROVADOS.includes(c.status) ? `<label class="mt-3 flex items-start gap-2 text-sm" title="Quando marcado, este criativo entra como depoimento (com o vídeo/imagem anexado, se houver) ao atualizar a prova social na aba Site/Loja.">
+      <input type="checkbox" data-prova-social ${c.provaSocial ? 'checked' : ''} class="mt-0.5"> Usar como prova social no site (aba Site/Loja)</label>` : ''}
+
     <div class="mt-5 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3"><h4 class="mb-1 text-sm font-semibold"><i class="fa-solid fa-clapperboard"></i> Material para a campanha</h4>
       <p class="hint mb-2">Gera a foto (PNG) e o vídeo prontos para subir no gerenciador de anúncios, a partir deste criativo.</p>
       <button class="btn-primary btn-sm" data-estudio><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar foto e vídeo</button></div>
@@ -258,7 +295,10 @@ function detalhe(c, cliente, cfg, recarregar) {
 
   const novaVersao = async (patch, nota) => {
     const versoes = [...(c.versoes || [])];
-    versoes.push({ n: versoes.length + 1, hook: patch.hook, copy: patch.copy, cta: patch.cta, nota, quando: new Date().toISOString() });
+    // Sempre grava o ângulo/framework/gatilho/formato vigentes nesta versão (do patch, senão o que já estava no
+    // criativo) — sem isso, um resultado registrado depois de uma edição seria atribuído ao ângulo/framework ERRADO.
+    const angulo = patch.angulo ?? c.angulo, framework = patch.framework ?? c.framework, gatilho = patch.gatilho ?? c.gatilho, formato = patch.formato ?? c.formato;
+    versoes.push({ n: versoes.length + 1, hook: patch.hook, copy: patch.copy, cta: patch.cta, angulo, framework, gatilho, formato, nota, quando: new Date().toISOString() });
     const dados = { ...patch, versoes };
     await db.atualizar(COL.criativos, c.id, dados);
     Object.assign(c, dados);
@@ -293,6 +333,10 @@ function detalhe(c, cliente, cfg, recarregar) {
   });
   const enviarEste = () => abrirEnvio(cliente, [c], { preSelecionar: [c.id], aoMudar: () => { desenhar(); recarregar(); } });
   on(alvo, 'click', '[data-enviar-um]', enviarEste);
+  on(alvo, 'change', '[data-prova-social]', async (i) => {
+    await db.atualizar(COL.criativos, c.id, { provaSocial: i.checked }); c.provaSocial = i.checked;
+    toast(i.checked ? 'Marcado. Atualize a prova social na aba Site/Loja para refletir no site.' : 'Desmarcado.');
+  });
 
   // Checklist por IA (Haiku): só sugere; a pessoa revisa e clica em aplicar.
   let sugestao = null;

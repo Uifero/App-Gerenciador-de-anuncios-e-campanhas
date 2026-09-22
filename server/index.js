@@ -52,6 +52,7 @@ export const TAREFAS = {
   site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low' },
   pacote:      { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'low' },
   playbook:    { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'low' },
+  insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low' },
 };
 
 // Preço por 1M de tokens (US$), tabela de referência de 2026-06 — é ESTIMATIVA, confira em anthropic.com/pricing.

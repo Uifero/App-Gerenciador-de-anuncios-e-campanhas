@@ -3,6 +3,7 @@ import { db, COL } from '../core/storage.js';
 import { obterConfig } from './configuracoes.js';
 import { cartaoCliente } from './clientes.js';
 import { resumoCliente, semaforoHtml, agregar, painelAlertas } from './alertas.js';
+import { sugestoesDashboard } from './insights.js';
 import { cabecalho, vazio, tag, ocupado, confirmar, toast, modal, esc } from '../core/ui.js';
 import { estadoOrcamento, definirMes, mesDe, usd, brl, fecharMesesPendentes } from './custo.js';
 import { exportarDados, lerArquivoBackup, resumoRestauracao, restaurarBackup } from './backup.js';
@@ -72,7 +73,7 @@ export async function view(el) {
       <div class="card sm:col-span-2 lg:col-span-4" title="Soma das chamadas de IA registradas neste mês (estimativa por tabela de preços)"><div class="flex flex-wrap items-center justify-between gap-2">
         <div><p class="caption"><i class="fa-solid fa-coins mr-1"></i>Custo de IA neste mês</p><p class="text-2xl font-bold">${usd(orc.totalMes)} <span class="text-base font-normal text-slate-500">(≈ ${brl(orc.totalMes, cfg.cotacaoUsd)})</span></p></div>
         <div class="text-right">${orc.orc ? `<p class="caption">${Math.round(orc.pct)}% do orçamento de ${usd(orc.orc)}</p><div class="mt-1 h-2 w-48 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full ${orc.pct >= 100 ? 'bg-rose-500' : orc.pct >= 80 ? 'bg-amber-400' : 'bg-emerald-500'}" style="width:${Math.min(100, orc.pct)}%"></div></div>` : '<p class="caption">Sem orçamento definido (Configurações)</p>'}</div></div></div></div>
-    ${painelAlertas(agregar(itens, orc.alertas))}
+    ${painelAlertas(agregar(itens, orc.alertas, sugestoesDashboard(clientes, criativos, resultados)))}
     <h3 class="mb-1 font-semibold">Seus clientes</h3>
     <p class="caption mb-3">O semáforo compara os resultados dos últimos ${cfg.diasSemaforo} dias com a meta de cada cliente (defina a meta ao editar o cliente).</p>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${itens.map(({ cliente: c, resumo: r }) => {

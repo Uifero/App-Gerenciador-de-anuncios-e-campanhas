@@ -70,10 +70,16 @@ describe('agregar', () => {
     expect(out.semDecisao).toHaveLength(1);
     expect(out.semDecisao[0].cliente.id).toBe('b');
   });
+
+  it('repassa a lista de insights (sugestoesDashboard) tal como recebida', () => {
+    const insights = [{ cliente: { id: 'a', nome: 'A' }, campo: 'angulo', rotulo: 'Ângulo', grupo: { valor: 'dor', roasMedio: 3, amostras: 2 } }];
+    const out = agregar([], [], insights);
+    expect(out.insights).toBe(insights);
+  });
 });
 
 describe('painelAlertas', () => {
-  const base = { fadiga: [], escalar: [], vermelhos: [], orcamento: [], aprovacaoPendente: [], semDecisao: [] };
+  const base = { fadiga: [], escalar: [], vermelhos: [], orcamento: [], aprovacaoPendente: [], semDecisao: [], insights: [] };
 
   it('mostra "tudo em ordem" quando não há nenhum alerta', () => {
     const html = painelAlertas(base);
@@ -93,5 +99,13 @@ describe('painelAlertas', () => {
     const html = painelAlertas({ ...base, semDecisao: [{ cliente: { id: 'a', nome: 'Ana' }, criativoId: '1', nome: 'Anúncio 2', dias: 20 }] });
     expect(html).toContain('Sem decisão');
     expect(html).toContain('Anúncio 2');
+  });
+
+  it('mostra o bloco "Padrão comprovado ainda não testado" com os dados do insight', () => {
+    const html = painelAlertas({ ...base, insights: [{ cliente: { id: 'a', nome: 'Ana' }, campo: 'angulo', rotulo: 'Ângulo', grupo: { valor: 'dor', roasMedio: 3.5, amostras: 4 } }] });
+    expect(html).toContain('Padrão comprovado ainda não testado');
+    expect(html).toContain('Ana');
+    expect(html).toContain('dor');
+    expect(html).toContain('3.50x');
   });
 });

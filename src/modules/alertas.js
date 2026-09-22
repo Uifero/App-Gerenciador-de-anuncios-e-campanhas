@@ -43,9 +43,9 @@ export function semaforoHtml(sem, metas) {
     <span class="h-2.5 w-2.5 rounded-full ${PONTO[sem.estado]}"></span>${ROTULO[sem.estado]}</span>`;
 }
 
-/** Junta os alertas de todos os clientes. itens = [{ cliente, resumo }] */
-export function agregar(itens, orcamento = []) {
-  const out = { fadiga: [], escalar: [], vermelhos: [], orcamento, aprovacaoPendente: [], semDecisao: [] };
+/** Junta os alertas de todos os clientes. itens = [{ cliente, resumo }]. `insights` = saída de sugestoesDashboard. */
+export function agregar(itens, orcamento = [], insights = []) {
+  const out = { fadiga: [], escalar: [], vermelhos: [], orcamento, aprovacaoPendente: [], semDecisao: [], insights };
   for (const { cliente, resumo } of itens) {
     resumo.fadiga.forEach((f) => out.fadiga.push({ cliente, ...f }));
     resumo.escalar.forEach((e) => out.escalar.push({ cliente, ...e }));
@@ -58,7 +58,8 @@ export function agregar(itens, orcamento = []) {
 
 /** Painel único do dashboard: "o que precisa de atenção hoje" entre todos os clientes. */
 export function painelAlertas(a) {
-  const total = a.fadiga.length + a.escalar.length + a.vermelhos.length + (a.orcamento || []).length + a.aprovacaoPendente.length + a.semDecisao.length;
+  const insights = a.insights || [];
+  const total = a.fadiga.length + a.escalar.length + a.vermelhos.length + (a.orcamento || []).length + a.aprovacaoPendente.length + a.semDecisao.length + insights.length;
   const linha = (cor, icone, html, href) => `<li><a href="${href}" class="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"><i class="fa-solid fa-${icone} mt-0.5 ${cor}"></i><span>${html}</span></a></li>`;
   const bloco = (titulo, legenda, itens) => (itens.length ? `<div><h4 class="text-sm font-semibold">${titulo} <span class="tag">${itens.length}</span></h4><p class="hint mb-1">${legenda}</p><ul>${itens.join('')}</ul></div>` : '');
   return `<section class="card mb-6" id="central-alertas" aria-label="Central de alertas">
@@ -68,6 +69,7 @@ export function painelAlertas(a) {
     ${total ? `<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       ${bloco('Clientes no vermelho', 'Resultados recentes piores que a meta em mais de 20%.', a.vermelhos.map((v) => linha('text-rose-500', 'circle-exclamation', `<b>${esc(v.cliente.nome)}</b> está fora da meta`, `#/c/${v.cliente.id}/resultados`)))}
       ${bloco('Hora de escalar', 'Criativos batendo a meta de forma consistente.', a.escalar.map((e) => linha('text-emerald-500', 'arrow-trend-up', `<b>${esc(e.cliente.nome)}</b> · “${esc(e.nome)}” está na meta há ${e.dias} dias. Considere aumentar o orçamento ou duplicar o conjunto.`, `#/c/${e.cliente.id}/resultados`)))}
+      ${bloco('Padrão comprovado ainda não testado', 'Ângulo/framework com bom desempenho em clientes de nicho semelhante (Insights) — este cliente ainda não usou.', insights.map((s) => linha('text-violet-500', 'chart-simple', `<b>${esc(s.cliente.nome)}</b> · ${esc(s.rotulo)} “${esc(s.grupo.valor)}” (ROAS médio ${s.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x, ${s.grupo.amostras} amostra(s))`, `#/c/${s.cliente.id}/criativos`)))}
       ${bloco('Aguardando o cliente', 'Enviado para aprovação e sem resposta há muito tempo — vale cobrar.', a.aprovacaoPendente.map((x) => linha('text-amber-500', 'paper-plane', `<b>${esc(x.cliente.nome)}</b> · “${esc(x.nome)}” aguarda resposta há ${x.dias} dias`, `#/c/${x.cliente.id}/criativos`)))}
       ${bloco('Sem decisão', 'Criativo criado e nunca enviado, nem aprovado nem rejeitado — parado do nosso lado.', a.semDecisao.map((x) => linha('text-slate-500', 'circle-question', `<b>${esc(x.cliente.nome)}</b> · “${esc(x.nome)}” parado há ${x.dias} dias`, `#/c/${x.cliente.id}/criativos`)))}
       ${bloco('Orçamento de IA', 'Gasto com IA perto ou acima do limite do mês.', (a.orcamento || []).map((o) => linha(o.pct >= 100 ? 'text-rose-500' : 'text-amber-500', 'coins', `<b>${esc(o.nome)}</b>: ${Math.round(o.pct)}% do limite (${usd(o.gasto)} de ${usd(o.orc)})`, o.escopo === 'global' ? '#/config' : `#/c/${o.clienteId}`)))}

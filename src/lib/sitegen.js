@@ -48,6 +48,7 @@ select{width:100%;margin-bottom:6px;padding:6px;border:1px solid #d1d5db;border-
 .btn{width:100%;background:var(--cor);color:#fff;border:0;border-radius:10px;padding:10px;font-weight:600;cursor:pointer}
 .story{max-width:720px;line-height:1.7;font-size:17px;white-space:pre-line}
 .dep{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.dep blockquote{margin:0;background:#fff;padding:18px;border-radius:14px;box-shadow:0 1px 4px #0001}.dep cite{display:block;margin-top:8px;font-size:13px;color:#6b7280}
+.dep-midia{width:100%;max-height:220px;object-fit:cover;border-radius:10px;margin-bottom:10px;background:#111}
 .news form{display:flex;gap:8px;max-width:460px}.news input{flex:1;padding:10px;border:1px solid #d1d5db;border-radius:10px}.news button{background:var(--cor);color:#fff;border:0;border-radius:10px;padding:10px 18px;cursor:pointer}
 footer{background:#111827;color:#d1d5db;padding:40px 0;font-size:14px}footer h4{color:#fff;margin:0 0 8px}footer .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px}footer p{white-space:pre-line;margin:0}
 .zap{position:fixed;right:18px;bottom:18px;background:#25d366;color:#fff;border-radius:999px;padding:14px 18px;text-decoration:none;font-weight:700;z-index:30;box-shadow:0 4px 12px #0003}
@@ -67,8 +68,8 @@ ${categorias.length ? `<section id="categorias"><div class="wrap"><h2>Categorias
 ${promo.length ? `<section id="sale"><div class="wrap"><h2>Sale</h2>${grade(promo)}</div></section>` : ''}
 <section id="catalogo" class="${promo.length ? 'alt' : ''}"><div class="wrap"><h2>Catálogo completo</h2><div id="catalogoGrade">${grade(produtos)}</div></div></section>
 ${c.storytelling ? `<section id="marca"><div class="wrap"><h2>Nossa história</h2><div class="story">${esc(c.storytelling)}</div></div></section>` : '<span id="marca"></span>'}
-${(c.depoimentos || []).length ? `<section class="alt"><div class="wrap"><h2>Quem já usa</h2><div class="dep">${c.depoimentos.map((d) => `<blockquote>“${esc(d.texto)}”<cite>— ${esc(d.nome)}</cite></blockquote>`).join('')}</div>
-<!-- ATENÇÃO: depoimentos acima são MODELOS. Substitua por depoimentos reais de clientes antes de publicar. --></div></section>` : ''}
+${(c.depoimentos || []).length ? `<section class="alt"><div class="wrap"><h2>Quem já usa</h2><div class="dep">${c.depoimentos.map((d) => `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.nome)}" class="dep-midia" loading="lazy">`) : ''}“${esc(d.texto)}”<cite>— ${esc(d.nome)}</cite></blockquote>`).join('')}</div>
+<!-- ATENÇÃO: depoimentos escritos à mão (sem foto/vídeo anexado) podem ser MODELOS — troque por depoimentos reais antes de publicar. Os que têm foto/vídeo vieram de criativos aprovados no app. --></div></section>` : ''}
 <section class="news"><div class="wrap"><h2>${esc(c.newsletterTitulo || 'Receba novidades')}</h2><p>${esc(c.newsletterTexto || '')}</p>
 <!-- PONTO DE ENCAIXE: ligue este formulário à sua ferramenta de e-mail (Mailchimp, Brevo, etc.). Hoje ele só mostra uma confirmação local. -->
 <form id="news"><input type="email" required placeholder="Seu e-mail" aria-label="E-mail"><button>Quero receber</button></form><p class="nota" id="newsOk"></p></div></section>
