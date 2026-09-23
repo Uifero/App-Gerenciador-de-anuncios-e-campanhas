@@ -3,7 +3,7 @@ import './style.css';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import { aoMudarUsuario, entrar, sair } from './core/auth.js';
 import { DEMO } from './core/firebase.js';
-import { esc, $, on } from './core/ui.js';
+import { esc, $, on, ativarCamposArquivo } from './core/ui.js';
 import * as dashboard from './modules/dashboard.js';
 import * as configuracoes from './modules/configuracoes.js';
 import * as clientes from './modules/clientes.js';
@@ -22,6 +22,7 @@ import { montarBusca } from './modules/busca.js';
 import { aplicarTema, alternarTema, temaAtual } from './core/tema.js';
 
 aplicarTema();
+ativarCamposArquivo();
 
 // Registro das abas do cliente (id do escopo -> renderizador).
 const ABAS = {

@@ -2,7 +2,7 @@
 import { db, COL } from '../core/storage.js';
 import { buscarReferencias, analisarReferencia } from '../core/ia.js';
 import { obterConfig, classificarSinal } from './configuracoes.js';
-import { esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, toast, ocupado, lerForm, num, modal } from '../core/ui.js';
+import { esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, toast, ocupado, lerForm, num, modal, campoArquivo } from '../core/ui.js';
 
 const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -93,7 +93,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <div><label class="label">Link do anúncio</label><input class="input" name="link" placeholder="https://…"></div>
         <div><label class="label">Dias no ar</label><input class="input" type="number" min="0" name="diasNoAr"></div>
         <div><label class="label">Categoria/ângulo</label><input class="input" name="categoria"></div>
-        <div><label class="label">Imagem do anúncio (opcional)</label><input class="input" type="file" name="imagem" accept="image/*"></div></div>
+        <div><label class="label">Imagem do anúncio (opcional)</label>${campoArquivo({ attrs: 'name="imagem"', accept: 'image/*', icone: 'image', texto: 'Enviar print do anúncio (até 400 KB)', destaque: false })}</div></div>
       <div><label class="label">Texto do anúncio</label><textarea class="input" rows="4" name="texto"></textarea></div>
       <div class="flex gap-2"><button class="btn-primary" type="submit" data-modo="salvar">Salvar</button>
         <button class="btn-ia" type="submit" data-modo="analisar" title="Salva e pede à IA a análise estratégica">Salvar e analisar com IA</button></div></form>`;

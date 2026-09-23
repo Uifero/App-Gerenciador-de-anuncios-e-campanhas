@@ -217,7 +217,7 @@ export function carregarMidia(file) {
   return new Promise((ok, falha) => {
     const el = video ? document.createElement('video') : new Image();
     if (video) { el.muted = true; el.loop = true; el.playsInline = true; el.preload = 'auto'; }
-    el[video ? 'onloadeddata' : 'onload'] = () => ok({ tipo: video ? 'video' : 'imagem', el, url, nome: file.name });
+    el[video ? 'onloadeddata' : 'onload'] = () => ok({ tipo: video ? 'video' : 'imagem', el, url, nome: file.name, arquivo: file });
     el.onerror = () => { URL.revokeObjectURL(url); falha(new Error(`Não consegui abrir "${file.name}". Use JPG, PNG, WebP ou MP4.`)); };
     el.src = url;
   });

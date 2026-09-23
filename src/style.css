@@ -20,6 +20,10 @@
   .tag.tag-bad { @apply bg-rose-100 text-rose-700; }
   .tag.tag-info { @apply bg-indigo-100 text-indigo-700; }
   .caption { @apply text-sm text-slate-500; }
+  /* Botão de upload (core/ui.js campoArquivo): o input fica escondido dentro do label com cara de botão. */
+  .upload-btn { @apply focus-within:ring-2 focus-within:ring-indigo-300 focus-within:ring-offset-1; }
+  .upload-btn:has(input:disabled) { @apply cursor-progress opacity-60; }
+  details[open] > summary .so-fechado { @apply hidden; }
   .ia-note { @apply rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-800; }
 }
 
@@ -34,7 +38,7 @@
   --color-emerald-50: #06281f; --color-emerald-100: #064e3b; --color-emerald-700: #6ee7b7; --color-emerald-800: #a7f3d0;
   --color-amber-50: #2f2410; --color-amber-100: #78350f; --color-amber-300: #92400e; --color-amber-700: #fcd34d; --color-amber-800: #fde68a;
   --color-rose-50: #3b0f1c; --color-rose-100: #881337; --color-rose-300: #9f1239; --color-rose-600: #fb7185; --color-rose-700: #fda4af;
-  --color-indigo-100: #312e81; --color-indigo-700: #c7d2fe;
+  --color-indigo-100: #312e81; --color-indigo-700: #c7d2fe; --color-indigo-800: #c7d2fe;
   --color-violet-50: #2e1065; --color-violet-200: #5b21b6; --color-violet-800: #ddd6fe;
 }
 /* Superfícies "brancas": classes de componente e a utilidade bg-white (usada em header, modais e busca). */

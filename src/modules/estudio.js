@@ -14,7 +14,7 @@ import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
   FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
-import { $, esc, on, modal, toast, ocupado, opcoes, copiar } from '../core/ui.js';
+import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo } from '../core/ui.js';
 import { CENAS_UNBOXING } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
 import { montarEditorVideo } from './video-editor.js';
@@ -47,16 +47,23 @@ export function abrirEstudio(criativo, cliente) {
   const dims = (f) => f.split('x').map(Number);
 
   raiz.innerHTML = `
-  <p class="caption mb-3">Monte a foto e o vídeo prontos para subir na campanha. Tudo é feito neste navegador e baixado no seu computador. As fotos que você escolher aqui não ficam salvas: escolha de novo na próxima vez.</p>
+  <p class="caption mb-2">Monte a foto e o vídeo prontos para subir na campanha. Tudo é feito neste navegador e baixado no seu computador. As fotos que você escolher aqui não ficam salvas: escolha de novo na próxima vez.</p>
+  <nav class="mb-3 flex flex-wrap items-center gap-1 text-xs" aria-label="Etapas">
+    <span class="mr-1 text-slate-500">Caminho:</span>
+    <button class="btn-ghost btn-sm" data-ir="materiais">1. Enviar materiais</button><i class="fa-solid fa-chevron-right text-slate-400"></i>
+    <button class="btn-ghost btn-sm" data-ir="foto">2. Foto (PNG)</button><span class="text-slate-500">e/ou</span>
+    <button class="btn-ghost btn-sm" data-ir="video">3. Vídeo a partir de fotos</button><span class="text-slate-500">ou</span>
+    <button class="btn-ghost btn-sm" data-ir="editor">4. Editar um vídeo gravado</button><i class="fa-solid fa-chevron-right text-slate-400"></i>
+    <span class="text-slate-500">Baixar</span></nav>
 
-  <section class="rounded-lg border border-slate-200 p-3">
+  <section class="rounded-lg border border-slate-200 p-3" data-etapa="materiais">
     <h4 class="mb-2 text-sm font-semibold"><i class="fa-solid fa-images"></i> 1. Materiais</h4>
     <label class="label">Fotos e vídeos (do produto, gerados por IA ou enviados pelo cliente)</label>
-    <input type="file" data-midias multiple accept="image/*,video/*" class="block text-sm">
+    ${campoArquivo({ attrs: 'data-midias', accept: 'image/*,video/*', multiple: true, texto: 'Enviar fotos ou vídeos', lista: true, dica: 'Pode escolher vários de uma vez (JPG, PNG, WebP, MP4, MOV).' })}
     <div data-lista-midias class="mt-2 flex flex-wrap gap-2"></div>
     <div class="mt-3 grid gap-3 sm:grid-cols-2">
-      <div><label class="label">Logo (opcional, PNG com fundo transparente)</label><input type="file" data-logo accept="image/*" class="block text-sm"></div>
-      <div><label class="label">Música do vídeo (opcional, MP3/WAV)</label><input type="file" data-musica accept="audio/*" class="block text-sm"></div>
+      <div><label class="label">Logo (opcional)</label>${campoArquivo({ attrs: 'data-logo', accept: 'image/*', icone: 'copyright', texto: 'Enviar logo (PNG transparente)', destaque: false })}</div>
+      <div><label class="label">Música do vídeo (opcional)</label>${campoArquivo({ attrs: 'data-musica', accept: 'audio/*', icone: 'music', texto: 'Enviar música (MP3/WAV)', destaque: false })}</div>
       <div><label class="label">Cor da marca</label><input type="color" data-cor value="${esc(est.cor)}" class="h-9 w-16 rounded border"></div>
       <div><label class="label">Cor do texto</label><input type="color" data-cor-texto value="${esc(est.corTexto)}" class="h-9 w-16 rounded border"></div>
     </div>
@@ -84,12 +91,13 @@ export function abrirEstudio(criativo, cliente) {
         <button class="btn-ia btn-sm" data-gerar-ia>Gerar</button></div></details>
   </section>
 
-  <section class="mt-4 rounded-lg border border-slate-200 p-3">
+  <section class="mt-4 rounded-lg border border-slate-200 p-3" data-etapa="foto">
     <h4 class="mb-2 text-sm font-semibold"><i class="fa-solid fa-image"></i> 2. Foto (PNG)</h4>
     <div class="grid gap-3 sm:grid-cols-2">
       <div><label class="label">Template</label><select class="input" data-template>${opcoes(TEMPLATES, est.template)}</select></div>
       <div><label class="label">Formato</label><select class="input" data-formato>${opcoes(FORMATOS_IMAGEM, est.formato)}</select></div>
-      <div class="sm:col-span-2"><label class="label">Foto de fundo</label><select class="input" data-fundo></select></div>
+      <div class="sm:col-span-2"><label class="label">Foto de fundo</label><div class="flex gap-2"><select class="input" data-fundo></select>
+        <button class="btn-ghost btn-sm shrink-0" data-abrir-midias title="Abre a escolha de arquivos de 1. Materiais"><i class="fa-solid fa-upload"></i> Enviar foto</button></div></div>
       <div class="sm:col-span-2"><label class="label">Texto principal (hook)</label><input class="input" data-hook value="${esc(criativo.hook)}"></div>
       <div class="sm:col-span-2"><label class="label">Botão / CTA</label><input class="input" data-cta value="${esc(criativo.cta)}"></div>
     </div>
@@ -100,13 +108,16 @@ export function abrirEstudio(criativo, cliente) {
     <p class="hint mt-1" data-aviso-fotos></p>
   </section>
 
-  <section class="mt-4 rounded-lg border border-slate-200 p-3">
+  <section class="mt-4 rounded-lg border border-slate-200 p-3" data-etapa="video">
     <h4 class="mb-2 text-sm font-semibold"><i class="fa-solid fa-film"></i> 3. Vídeo</h4>
     <p class="hint mb-2">A linha do tempo vem do roteiro do criativo (uma cena = uma legenda). Ajuste textos e tempos abaixo. Cada cena usa uma foto/vídeo da lista, em rodízio.</p>
     <div class="mb-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2">
       <p class="text-sm font-medium text-emerald-800"><i class="fa-solid fa-scissors"></i> O cliente mandou um vídeo? Edite para performar melhor</p>
-      <p class="hint my-1">Envie o vídeo em "Materiais" (clique na miniatura para assistir e anotar os segundos). Depois monte a base e ajuste: <b>gancho nos 3 primeiros segundos</b> (texto grande), <b>cortes</b> nas partes paradas (uma cena = um trecho, com "início no vídeo"), <b>legendas</b> (muita gente assiste sem som), <b>velocidade</b> 1.1x a 1.25x para dar ritmo, <b>CTA no final</b>, formato 9:16 e música baixa por cima.</p>
+      <div class="my-2 flex flex-wrap items-center gap-2" data-sem-video>${campoArquivo({ attrs: 'data-midias', accept: 'video/*', icone: 'video', texto: 'Enviar o vídeo do cliente', lista: true })}
+        <span class="hint">Ele entra em "1. Materiais". Clique na miniatura de lá para assistir e anotar os segundos.</span></div>
+      <p class="hint my-1">Depois escolha um dos caminhos: <b>editor avançado</b> (corta o vídeo de verdade, queima texto/legenda, ajusta volume e proporção) ou <b>base com gancho e CTA</b> (monta as cenas aqui embaixo). Dicas: <b>gancho nos 3 primeiros segundos</b> (texto grande), <b>cortes</b> nas partes paradas (uma cena = um trecho, com "início no vídeo"), <b>legendas</b> (muita gente assiste sem som), <b>velocidade</b> 1.1x a 1.25x para dar ritmo, <b>CTA no final</b>, formato 9:16 e música baixa por cima.</p>
       <div class="flex flex-wrap items-end gap-2"><div><label class="label">Vídeo</label><select class="input" data-base-video-sel></select></div>
+        <button class="btn-primary btn-sm" data-abrir-editor><i class="fa-solid fa-scissors"></i> Editar no editor avançado</button>
         <button class="btn-ghost btn-sm" data-base-video><i class="fa-solid fa-wand-magic-sparkles"></i> Montar base com gancho e CTA</button></div>
     </div>
     <div data-cenas class="space-y-2"></div>
@@ -122,7 +133,7 @@ export function abrirEstudio(criativo, cliente) {
     <div data-resultado class="mt-3"></div>
   </section>
 
-  <details class="mt-4 rounded-lg border border-emerald-200 p-3"><summary class="cursor-pointer text-sm font-semibold"><i class="fa-solid fa-film"></i> 4. Editor avançado de vídeo (corte, proporção, texto e legenda)</summary>
+  <details class="mt-4 rounded-lg border border-emerald-200 p-3" data-etapa="editor"><summary class="cursor-pointer text-sm font-semibold"><i class="fa-solid fa-film"></i> 4. Editor avançado de vídeo (corte, proporção, texto e legenda) <span class="so-fechado font-normal text-slate-500">— clique para abrir</span></summary>
     <div class="mt-3" data-editor-video></div>
   </details>`;
 
@@ -149,6 +160,9 @@ export function abrirEstudio(criativo, cliente) {
       ${x.tipo === 'imagem' ? `<img src="${esc(x.url)}" class="h-full w-full object-cover" alt="">` : `<button data-ver-midia="${i}" class="flex h-full w-full items-center justify-center bg-slate-200 text-slate-600" title="Assistir e anotar o segundo do corte"><i class="fa-solid fa-circle-play text-2xl"></i></button>`}
       <button data-rm-midia="${i}" class="absolute right-0 top-0 bg-black/60 px-1.5 text-xs text-white" title="Remover">×</button></div>`).join('')
       || '<p class="hint">Nenhuma foto ou vídeo ainda. Sem material, o app usa um fundo de cor (só texto).</p>';
+    const rotulo = $('[data-etapa="materiais"] [data-upload-rotulo]', raiz);
+    if (rotulo) rotulo.textContent = est.midias.length ? 'Adicionar mais fotos ou vídeos' : 'Enviar fotos ou vídeos';
+    editor?.mostrarVindosMateriais?.(est.midias.filter((x) => x.tipo === 'video' && x.arquivo).map((x) => x.arquivo));
     $('[data-fundo]', raiz).innerHTML = fotos().length ? opcoes(fotos().map((x, i) => [String(i), `${i + 1}. ${x.nome}`]), '0') : '<option value="0">(sem foto: usa fundo de cor)</option>';
     agendarPrevia();
     if (typeof listarCenas === 'function') listarCenas();
@@ -181,7 +195,9 @@ export function abrirEstudio(criativo, cliente) {
   const atualizarBase = () => {
     const sel = $('[data-base-video-sel]', raiz), atual = sel.value;
     const videos = est.midias.map((x, k) => [k, x]).filter(([, x]) => x.tipo === 'video');
-    sel.innerHTML = videos.length ? videos.map(([k, x]) => `<option value="${k}" ${String(k) === atual ? 'selected' : ''}>${k + 1}. ${esc(x.nome)}</option>`).join('') : '<option value="">(envie um vídeo em Materiais)</option>';
+    $('[data-sem-video] [data-upload-rotulo]', raiz).textContent = videos.length ? 'Enviar outro vídeo' : 'Enviar o vídeo do cliente';
+    $('[data-abrir-editor]', raiz).disabled = !videos.length; $('[data-base-video]', raiz).disabled = !videos.length;
+    sel.innerHTML = videos.length ? videos.map(([k, x]) => `<option value="${k}" ${String(k) === atual ? 'selected' : ''}>${k + 1}. ${esc(x.nome)}</option>`).join('') : '<option value="">(nenhum vídeo: use o botão acima)</option>';
   };
   const atualizarAnimar = () => {
     atualizarBase();
@@ -189,8 +205,21 @@ export function abrirEstudio(criativo, cliente) {
     f.innerHTML = fotos().length ? opcoes(fotos().map((x, i) => [String(i), `${i + 1}. ${x.nome}`]), fa || '0') : '<option value="">(envie ou gere uma foto antes)</option>';
     c.innerHTML = '<option value="">(nenhuma: escolho depois)</option>' + est.cenas.map((x, i) => x.tipo === 'cena' ? `<option value="${i}" ${ca === String(i) ? 'selected' : ''}>Cena ${i + 1}${x.texto ? ': ' + esc(x.texto).slice(0, 28) : ''}</option>` : '').join('');
   };
+  let editor = null;
   listarMidias(); listarCenas();
-  montarEditorVideo($('[data-editor-video]', raiz), { criativo, cliente });
+  editor = montarEditorVideo($('[data-editor-video]', raiz), { criativo, cliente });
+  listarMidias();
+
+  // Atalhos do "Caminho" e botões que levam de uma etapa à outra (ninguém precisa adivinhar onde clicar).
+  const irPara = (etapa) => { const el = $(`[data-etapa="${etapa}"]`, raiz); if (el.tagName === 'DETAILS') el.open = true; el.scrollIntoView({ block: 'start' }); };
+  on(raiz, 'click', '[data-ir]', (b) => irPara(b.dataset.ir));
+  on(raiz, 'click', '[data-abrir-midias]', () => $('[data-etapa="materiais"] [data-midias]', raiz).click());
+  on(raiz, 'click', '[data-abrir-editor]', (b) => ocupado(b, async () => {
+    const m = est.midias[Number($('[data-base-video-sel]', raiz).value)];
+    if (!m || m.tipo !== 'video') throw new Error('Envie o vídeo do cliente primeiro.');
+    irPara('editor');
+    await editor.carregarVideo(m.arquivo);
+  }));
 
   const adicionarArquivos = async (arqs) => {
     for (const f of arqs) est.midias.push(await carregarMidia(f));

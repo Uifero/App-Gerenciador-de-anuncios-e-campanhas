@@ -11,7 +11,7 @@ import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
 import {
-  esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, toast, modal, ocupado, lerForm, opcoes, copiar, confirmar,
+  esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, toast, modal, ocupado, lerForm, opcoes, copiar, confirmar, campoArquivo,
 } from '../core/ui.js';
 
 const rotulo = (lista, v) => (lista.find(([k]) => k === v) || [, v])[1];
@@ -282,7 +282,7 @@ function detalhe(c, cliente, cfg, recarregar) {
         <button class="btn-ghost btn-sm" data-link><i class="fa-solid fa-link"></i> Copiar link compartilhável</button>
         <button class="btn-danger btn-sm" data-rm-arq><i class="fa-solid fa-trash"></i> Remover</button></div>`
         : `<p class="caption mb-2">${tag('sem arquivo', 'tag-warn')} Envie o vídeo ou imagem finalizado.</p>`}
-      <input type="file" data-arq accept="image/*,video/*,application/pdf" class="mt-2 block text-sm"></div>
+      <div class="mt-2">${campoArquivo({ attrs: 'data-arq', accept: 'image/*,video/*,application/pdf', texto: c.arquivoUrl ? 'Substituir peça final (vídeo, imagem ou PDF)' : 'Enviar peça final (vídeo, imagem ou PDF)', destaque: !c.arquivoUrl, removivel: false })}</div></div>
 
     <div class="mt-5"><h4 class="mb-2 text-sm font-semibold">Histórico de versões (${versoes.length})</h4>
       <ol class="space-y-2">${[...versoes].reverse().map((v) => `<li class="rounded-lg bg-slate-50 p-2 text-sm"><div class="flex justify-between"><b>v${v.n} · ${esc(v.nota || '')}</b><span class="hint">${dataBR(v.quando)}</span></div>
