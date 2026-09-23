@@ -17,6 +17,7 @@ import {
 import { $, esc, on, modal, toast, ocupado, opcoes, copiar } from '../core/ui.js';
 import { CENAS_UNBOXING } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
+import { montarEditorVideo } from './video-editor.js';
 
 /** slug() de lib/csv.js devolve '' para um nome vazio; aqui é nome de arquivo, então cai num nome genérico. */
 const nomeArquivo = (s) => (slug(s) || 'criativo').slice(0, 40);
@@ -119,7 +120,11 @@ export function abrirEstudio(criativo, cliente) {
     <p class="hint mt-2">A gravação acontece em tempo real: um vídeo de 20 s leva 20 s. <b>Mantenha esta aba visível</b> até terminar.</p>
     <div data-progresso class="mt-2 hidden"><div class="h-2 w-full overflow-hidden rounded bg-slate-200"><div data-barra class="h-2 w-0 bg-indigo-600"></div></div></div>
     <div data-resultado class="mt-3"></div>
-  </section>`;
+  </section>
+
+  <details class="mt-4 rounded-lg border border-emerald-200 p-3"><summary class="cursor-pointer text-sm font-semibold"><i class="fa-solid fa-film"></i> 4. Editor avançado de vídeo (corte, proporção, texto e legenda)</summary>
+    <div class="mt-3" data-editor-video></div>
+  </details>`;
 
   const canvas = $('[data-previa]', raiz);
   const cfgPeca = () => ({
@@ -185,6 +190,7 @@ export function abrirEstudio(criativo, cliente) {
     c.innerHTML = '<option value="">(nenhuma: escolho depois)</option>' + est.cenas.map((x, i) => x.tipo === 'cena' ? `<option value="${i}" ${ca === String(i) ? 'selected' : ''}>Cena ${i + 1}${x.texto ? ': ' + esc(x.texto).slice(0, 28) : ''}</option>` : '').join('');
   };
   listarMidias(); listarCenas();
+  montarEditorVideo($('[data-editor-video]', raiz), { criativo, cliente });
 
   const adicionarArquivos = async (arqs) => {
     for (const f of arqs) est.midias.push(await carregarMidia(f));

@@ -67,6 +67,8 @@ export const CATEGORIAS_HOOK = [
 export const STATUS_CAMPANHA = [['planejada', 'Planejada'], ['ativa', 'Ativa'], ['pausada', 'Pausada'], ['encerrada', 'Encerrada']];
 
 export const PLATAFORMAS = [['nuvemshop', 'Nuvemshop'], ['shopify', 'Shopify']];
+/** Plataforma de anúncio (diagnóstico de campanha) — não confundir com PLATAFORMAS (loja/site) acima. */
+export const PLATAFORMAS_ANUNCIO = [['meta', 'Meta (Facebook/Instagram)'], ['tiktok', 'TikTok Ads'], ['google', 'Google Ads'], ['outra', 'Outra']];
 export const STATUS_SITE = [['rascunho', 'Rascunho'], ['pronto', 'Pronto para entrega'], ['publicado', 'Publicado/Entregue']];
 
 export const CONFIG_PADRAO = {
@@ -92,7 +94,7 @@ export const TAREFAS_IA = {
   imagem: ['Prompts de imagem e vídeo', 'criativos', 1800, 'Haiku'],
   hooks: ['Geração de hooks', 'hooks', 2000, 'Haiku'], referencias: ['Busca de mercado', 'mercado', 10000, 'Sonnet'], analise: ['Análise de referência', 'mercado', 2500, 'Sonnet'],
   site: ['Conteúdo do site', 'site', 6000, 'Sonnet'], pacote: ['Pacote de plataforma', 'site', 8000, 'Sonnet'], campanha: ['Estrutura de campanha', 'campanhas', 5000, 'Sonnet'], playbook: ['Playbooks', 'playbooks', 4000, 'Sonnet'],
-  insights: ['Explicação de insights', 'insights', 3000, 'Sonnet'],
+  insights: ['Explicação de insights', 'insights', 3000, 'Sonnet'], diagnostico: ['Diagnóstico de campanha', 'campanhas', 4000, 'Sonnet'],
 };
 export const CATEGORIAS_CUSTO = { criativos: 'Criativos', hooks: 'Hooks', mercado: 'Análise de mercado', site: 'Site/Loja', campanhas: 'Campanhas', playbooks: 'Playbooks', insights: 'Insights' };
 

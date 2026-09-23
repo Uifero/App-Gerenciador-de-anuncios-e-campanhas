@@ -166,12 +166,41 @@ export async function gerarHooks({ cliente, tema, categoria, quantidade = 8 }) {
 }
 
 // ---------- campanhas ----------
-export async function gerarEstruturaCampanha({ cliente, criativos, objetivo, orcamentoDiario }) {
-  const system = 'Você é gestor de tráfego Meta Ads sênior. Estrutura testes enxutos e realistas.';
+/** Resume os grupos de padroesLocais/padroesPorNicho (insights.js) pro prompt, só os 3 melhores de cada dimensão. */
+function resumirPadroesCampanha(padroes) {
+  if (!padroes) return '(nenhum)';
+  const linhas = Object.entries(padroes).filter(([, l]) => l.length).map(([campo, l]) =>
+    `${campo}: ` + l.slice(0, 3).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio?.toFixed(2) ?? 'n/d'}, ${g.amostras} amostra(s))`).join('; '));
+  return linhas.length ? linhas.join('\n') : '(nenhum com amostra suficiente ainda)';
+}
+
+/**
+ * `criativosAprovados` = criativos com status aprovado/em_uso/pausado, disponíveis pra usar na campanha (cada um
+ * com id/nome/angulo/framework/formato). `padroesLocais`/`padroesNicho` vêm do motor de Insights (insights.js) —
+ * a IA só interpreta esses números já calculados, não inventa um padrão novo. `referenciasFortes` = referências
+ * de mercado salvas com sinal forte, pra embasar a estrutura e a seleção.
+ */
+export async function gerarEstruturaCampanha({ cliente, criativos, criativosAprovados = [], objetivo, orcamentoDiario, padroesLocais, padroesNicho, referenciasFortes = [] }) {
+  const system = 'Você é gestor de tráfego Meta Ads sênior. Estrutura testes enxutos e realistas, e escolhe os criativos certos pra cada conjunto com base em dados reais — nunca por preferência estética.';
+  const listaCriativos = criativosAprovados.map((c) => `- id "${c.id}": "${c.nome}" — ângulo ${c.angulo || 'n/d'}, framework ${c.framework || 'n/d'}, formato ${c.formato || 'n/d'}`).join('\n') || '(nenhum criativo aprovado ainda)';
   const pedido = `Monte a estrutura de campanha ${cliente.estagio === 'rodando' ? 'de ESCALA/otimização usando o histórico do cliente' : 'de PRIMEIRO TESTE (cliente novo, sem histórico)'}.
 Objetivo: ${objetivo || 'vendas'}. Orçamento diário disponível: ${orcamentoDiario ? 'R$ ' + orcamentoDiario : 'não informado — sugira uma faixa coerente e diga que é estimativa'}.
-Criativos disponíveis: ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
-Saída em JSON: {"resumo": string, "publicos": [{"nome","descricao","tipo"}], "orcamento": {"diario": number, "distribuicao": string}, "estruturaTeste": {"campanhas": number, "conjuntos": string, "criativosPorConjunto": string, "duracaoDias": number, "criterioDecisao": string}, "checklistMeta": [string]}.
+Criativos disponíveis (contexto geral): ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
+
+CRIATIVOS APROVADOS DISPONÍVEIS PRA USAR NA CAMPANHA (escolha entre estes, pelo id):
+${listaCriativos}
+
+PADRÕES DE DESEMPENHO JÁ DETECTADOS (calculados sem IA, direto dos resultados registrados — média ponderada pelo gasto; USE para embasar a seleção, não invente outro padrão):
+Deste cliente:
+${resumirPadroesCampanha(padroesLocais)}
+De clientes de nicho semelhante (sem identificar quem):
+${resumirPadroesCampanha(padroesNicho)}
+
+Referências de mercado salvas de sinal forte: ${referenciasFortes.map((r) => `"${r.titulo || 'referência'}" (ângulo ${r.analise?.angulo || 'n/d'})`).join('; ') || '(nenhuma)'}.
+
+TAREFA EXTRA — seleção de criativos: escolha, entre os "criativos aprovados disponíveis" acima, quais usar nesta campanha, priorizando os que batem com os padrões de melhor desempenho. Para cada um escolhido, dê uma justificativa curta (1 frase, citando o dado real que embasou — ex.: "ROAS médio 4.2x nos últimos resultados deste cliente" ou "ângulo ainda não testado por este cliente mas comprovado em clientes do nicho"). Se NÃO houver criativos aprovados suficientes pra preencher a estrutura sugerida (ex.: menos de 1 por público/conjunto), NÃO force uma seleção fraca — deixe "selecaoCriativos" só com os que realmente valem a pena e explique em "avisoCriativos" o que falta produzir (ângulo/formato). Se não faltar nada, "avisoCriativos" é null.
+
+Saída em JSON: {"resumo": string, "publicos": [{"nome","descricao","tipo"}], "orcamento": {"diario": number, "distribuicao": string}, "estruturaTeste": {"campanhas": number, "conjuntos": string, "criativosPorConjunto": string, "duracaoDias": number, "criterioDecisao": string}, "checklistMeta": [string], "selecaoCriativos": [{"criativoId","criativoNome","motivo"}], "avisoCriativos": string|null}.
 "checklistMeta" = passos práticos, na ordem, para configurar no Gerenciador de Anúncios do Meta. Escreva os textos em português do Brasil (é para o gestor de tráfego) e use EXATAMENTE as chaves JSON pedidas, sem traduzi-las. ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'campanha', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return normalizarCampanha(dados);
@@ -187,6 +216,8 @@ export function normalizarCampanha(d = {}) {
     orcamento: { diario: d.orcamento?.diario ?? d.presupuesto?.diario ?? null, distribuicao: pegar(d.orcamento || d.presupuesto || {}, 'distribuicao', 'distribucion', 'distribución') },
     estruturaTeste: { campanhas: pegar(t, 'campanhas', 'campañas'), conjuntos: pegar(t, 'conjuntos'), criativosPorConjunto: pegar(t, 'criativosPorConjunto', 'creativosPorConjunto'), duracaoDias: pegar(t, 'duracaoDias', 'duracionDias', 'duracion'), criterioDecisao: pegar(t, 'criterioDecisao', 'criterioDecision', 'criterio') },
     checklistMeta: d.checklistMeta || d.checklist || [],
+    selecaoCriativos: (d.selecaoCriativos || d.seleccionCreativos || []).map((s) => ({ criativoId: pegar(s, 'criativoId', 'creativoId', 'id'), criativoNome: pegar(s, 'criativoNome', 'creativoNome', 'nome'), motivo: pegar(s, 'motivo', 'justificativa', 'razon') })).filter((s) => s.criativoId),
+    avisoCriativos: pegar(d, 'avisoCriativos', 'avisoCreativos') || null,
   };
 }
 
@@ -295,6 +326,38 @@ ${padroesNicho ? `\nPadrões agregados de OUTROS clientes do mesmo nicho (${clie
 Explique em português do Brasil, de forma curta e direta, o que esses números sugerem e o que testar a seguir para ${cliente.nome}. Use só os dados acima — não invente ângulos, frameworks nem números novos. Se os dados forem poucos, diga isso e sugira registrar mais resultados.
 Saída JSON: {"resumo": string (2-4 frases), "recomendacoes": [string] (1 a 3 ações práticas)}. ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'insights', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
+}
+
+// ---------- diagnóstico de campanha já rodando ----------
+/**
+ * Cruza o que o gestor informou sobre a campanha em curso com os padrões já detectados pelo motor de Insights
+ * (próprio cliente e clientes de nicho semelhante) e as referências de mercado de sinal forte. A IA NÃO calcula
+ * padrão novo — só interpreta o que já foi calculado localmente (ver insights.js) e o que o gestor descreveu.
+ */
+export async function diagnosticarCampanha({ cliente, dados, padroesLocais, padroesNicho, referenciasFortes = [] }) {
+  const system = 'Você é estrategista de tráfego pago sênior, cético e direto: só recomenda o que os dados sustentam, nunca acha bonito nem invade terreno de opinião sem base.';
+  const resumirGrupos = (p) => Object.entries(p || {}).filter(([, l]) => l.length).map(([campo, l]) =>
+    `${campo}: ` + l.slice(0, 4).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio?.toFixed(2) ?? 'n/d'}, ${g.amostras} amostra(s))`).join('; ')).join('\n') || '(nenhum com amostra suficiente)';
+  const pedido = `O que o gestor informou sobre a campanha ATUALMENTE no ar:
+Plataforma: ${dados.plataforma || 'não informada'}
+Públicos usados: ${dados.publicos || 'não informado'}
+Orçamento diário atual: ${dados.orcamentoDiario ? 'R$ ' + dados.orcamentoDiario : 'não informado'}
+CPA atual: ${dados.cpaAtual ? 'R$ ' + dados.cpaAtual : 'não informado'}
+ROAS atual: ${dados.roasAtual || 'não informado'}
+Criativos que já estão rodando (ângulo, formato, tempo no ar): ${dados.criativosRodando || 'não informado'}
+Ofertas/promoções ativas: ${dados.ofertas || 'não informado'}
+
+PADRÕES JÁ DETECTADOS (calculados sem IA, direto dos resultados registrados — média ponderada pelo gasto; USE para embasar, não invente outro padrão):
+Deste cliente:
+${resumirGrupos(padroesLocais)}
+De clientes de nicho semelhante (sem identificar quem):
+${resumirGrupos(padroesNicho)}
+
+Referências de mercado salvas de sinal forte: ${referenciasFortes.map((r) => `"${r.titulo || 'referência'}" (ângulo ${r.analise?.angulo || 'n/d'}, framework ${r.analise?.framework || 'n/d'})`).join('; ') || '(nenhuma)'}.
+
+Gere um diagnóstico. Cada item de "funcionandoBem", "desperdicio" e "recomendacoes" precisa vir com "origem": cite de onde veio (ex.: "dado informado pelo gestor", "padrão deste cliente", "padrão de clientes do nicho", ou o nome de uma referência específica). NÃO invente números que não estejam nos dados acima. Se faltar informação para concluir algo, diga isso em vez de adivinhar.
+Saída em JSON: {"funcionandoBem": [{"texto","origem"}], "desperdicio": [{"texto","origem"}], "recomendacoes": [{"texto","origem","prioridade"}]} — "recomendacoes" com 3 a 5 itens, "prioridade" em: alta, media, baixa. Escreva em português do Brasil. ${SO_JSON}`;
+  return (await gerarJSON({ tarefa: 'diagnostico', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
 // ---------- checklist de qualidade (Haiku: tarefa curta e barata) ----------

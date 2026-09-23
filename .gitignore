@@ -15,3 +15,6 @@ dist/
 server/.uso-imagens.json
 
 server/.uso-videos.json
+
+# Núcleo do ffmpeg.wasm (~32 MB): recriado por "npm install" (script postinstall), não entra no Git
+public/ffmpeg/

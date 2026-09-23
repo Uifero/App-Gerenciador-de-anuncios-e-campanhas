@@ -10,10 +10,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "NODE_ENV=production node server/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "node scripts/copiar-ffmpeg-core.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@fortawesome/fontawesome-free": "^7.3.1",
     "dotenv": "^18.0.1",
     "express": "^5.2.1",

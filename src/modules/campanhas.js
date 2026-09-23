@@ -3,6 +3,7 @@ import { db, COL } from '../core/storage.js';
 import { gerarEstruturaCampanha } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
 import { definirStatus } from './criativos.js';
+import { padroesLocais, padroesPorNicho } from './insights.js';
 import { STATUS_CAMPANHA } from '../lib/constantes.js';
 import {
   esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, moeda, toast, modal, ocupado, lerForm, opcoes, copiar,
@@ -47,12 +48,15 @@ export function siteDestino(sites) {
 }
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [campanhas, criativos, sites, cfg] = await Promise.all([
+  const [campanhas, criativos, sites, referencias, resultados, cfg] = await Promise.all([
     db.listar(COL.campanhas, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
-    db.listar(COL.sites, { clienteId: cliente.id }), obterConfig(),
+    db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
+    db.listar(COL.resultados, { clienteId: cliente.id }), obterConfig(),
   ]);
   const destino = siteDestino(sites);
   const fadigados = criativos.filter((c) => c.status === 'em_uso' && (diasDesde(c.emUsoDesde) ?? 0) >= cfg.diasFadiga);
+  const referenciasFortes = referencias.filter((r) => r.sinal === 'forte');
+  const locais = padroesLocais(resultados);
 
   root.innerHTML = `${cabecalho('Campanhas', 'Estrutura de teste, públicos e orçamento — pronta para replicar no Gerenciador de Anúncios do Meta.',
     '<button class="btn-primary" data-nova title="Cria uma campanha nova, com IA ou manualmente"><i class="fa-solid fa-plus"></i> Nova campanha</button>')}
@@ -67,6 +71,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   // ---------- nova campanha ----------
   on(root, 'click', '[data-nova]', () => {
+    const aprovados = criativos.filter((c) => ['aprovado', 'em_uso', 'pausado'].includes(c.status));
     const m = modal('Nova campanha', `<form id="fn" class="space-y-3">
       <p class="caption">${cliente.estagio === 'novo' ? 'Cliente novo: a estrutura será de primeiro teste.' : 'Cliente rodando: a estrutura considera o histórico dele.'}</p>
       <div><label class="label">Nome *</label><input class="input" name="nome" placeholder="Ex.: Teste de ângulos — Legging"></div>
@@ -79,7 +84,10 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <div class="mt-3 space-y-3"><div><label class="label">Públicos (um por linha)</label><textarea class="input" rows="3" name="publicos" placeholder="Interesse fitness feminino&#10;Lookalike 1% compradores"></textarea></div>
           <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Conjuntos de anúncios</label><input class="input" name="conjuntos" placeholder="Ex.: 3 conjuntos, 1 por público"></div>
             <div><label class="label">Duração do teste (dias)</label><input class="input" type="number" name="duracao" value="3"></div></div>
-          <div><label class="label">Critério de decisão</label><input class="input" name="criterio" placeholder="Ex.: pausar quem gastar 2x o CPA alvo sem venda"></div></div></details>
+          <div><label class="label">Critério de decisão</label><input class="input" name="criterio" placeholder="Ex.: pausar quem gastar 2x o CPA alvo sem venda"></div></div>
+          <div><label class="label">Criativos aprovados a vincular</label>
+            ${aprovados.length ? `<div class="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">${aprovados.map((c) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="cr_${c.id}"> ${esc(c.nome)} ${c.angulo ? `<span class="hint">(${esc(c.angulo)})</span>` : ''}</label>`).join('')}</div>`
+              : '<p class="hint">Nenhum criativo aprovado ainda.</p>'}</div></details>
       <div class="flex flex-wrap gap-2"><button class="btn-ia" type="submit" data-modo="ia"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar estrutura com IA</button>
         <button class="btn-ghost" type="submit" data-modo="manual">Criar sem IA</button></div></form>`);
     on(m.el, 'submit', '#fn', async (f, ev) => {
@@ -89,18 +97,27 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       await ocupado(btn, async () => {
         const base = { clienteId: cliente.id, nome: v.nome, objetivo: v.objetivo, orcamentoDiario: num(v.orcamento), urlDestino: v.urlDestino || null, status: 'planejada', criativos: [] };
         if (btn.dataset.modo === 'ia') {
-          const aprovados = criativos.filter((c) => ['aprovado', 'em_uso', 'pausado'].includes(c.status));
-          const e = await gerarEstruturaCampanha({ cliente, criativos: aprovados, objetivo: v.objetivo, orcamentoDiario: v.orcamento });
+          const nicho = await padroesPorNicho(cliente.nicho, cliente.id).catch(() => ({ padroes: null }));
+          const e = await gerarEstruturaCampanha({
+            cliente, criativos: aprovados, criativosAprovados: aprovados, objetivo: v.objetivo, orcamentoDiario: v.orcamento,
+            padroesLocais: locais, padroesNicho: nicho.padroes, referenciasFortes,
+          });
+          // Defesa: só aceita ids que realmente existem entre os aprovados (a IA não pode inventar um criativo).
+          const selecao = (e.selecaoCriativos || []).filter((s) => aprovados.some((a) => a.id === s.criativoId));
+          const avisoCriativos = e.avisoCriativos || (!aprovados.length ? 'Nenhum criativo aprovado ainda — produza e aprove criativos antes de vincular à campanha.' : null);
           await db.criar(COL.campanhas, {
             ...base, origem: 'ia', resumo: e.resumo || '', publicos: e.publicos || [], estruturaTeste: e.estruturaTeste || {},
             orcamentoDiario: num(e.orcamento?.diario) ?? base.orcamentoDiario, orcamentoNota: e.orcamento?.distribuicao || '', checklistMeta: e.checklistMeta || [],
+            criativos: selecao.map((s) => ({ id: s.criativoId, inicio: null })), selecaoCriativos: selecao, avisoCriativos,
           });
-          toast('A IA montou a estrutura. Revise os detalhes na campanha.');
+          toast(avisoCriativos ? `A IA montou a estrutura, mas avisa: ${avisoCriativos}` : `A IA montou a estrutura e selecionou ${selecao.length} criativo(s) — veja o motivo de cada um na campanha.`, avisoCriativos ? 'info' : 'ok');
         } else {
+          const selecionados = aprovados.filter((c) => f.elements['cr_' + c.id]?.checked);
           await db.criar(COL.campanhas, {
             ...base, origem: 'manual', resumo: '',
             publicos: listaDeLinhas(v.publicos).map((nome) => ({ nome, descricao: '' })),
             estruturaTeste: { conjuntos: v.conjuntos, duracaoDias: num(v.duracao), criterioDecisao: v.criterio }, checklistMeta: [],
+            criativos: selecionados.map((c) => ({ id: c.id, inicio: null })),
           });
           toast('Campanha criada.');
         }
@@ -122,8 +139,9 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
     const e = c.estruturaTeste || {};
     const disponiveis = criativos.filter((x) => ['aprovado', 'em_uso', 'pausado'].includes(x.status) && !(c.criativos || []).some((k) => k.id === x.id));
     alvo.innerHTML = `
-    ${c.origem === 'ia' ? iaNota('Estrutura criada pela IA a partir do perfil do cliente e do estágio dele. Ajuste o que quiser abaixo.') : ''}
+    ${c.origem === 'ia' ? iaNota('Estrutura criada pela IA a partir do perfil do cliente, dos padrões do motor de Insights e das referências de sinal forte. Ajuste o que quiser abaixo.') : ''}
     ${c.resumo ? `<p class="mt-2 text-sm">${esc(c.resumo)}</p>` : ''}
+    ${c.avisoCriativos ? `<div class="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(c.avisoCriativos)}</div>` : ''}
     <div class="mt-3 grid gap-3 sm:grid-cols-2">
       <div class="card"><h4 class="mb-1 text-sm font-semibold">Públicos</h4>${(c.publicos || []).length ? `<ul class="list-disc pl-5 text-sm">${c.publicos.map((p) => `<li><b>${esc(p.nome)}</b>${p.descricao ? ' — ' + esc(p.descricao) : ''}</li>`).join('')}</ul>` : '<p class="hint">Nenhum público definido.</p>'}</div>
       <div class="card"><h4 class="mb-1 text-sm font-semibold">Orçamento e teste</h4><p class="text-sm">Diário: <b>${moeda(c.orcamentoDiario)}</b></p>
@@ -138,10 +156,12 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
       ${(c.criativos || []).length ? `<div class="space-y-2">${c.criativos.map((k) => {
         const cr = doCli(k.id); if (!cr) return '';
         const dias = cr.status === 'em_uso' ? diasDesde(cr.emUsoDesde) : null; const fadiga = dias != null && dias >= cfg.diasFadiga;
-        return `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-2 text-sm">
+        const motivo = (c.selecaoCriativos || []).find((s) => s.criativoId === cr.id)?.motivo;
+        return `<div class="rounded-lg border border-slate-200 p-2 text-sm"><div class="flex flex-wrap items-center justify-between gap-2">
           <span><b>${esc(cr.nome)}</b> ${cr.emUsoDesde ? tag('início ' + dataBR(k.inicio || cr.emUsoDesde), 'tag-ok') : tag('ainda não subiu')} ${fadiga ? tag(`fadiga · ${dias} dias`, 'tag-bad') : ''}</span>
           <span class="flex gap-1">${cr.status !== 'em_uso' ? `<button class="btn-primary btn-sm" data-uso="${cr.id}" title="Registra a data de início e passa a contar a fadiga">Marcar em uso</button>` : `<button class="btn-ghost btn-sm" data-pausar="${cr.id}">Pausar</button>`}
-          <button class="btn-danger btn-sm" data-tirar="${cr.id}" title="Remover da campanha"><i class="fa-solid fa-xmark"></i></button></span></div>`;
+          <button class="btn-danger btn-sm" data-tirar="${cr.id}" title="Remover da campanha"><i class="fa-solid fa-xmark"></i></button></span></div>
+          ${motivo ? `<p class="hint mt-1"><i class="fa-solid fa-chart-simple"></i> Escolhido pela IA: ${esc(motivo)}</p>` : ''}</div>`;
       }).join('')}</div>` : '<p class="hint">Nenhum criativo vinculado ainda.</p>'}
       ${disponiveis.length ? `<div class="mt-2 flex gap-2"><select class="input" data-add>${'<option value="">Adicionar criativo aprovado…</option>' + disponiveis.map((x) => `<option value="${x.id}">${esc(x.nome)}</option>`).join('')}</select></div>`
         : '<p class="hint mt-2">Só criativos aprovados (checklist completo) podem ser vinculados.</p>'}</div>

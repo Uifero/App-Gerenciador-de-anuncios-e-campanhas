@@ -9,6 +9,7 @@ import { resumoBase, copiarEstrutura } from './duplicar.js';
 import { cartaoCusto, totalArquivadoDoCliente } from './custo.js';
 import { exportarDados } from './backup.js';
 import { contarDependentesCliente, apagarClienteEmCascata } from '../lib/cascata.js';
+import { abrirDiagnostico } from './diagnostico.js';
 
 export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]);
 
@@ -243,6 +244,8 @@ export async function viewCliente(el, id, aba, abasMap) {
   on(el, 'click', '[data-mais]', async () => {
     const pbs = await db.listar(COL.playbooks);
     const m = modal('Mais ações', `<div class="space-y-3">
+      ${c.estagio === 'rodando' ? `<div><button class="btn-ia w-full" data-diagnostico><i class="fa-solid fa-stethoscope"></i> Diagnosticar campanha atual</button>
+        <p class="hint">Cruza o que já está no ar com os padrões do motor de Insights e as referências de mercado salvas, pra sugerir o que manter e o que mudar.</p></div>` : ''}
       <div><button class="btn-ghost w-full" data-duplicar><i class="fa-solid fa-copy"></i> Duplicar como base para novo cliente</button>
         <p class="hint">Abre um cadastro novo já com o perfil de marca, as metas, o escopo, os hooks e as estruturas de campanha deste cliente. Resultados e criativos finalizados não vão junto.</p></div>
       <div><button class="btn-ghost w-full" data-salvar-pb><i class="fa-solid fa-book-open"></i> Salvar como playbook</button>
@@ -250,6 +253,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       <div><label class="label">Aplicar um playbook a este cliente</label><div class="flex gap-2"><select class="input" data-pb>${pbs.length ? pbs.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('') : '<option value="">Nenhum playbook ainda</option>'}</select>
         <button class="btn-primary" data-aplicar-pb ${pbs.length ? '' : 'disabled'}>Aplicar</button></div>
         <p class="hint">Adiciona os hooks do playbook à biblioteca deste cliente e sugere os ângulos na hora de criar criativos.</p></div></div>`);
+    on(m.el, 'click', '[data-diagnostico]', () => { m.fechar(); abrirDiagnostico(c); });
     on(m.el, 'click', '[data-duplicar]', () => { try { sessionStorage.setItem('gcc_base', id); } catch { /* sem storage */ } m.fechar(); location.hash = '#/clientes/novo/completo'; });
     on(m.el, 'click', '[data-salvar-pb]', async (b) => {
       await ocupado(b, async () => { const r = await rascunhoDeCliente(c); m.fechar(); abrirEditor(r, () => toast('Playbook salvo na biblioteca.'), 'Salvar como playbook (revise antes)'); });
