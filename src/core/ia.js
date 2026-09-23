@@ -13,7 +13,7 @@ import { verificarOrcamento, registrarUso } from '../modules/custo.js';
  *  - estavel: texto que se repete entre chamadas do mesmo cliente (regras + perfil de marca) -> vai para o cache
  *  - system: instrução específica desta tarefa (muda a cada chamada, fica depois do cache)
  */
-export async function chamarClaude({ tarefa, cliente = null, estavel, system, messages, webSearch = null }) {
+export async function chamarClaude({ tarefa, cliente = null, estavel, system, messages, webSearch = null, imagens = undefined }) {
   const cfg = await obterConfig();
   await verificarOrcamento(cliente, cfg); // exige confirmação manual se o orçamento do mês já estourou
   const token = await tokenAtual();
@@ -22,7 +22,8 @@ export async function chamarClaude({ tarefa, cliente = null, estavel, system, me
     r = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || undefined, webSearch }),
+      // imagens: [{ media_type, data (base64) }] — só o diagnóstico usa (o servidor recusa nas demais tarefas).
+      body: JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || undefined, webSearch, imagens }),
     });
   } catch {
     throw new Error('Não consegui falar com o servidor de IA. Ele está rodando? Você pode usar a opção manual.');
@@ -333,8 +334,10 @@ Saída JSON: {"resumo": string (2-4 frases), "recomendacoes": [string] (1 a 3 a�
  * Cruza o que o gestor informou sobre a campanha em curso com os padrões já detectados pelo motor de Insights
  * (próprio cliente e clientes de nicho semelhante) e as referências de mercado de sinal forte. A IA NÃO calcula
  * padrão novo — só interpreta o que já foi calculado localmente (ver insights.js) e o que o gestor descreveu.
+ * `imagens` (opcional): prints do painel de métricas e/ou peças no ar, [{ media_type, data }] na ordem em que o
+ * gestor enviou. Cada conclusão volta com "fonte" para a tela separar o que veio da imagem do que veio dos dados.
  */
-export async function diagnosticarCampanha({ cliente, dados, padroesLocais, padroesNicho, referenciasFortes = [] }) {
+export async function diagnosticarCampanha({ cliente, dados, padroesLocais, padroesNicho, referenciasFortes = [], imagens = [] }) {
   const system = 'Você é estrategista de tráfego pago sênior, cético e direto: só recomenda o que os dados sustentam, nunca acha bonito nem invade terreno de opinião sem base.';
   const resumirGrupos = (p) => Object.entries(p || {}).filter(([, l]) => l.length).map(([campo, l]) =>
     `${campo}: ` + l.slice(0, 4).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio?.toFixed(2) ?? 'n/d'}, ${g.amostras} amostra(s))`).join('; ')).join('\n') || '(nenhum com amostra suficiente)';
@@ -355,9 +358,21 @@ ${resumirGrupos(padroesNicho)}
 
 Referências de mercado salvas de sinal forte: ${referenciasFortes.map((r) => `"${r.titulo || 'referência'}" (ângulo ${r.analise?.angulo || 'n/d'}, framework ${r.analise?.framework || 'n/d'})`).join('; ') || '(nenhuma)'}.
 
-Gere um diagnóstico. Cada item de "funcionandoBem", "desperdicio" e "recomendacoes" precisa vir com "origem": cite de onde veio (ex.: "dado informado pelo gestor", "padrão deste cliente", "padrão de clientes do nicho", ou o nome de uma referência específica). NÃO invente números que não estejam nos dados acima. Se faltar informação para concluir algo, diga isso em vez de adivinhar.
-Saída em JSON: {"funcionandoBem": [{"texto","origem"}], "desperdicio": [{"texto","origem"}], "recomendacoes": [{"texto","origem","prioridade"}]} — "recomendacoes" com 3 a 5 itens, "prioridade" em: alta, media, baixa. Escreva em português do Brasil. ${SO_JSON}`;
-  return (await gerarJSON({ tarefa: 'diagnostico', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
+${imagens.length ? `IMAGENS ANEXADAS: ${imagens.length} imagem(ns), numeradas na ordem em que aparecem (imagem 1 = a primeira). Podem ser prints do painel de métricas da plataforma (ex.: Gerenciador de Anúncios do Meta) e/ou peças de criativo que estão no ar. Use-as como evidência ADICIONAL:
+- Em prints de métricas: leia só o que está visível (CPM, frequência, CTR e se está caindo, CPC, custo por resultado, ROAS, gasto) e procure sinais de fadiga (frequência alta com CTR caindo, CPM subindo). Se um número da imagem contradisser um dado digitado, aponte o conflito.
+- Em peças de criativo: poluição visual, CTA pouco visível, texto cortado, contraste ruim, excesso de texto, legibilidade no celular.
+- Se a imagem estiver ilegível (borrada, pequena, cortada) ou não tiver relação com métricas/criativo (foto aleatória, print de outra coisa), marque isso e NÃO tire conclusão dela. Nunca invente um número que não aparece na imagem.
+Preencha "imagens" com UM item por imagem: {"numero": 1, "tipo": "metricas" | "criativo" | "ilegivel" | "sem_relacao", "leitura": "o que você leu nela, ou por que não dá para usar"}.
+
+` : ''}Gere um diagnóstico. Cada item de "funcionandoBem", "desperdicio" e "recomendacoes" precisa vir com:
+- "fonte": "dados" (digitado pelo gestor), ${imagens.length ? '"imagem" (lido em uma imagem anexada — informe também "imagem": o número dela), ' : ''}"padrao" (padrão deste cliente ou do nicho) ou "referencia" (referência de mercado);
+- "origem": a citação em texto (ex.: "dado informado pelo gestor", ${imagens.length ? '"imagem 2 — print de métricas", ' : ''}"padrão de clientes do nicho", ou o nome de uma referência).
+NÃO invente números que não estejam nos dados acima${imagens.length ? ' ou visíveis nas imagens' : ''}. Se faltar informação para concluir algo, diga isso em vez de adivinhar.
+Saída em JSON: {${imagens.length ? '"imagens": [{"numero","tipo","leitura"}], ' : ''}"funcionandoBem": [{"texto","fonte","origem"${imagens.length ? ',"imagem"' : ''}}], "desperdicio": [{"texto","fonte","origem"${imagens.length ? ',"imagem"' : ''}}], "recomendacoes": [{"texto","fonte","origem","prioridade"${imagens.length ? ',"imagem"' : ''}}]} — "recomendacoes" com 3 a 5 itens, "prioridade" em: alta, media, baixa. Escreva em português do Brasil. ${SO_JSON}`;
+  return (await gerarJSON({
+    tarefa: 'diagnostico', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }],
+    imagens: imagens.length ? imagens.map(({ media_type, data }) => ({ media_type, data })) : undefined,
+  })).dados;
 }
 
 // ---------- checklist de qualidade (Haiku: tarefa curta e barata) ----------

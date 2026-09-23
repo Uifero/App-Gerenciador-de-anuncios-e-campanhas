@@ -5,6 +5,7 @@ const bancos = {};
 const COL_FAKE = {
   clientes: 'clientes', criativos: 'criativos', hooks: 'hooks', referencias: 'referencias', campanhas: 'campanhas',
   resultados: 'resultados', produtos: 'produtos', sites: 'sites', aprovacoes: 'aprovacoes', respostas: 'respostas', usoApi: 'usoApi', playbooks: 'playbooks',
+  diagnosticos: 'diagnosticos', diagnosticoImagens: 'diagnosticoImagens',
 };
 const removidos = []; // caminhos passados para removerArquivo
 
@@ -54,6 +55,8 @@ describe('apagarClienteEmCascata', () => {
     popular('respostas', [{ id: 'resp1', clienteId: 'cli1' }]);
     popular('aprovacoes', [{ id: 'tok1', clienteId: 'cli1' }]);
     popular('playbooks', [{ id: 'pb1' }]); // global: não tem clienteId, não deve ser tocado
+    popular('diagnosticos', [{ id: 'd1', clienteId: 'cli1' }, { id: 'd2', clienteId: 'cli2' }]);
+    popular('diagnosticoImagens', [{ id: 'i1', clienteId: 'cli1', diagnosticoId: 'd1' }, { id: 'i2', clienteId: 'cli2', diagnosticoId: 'd2' }]);
 
     await apagarClienteEmCascata('cli1');
 
@@ -67,6 +70,10 @@ describe('apagarClienteEmCascata', () => {
     expect(bancos.respostas.has('resp1')).toBe(false);
     expect(bancos.aprovacoes.has('tok1')).toBe(false);
     expect(bancos.playbooks.has('pb1')).toBe(true); // playbook global preservado
+    expect(bancos.diagnosticos.has('d1')).toBe(false);
+    expect(bancos.diagnosticoImagens.has('i1')).toBe(false); // imagens anexadas ao diagnóstico também vão embora
+    expect(bancos.diagnosticos.has('d2')).toBe(true);
+    expect(bancos.diagnosticoImagens.has('i2')).toBe(true);
     expect(removerArquivo).toHaveBeenCalledWith('gcc/cli1/c1/foto.png');
   });
 

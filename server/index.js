@@ -53,8 +53,42 @@ export const TAREFAS = {
   pacote:      { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'low' },
   playbook:    { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'low' },
   insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low' },
-  diagnostico: { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'medium' },
+  diagnostico: { modelo: MODELO_COMPLEXO, max: 5000,  effort: 'medium', imagens: true },
 };
+
+// ---------- imagens anexadas (só tarefas com `imagens: true`, hoje o diagnóstico) ----------
+export const MAX_IMAGENS = 6;
+const TIPOS_IMAGEM = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_BASE64 = 5 * 1024 * 1024; // ~3,7 MB de imagem por arquivo (o front já reduz para ~1568 px)
+
+/** Confere as imagens vindas do navegador: [{ media_type, data (base64 puro) }]. Devolve a lista limpa ou lança Error com a mensagem para o usuário. */
+export function validarImagens(imagens) {
+  if (imagens == null) return [];
+  if (!Array.isArray(imagens)) throw new Error('Imagens em formato inválido.');
+  if (imagens.length > MAX_IMAGENS) throw new Error(`Envie no máximo ${MAX_IMAGENS} imagens por análise.`);
+  return imagens.map((im, i) => {
+    if (!im || !TIPOS_IMAGEM.includes(im.media_type)) throw new Error(`Imagem ${i + 1}: use JPG, PNG, WebP ou GIF.`);
+    if (typeof im.data !== 'string' || !im.data || im.data.length > MAX_BASE64 || !/^[A-Za-z0-9+/]+=*$/.test(im.data)) throw new Error(`Imagem ${i + 1} inválida ou grande demais.`);
+    return { media_type: im.media_type, data: im.data };
+  });
+}
+
+/** Blocos de conteúdo no formato da API (as imagens vêm antes do texto, como a documentação recomenda). */
+export const blocosComImagens = (texto, imagens) => [
+  ...imagens.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.media_type, data: im.data } })),
+  { type: 'text', text: String(texto) },
+];
+
+/**
+ * Lê a saída da CLI. Com --output-format json vem um objeto só; com stream-json (usado quando há imagem, porque só a
+ * entrada stream-json aceita blocos de imagem) vem uma linha JSON por evento e o que interessa é a de type "result".
+ */
+export function lerSaidaCli(out, stream) {
+  if (!stream) return JSON.parse(out);
+  const r = String(out).split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((l) => l?.type === 'result');
+  if (!r) throw new Error('sem linha de resultado');
+  return r;
+}
 
 // Preço por 1M de tokens (US$), tabela de referência de 2026-06 — é ESTIMATIVA, confira em anthropic.com/pricing.
 const PRECOS = { haiku: { entrada: 1, saida: 5 }, sonnet: { entrada: 2, saida: 10 }, opus: { entrada: 5, saida: 25 } };
@@ -121,7 +155,7 @@ const vez = () => new Promise((ok) => { const t = () => { ativos++; ok(); }; ati
 const liberar = () => { ativos--; espera.shift()?.(); };
 
 /** Chama `claude -p` sem shell (o prompt vai por stdin; nenhum argumento vem do usuário) e converte a saída para o formato da API. */
-async function viaCli({ tarefa, t, estavel, system, messages, webSearch }) {
+async function viaCli({ tarefa, t, estavel, system, messages, webSearch, imagens = [] }) {
   const prompt = [
     estavel, system,
     messages.map((m) => (messages.length > 1 ? (m.role === 'assistant' ? 'ASSISTENTE: ' : 'USUÁRIO: ') : '') + m.content).join('\n\n'),
@@ -130,6 +164,11 @@ async function viaCli({ tarefa, t, estavel, system, messages, webSearch }) {
   const args = ['-p', '--model', familia(t.modelo) === 'haiku' ? 'haiku' : 'sonnet', '--output-format', 'json', '--no-session-persistence',
     '--system-prompt', 'Você é um assistente que segue exatamente o formato de saída pedido pelo usuário. Não use ferramentas além das liberadas.',
     ...(busca ? ['--tools', 'WebSearch', '--allowedTools', 'WebSearch'] : ['--tools', ''])];
+  // Com imagem: a CLI só aceita blocos de imagem pela entrada stream-json (que exige saída stream-json + --verbose).
+  // As imagens vão direto ao modelo; nenhuma ferramenta de leitura de arquivo é liberada.
+  const stream = imagens.length > 0;
+  if (stream) args.splice(args.indexOf('json'), 1, 'stream-json', '--input-format', 'stream-json', '--verbose');
+  const entrada = stream ? JSON.stringify({ type: 'user', message: { role: 'user', content: blocosComImagens(prompt, imagens) } }) + '\n' : prompt;
   const env = { ...process.env }; delete env.ANTHROPIC_API_KEY; delete env.ANTHROPIC_BASE_URL; delete env.ANTHROPIC_AUTH_TOKEN; // usa o login da assinatura
   await vez();
   try {
@@ -140,9 +179,9 @@ async function viaCli({ tarefa, t, estavel, system, messages, webSearch }) {
       p.stdout.on('data', (d) => (out += d)); p.stderr.on('data', (d) => (err += d));
       p.on('error', (e) => { clearTimeout(timer); falha(new Error('Não consegui executar a CLI "claude": ' + e.message)); });
       p.on('close', () => { clearTimeout(timer); ok({ out, err }); });
-      p.stdin.end(prompt);
+      p.stdin.end(entrada);
     });
-    let j; try { j = JSON.parse(saida.out); } catch { throw new Error('Resposta inesperada da CLI do Claude: ' + (saida.err || saida.out).slice(0, 200)); }
+    let j; try { j = lerSaidaCli(saida.out, stream); } catch { throw new Error('Resposta inesperada da CLI do Claude: ' + (saida.err || saida.out).slice(0, 200)); }
     if (j.is_error) throw new Error('A CLI do Claude devolveu erro: ' + String(j.result || '').slice(0, 200));
     const u = j.usage || {};
     // Na assinatura não há cobrança por token: registramos os tokens e custo 0 (o app marca o provedor como "cli").
@@ -163,7 +202,8 @@ app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false, crossOriginEmbedderPolicy: false }));
 // /api/video recebe a foto em base64 (até ~12 MB); as demais rotas ficam em 1 MB.
 const jsonPadrao = express.json({ limit: '1mb' });
-app.use((req, res, next) => (req.path === '/api/video' ? next() : jsonPadrao(req, res, next)));
+// /api/claude aceita até MAX_IMAGENS imagens anexadas (diagnóstico com prints); por isso tem um limite próprio maior.
+app.use((req, res, next) => (req.path === '/api/video' || req.path === '/api/claude' ? next() : jsonPadrao(req, res, next)));
 
 app.get('/api/saude', (_req, res) => {
   res.json({ ok: true, provedor: cliDisponivel() ? 'cli' : 'api', preferido: PROVEDOR, modelos: { leve: MODELO_LEVE, complexo: MODELO_COMPLEXO }, chaveConfigurada: Boolean(process.env.ANTHROPIC_API_KEY) });
@@ -196,7 +236,7 @@ app.post('/api/video', exigirLogin, express.json({ limit: '14mb' }), async (req,
   catch (e) { console.error('[video]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Falha ao gerar o vídeo.' }); }
 });
 
-app.post('/api/claude', exigirLogin, limitar, async (req, res) => {
+app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), async (req, res) => {
   if (!cliDisponivel() && !process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ erro: 'IA indisponível: ANTHROPIC_API_KEY não configurada no servidor. Use a opção manual.' });
   }
@@ -205,9 +245,14 @@ app.post('/api/claude', exigirLogin, limitar, async (req, res) => {
   if (!t) return res.status(400).json({ erro: 'Tipo de tarefa de IA desconhecido.' });
   if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ erro: 'messages é obrigatório.' });
   for (const campo of [estavel, system]) if (typeof campo !== 'undefined' && typeof campo !== 'string') return res.status(400).json({ erro: 'Campo de sistema inválido.' });
+  let imagens;
+  try { imagens = validarImagens(req.body?.imagens); } catch (e) { return res.status(400).json({ erro: e.message }); }
+  if (imagens.length && !t.imagens) return res.status(400).json({ erro: 'Esta tarefa não aceita imagens.' });
+  // Sem imagem, o corpo continua limitado a 1 MB como as demais rotas (o limite maior é só para os anexos).
+  if (!imagens.length && Number(req.headers['content-length'] || 0) > 1024 * 1024) return res.status(413).json({ erro: 'Pedido grande demais.' });
 
   if (cliDisponivel()) {
-    try { return res.json(await viaCli({ tarefa, t, estavel, system, messages, webSearch })); }
+    try { return res.json(await viaCli({ tarefa, t, estavel, system, messages, webSearch, imagens })); }
     catch (e) {
       console.error('[cli]', tarefa, e?.message);
       // Ausente/sem login: pausa longa. Limite de uso ou outro erro: pausa curta.
@@ -229,7 +274,9 @@ app.post('/api/claude', exigirLogin, limitar, async (req, res) => {
     model: t.modelo,
     max_tokens: limite,
     system: blocos.length ? blocos : undefined,
-    messages: messages.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content) })),
+    // As imagens (se houver) entram na última mensagem do usuário, junto com o texto do pedido.
+    messages: messages.map((m, i) => ({ role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: imagens.length && i === messages.length - 1 ? blocosComImagens(m.content, imagens) : String(m.content) })),
     ...paramsDoModelo(t.modelo, t),
   };
   // Busca web só para a tarefa de mercado (é a única que precisa e a que mais custa).

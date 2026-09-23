@@ -1,6 +1,6 @@
 // Testes da lógica de custo e roteamento de modelo/tarefa do servidor de IA (sem rede: só as funções puras exportadas).
 import { describe, it, expect } from 'vitest';
-import { TAREFAS, calcularCusto, paramsDoModelo } from './index.js';
+import { TAREFAS, calcularCusto, paramsDoModelo, validarImagens, blocosComImagens, lerSaidaCli, MAX_IMAGENS } from './index.js';
 
 describe('TAREFAS', () => {
   it('toda tarefa tem modelo e limite de tokens de saída', () => {
@@ -84,5 +84,44 @@ describe('paramsDoModelo', () => {
   it('Sonnet sem effort definido usa "medium" como padrão', () => {
     const p = paramsDoModelo('claude-sonnet-5', {});
     expect(p.output_config.effort).toBe('medium');
+  });
+});
+
+describe('imagens anexadas (diagnóstico com prints)', () => {
+  const ok = { media_type: 'image/jpeg', data: 'QUJD' };
+
+  it('sem imagens devolve lista vazia (o fluxo só de texto não muda)', () => {
+    expect(validarImagens(undefined)).toEqual([]);
+    expect(validarImagens(null)).toEqual([]);
+  });
+
+  it('aceita JPG/PNG/WebP em base64 e descarta campos extras', () => {
+    expect(validarImagens([{ ...ok, nome: 'x', lixo: 1 }])).toEqual([ok]);
+  });
+
+  it('recusa tipo não suportado, base64 inválido e excesso de imagens', () => {
+    expect(() => validarImagens([{ media_type: 'application/pdf', data: 'QUJD' }])).toThrow(/JPG, PNG/);
+    expect(() => validarImagens([{ media_type: 'image/png', data: 'não é base64!' }])).toThrow(/inválida/);
+    expect(() => validarImagens(Array(MAX_IMAGENS + 1).fill(ok))).toThrow(/no máximo/);
+    expect(() => validarImagens('x')).toThrow(/formato inválido/);
+  });
+
+  it('só o diagnóstico aceita imagens', () => {
+    expect(TAREFAS.diagnostico.imagens).toBe(true);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.imagens).map(([n]) => n)).toEqual(['diagnostico']);
+  });
+
+  it('monta os blocos com as imagens antes do texto', () => {
+    const b = blocosComImagens('pedido', [ok]);
+    expect(b.map((x) => x.type)).toEqual(['image', 'text']);
+    expect(b[0].source).toEqual({ type: 'base64', media_type: 'image/jpeg', data: 'QUJD' });
+    expect(b[1].text).toBe('pedido');
+  });
+
+  it('lê a linha "result" da saída stream-json da CLI (e o JSON único no modo normal)', () => {
+    const stream = ['{"type":"system"}', '{"type":"assistant"}', '{"type":"result","result":"ok","is_error":false,"usage":{"input_tokens":9}}', ''].join('\n');
+    expect(lerSaidaCli(stream, true).result).toBe('ok');
+    expect(lerSaidaCli('{"result":"x"}', false).result).toBe('x');
+    expect(() => lerSaidaCli('{"type":"system"}', true)).toThrow();
   });
 });

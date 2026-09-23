@@ -12,19 +12,22 @@ async function removerTodos(col, filtro) {
 /** Conta (sem apagar nada) o que seria removido ao apagar o cliente — para mostrar antes de confirmar. */
 export async function contarDependentesCliente(clienteId) {
   const f = { clienteId };
-  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, aprovacoes, respostas] = await Promise.all([
+  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, aprovacoes, respostas, diagnosticos] = await Promise.all([
     db.listar(COL.criativos, f), db.listar(COL.hooks, f), db.listar(COL.referencias, f), db.listar(COL.campanhas, f),
     db.listar(COL.resultados, f), db.listar(COL.produtos, f), db.listar(COL.sites, f), db.listar(COL.aprovacoes, f), db.listar(COL.respostas, f),
+    db.listar(COL.diagnosticos, f),
   ]);
   return {
     criativos: criativos.length, hooks: hooks.length, referencias: referencias.length, campanhas: campanhas.length,
     resultados: resultados.length, produtos: produtos.length, sites: sites.length, aprovacoes: aprovacoes.length, respostas: respostas.length,
+    diagnosticos: diagnosticos.length,
   };
 }
 
 /**
  * Apaga o cliente e tudo o que está ligado a ele: criativos (e os arquivos deles no Storage), hooks, referências,
- * campanhas, resultados, produtos, sites, links de aprovação e as respostas do cliente final.
+ * campanhas, resultados, produtos, sites, links de aprovação, as respostas do cliente final e os diagnósticos de
+ * campanha (com as imagens anexadas a eles).
  * NÃO apaga `gcc_uso_api` (custo de IA já gasto): é histórico de despesa, não um dado operacional do cliente.
  * NÃO apaga playbooks: são receitas reaproveitáveis, não pertencem a um cliente.
  */
@@ -35,7 +38,7 @@ export async function apagarClienteEmCascata(clienteId) {
   await Promise.all([
     removerTodos(COL.criativos, f), removerTodos(COL.hooks, f), removerTodos(COL.referencias, f), removerTodos(COL.campanhas, f),
     removerTodos(COL.resultados, f), removerTodos(COL.produtos, f), removerTodos(COL.sites, f),
-    removerTodos(COL.aprovacoes, f), removerTodos(COL.respostas, f),
+    removerTodos(COL.aprovacoes, f), removerTodos(COL.respostas, f), removerTodos(COL.diagnosticos, f), removerTodos(COL.diagnosticoImagens, f),
   ]);
   await db.remover(COL.clientes, clienteId);
 }

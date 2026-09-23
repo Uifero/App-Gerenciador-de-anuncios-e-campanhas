@@ -11,6 +11,7 @@ export const COL = {
   referencias: 'gcc_referencias', campanhas: 'gcc_campanhas', resultados: 'gcc_resultados',
   produtos: 'gcc_produtos', sites: 'gcc_sites', playbooks: 'gcc_playbooks',
   usoApi: 'gcc_uso_api', aprovacoes: 'gcc_aprovacoes', respostas: 'gcc_aprovacao_respostas',
+  diagnosticos: 'gcc_diagnosticos', diagnosticoImagens: 'gcc_diagnostico_imagens',
 };
 
 const agora = () => new Date().toISOString();

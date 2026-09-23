@@ -212,7 +212,7 @@ export async function viewCliente(el, id, aba, abasMap) {
     const partes = [
       n.criativos && `${n.criativos} criativo(s)`, n.hooks && `${n.hooks} hook(s)`, n.referencias && `${n.referencias} referência(s)`,
       n.campanhas && `${n.campanhas} campanha(s)`, n.resultados && `${n.resultados} resultado(s)`, n.produtos && `${n.produtos} produto(s)`,
-      n.sites && `${n.sites} site(s)`, n.aprovacoes && `${n.aprovacoes} link(s) de aprovação`, n.respostas && `${n.respostas} resposta(s) de cliente`,
+      n.sites && `${n.sites} site(s)`, n.aprovacoes && `${n.aprovacoes} link(s) de aprovação`, n.respostas && `${n.respostas} resposta(s) de cliente`, n.diagnosticos && `${n.diagnosticos} diagnóstico(s)`,
     ].filter(Boolean);
     const msg = partes.length
       ? `Apagar "${c.nome}" e tudo o que está ligado a ele — ${partes.join(', ')}? Esta ação não pode ser desfeita. Se quiser guardar esses dados, exporte um backup antes.`
