@@ -5,6 +5,7 @@ import { obterConfig } from './configuracoes.js';
 import { definirStatus } from './criativos.js';
 import { padroesLocais, padroesPorNicho } from './insights.js';
 import { STATUS_CAMPANHA } from '../lib/constantes.js';
+import { perguntarBuscaMercado } from './busca-mercado.js';
 import {
   esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, moeda, toast, modal, ocupado, lerForm, opcoes, copiar,
   listaDeLinhas, num, confirmar,
@@ -126,6 +127,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         // Abre a campanha criada: é lá que estão o checklist para o Meta e os criativos (sem precisar achar o card).
         m.fechar(); recarregar();
         if (nova) detalhe(nova, cliente, criativos, cfg, recarregar);
+        perguntarBuscaMercado(cliente); // 1ª campanha da sessão: oferece buscar novos exemplos de mercado (uma vez)
       });
     });
   });

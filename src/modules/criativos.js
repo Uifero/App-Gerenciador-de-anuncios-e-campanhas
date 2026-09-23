@@ -3,6 +3,7 @@ import { db, COL, removerArquivo } from '../core/storage.js';
 import { gerarCriativos, refinarCriativo, checarQualidade, acharTermosProibidos } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
 import { abrirEnvio, sincronizarAprovacoes, tagAprovacao } from './aprovacao.js';
+import { perguntarBuscaMercado } from './busca-mercado.js';
 import { abrirEstudio } from './estudio.js';
 import { apagarCriativoEmCascata } from '../lib/cascata.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
@@ -169,7 +170,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     ev.preventDefault();
     const v = lerForm(f);
     if (!v.nome || !v.hook || !v.copy) return toast('Preencha nome, hook e copy.', 'erro');
-    await ocupado(f.querySelector('button'), async () => { await salvarNovo(cliente, { ...v, gatilho: '' }, {}); toast('Criativo salvo.'); recarregar(); });
+    await ocupado(f.querySelector('button'), async () => { await salvarNovo(cliente, { ...v, gatilho: '' }, {}); toast('Criativo salvo.'); recarregar(); perguntarBuscaMercado(cliente); });
   });
 
   form.addEventListener('submit', async (ev) => {
@@ -189,6 +190,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
         ${vars.map((x, i) => variacao(x, i, cliente)).join('')}</div>`;
       saida._vars = vars;
       saida._ctx = { referenciaId: ref?.id || null, modelo: v.modelo || null, produtoId: v.produtoId || null };
+      perguntarBuscaMercado(cliente); // 1º criativo gerado na sessão: oferece buscar novos exemplos de mercado (uma vez)
     });
   });
   on(saida, 'click', '[data-salvar-var]', async (b) => {

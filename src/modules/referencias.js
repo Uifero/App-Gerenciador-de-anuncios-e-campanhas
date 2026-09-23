@@ -3,6 +3,7 @@ import { db, COL } from '../core/storage.js';
 import { buscarReferencias, analisarReferencia } from '../core/ia.js';
 import { obterConfig, classificarSinal } from './configuracoes.js';
 import { esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, toast, ocupado, lerForm, num, modal, campoArquivo } from '../core/ui.js';
+import { podePerguntar, marcarPerguntado, consumirPedidoBusca } from './busca-mercado.js';
 
 const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -21,14 +22,16 @@ async function oferecerReuso(cliente, cfg, aoCopiar) {
   const copiaveis = recentes.filter((r) => r.clienteId !== cliente.id && !jaTem(r));
   const deste = recentes.filter((r) => r.clienteId === cliente.id).length;
   return new Promise((ok) => {
+    // Fechar de qualquer jeito sem escolher (X, clique fora, Esc, troca de tela) = cancelar a busca.
+    let decidido = false;
+    const decidir = (v) => { if (!decidido) { decidido = true; ok(v); } };
+    const fim = (v) => { decidir(v); m.fechar(); };
     const m = modal('Já existem referências recentes deste nicho', `<div class="space-y-3">
       <p class="text-sm">Encontrei <b>${recentes.length}</b> referência(s) de "<b>${esc(cliente.nicho)}</b>" salvas nos últimos ${dias} dias${deste ? ` (${deste} já estão neste cliente)` : ''}. Uma busca nova gasta tokens de IA e busca na web.</p>
       <div class="flex flex-wrap gap-2">
         ${copiaveis.length ? `<button class="btn-primary" data-copiar title="Copia as referências de outros clientes para este, sem custo de IA"><i class="fa-solid fa-copy"></i> Usar as salvas (copiar ${copiaveis.length} para este cliente)</button>`
           : `<button class="btn-primary" data-ver><i class="fa-solid fa-eye"></i> Usar as que já estão salvas</button>`}
-        <button class="btn-ghost" data-buscar-mesmo title="Faz a busca na web mesmo assim (consome tokens)"><i class="fa-solid fa-magnifying-glass"></i> Buscar mesmo assim</button></div></div>`);
-    let decidido = false;
-    const fim = (v) => { if (!decidido) { decidido = true; ok(v); } m.fechar(); };
+        <button class="btn-ghost" data-buscar-mesmo title="Faz a busca na web mesmo assim (consome tokens)"><i class="fa-solid fa-magnifying-glass"></i> Buscar mesmo assim</button></div></div>`, { aoFechar: () => decidir('usou') });
     on(m.el, 'click', '[data-buscar-mesmo]', () => fim('buscar'));
     on(m.el, 'click', '[data-ver]', () => fim('usou'));
     on(m.el, 'click', '[data-copiar]', async (b) => {
@@ -39,9 +42,53 @@ async function oferecerReuso(cliente, cfg, aoCopiar) {
       });
       fim('usou');
     });
-    on(m.el, 'click', '[data-fechar]', () => { if (!decidido) { decidido = true; ok('usou'); } }); // fechar no X = cancelar a busca
-    m.el.addEventListener('mousedown', (e) => { if (e.target === m.el && !decidido) { decidido = true; ok('usou'); } });
   });
+}
+
+/** Marca que a busca de mercado deste cliente já aconteceu (a partir daí ela nunca roda sozinha — ver busca-mercado.js). */
+export async function marcarBuscaFeita(cliente) {
+  if (cliente.buscaMercadoFeita === true) return;
+  await db.atualizar(COL.clientes, cliente.id, { buscaMercadoFeita: true });
+  cliente.buscaMercadoFeita = true;
+}
+
+/**
+ * Busca exemplos de mercado com IA e abre a janela de revisão (salvar um por um no swipe file). É a mesma usada pelo
+ * botão da aba, pela busca automática do primeiro uso e pelo aviso "Buscar agora?". Assim que a busca volta — salvando
+ * ou não — marca buscaMercadoFeita. aoFechar(salvas) roda quando a janela fecha (X, clique fora, Esc ou troca de tela).
+ */
+export async function buscarExemplosMercado(cliente, cfg, { aoFechar } = {}) {
+  const { itens, fontes } = await buscarReferencias({ cliente, diasMinimos: cfg.diasMinimosReferencia });
+  await marcarBuscaFeita(cliente);
+  const enriquecidos = itens.map((i) => ({ ...i, sinal: classificarSinal(i.diasNoAr, cfg) }));
+  let salvas = 0;
+  const m = modal(`Exemplos de mercado encontrados — ${cliente.nome}`, `<div class="space-y-3">
+    ${iaNota(`A IA pesquisou na web e encontrou ${enriquecidos.length} exemplo(s) no nicho "${cliente.nicho}", com análise estratégica de cada um. Confira o link antes de salvar: a busca pode não confirmar o tempo no ar — nesse caso aparece "sinal n/d" e você pode preencher depois.`)}
+    ${enriquecidos.length ? enriquecidos.map((r, i) => `<div class="rounded-lg border border-slate-200 p-3">
+      <div class="flex justify-between gap-2"><b>${esc(r.titulo)}</b>${r.sinal ? tag('sinal ' + r.sinal, COR_SINAL[r.sinal]) : tag('sinal n/d')}</div>
+      <div class="mt-1 flex flex-wrap gap-1">${r.empresa ? tag(r.empresa) : ''}${r.diasNoAr != null ? tag(r.diasNoAr + ' dias no ar') : tag('tempo no ar não confirmado', 'tag-warn')}
+      ${r.diasNoAr != null && r.diasNoAr < cfg.diasMinimosReferencia ? tag(`abaixo do mínimo (${cfg.diasMinimosReferencia}d)`, 'tag-bad') : ''}</div>
+      ${r.evidencia ? `<p class="hint">Fonte da informação: ${esc(r.evidencia)}</p>` : ''}
+      ${r.texto ? `<p class="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-slate-600">${esc(r.texto)}</p>` : ''}
+      ${blocoAnalise(r.analise)}
+      <p class="hint">${r.link ? `<a class="text-indigo-600" href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.link)}</a>` : 'sem link'}</p>
+      <button class="btn-primary btn-sm mt-2" data-salvar-b="${i}"><i class="fa-solid fa-bookmark"></i> Salvar no swipe file</button></div>`).join('')
+      : '<p class="caption">Nada encontrado desta vez. Tente de novo ou cadastre manualmente.</p>'}
+    <p class="caption">Salve as que fizerem sentido: elas aparecem na aba Referências e entram na geração de criativos deste cliente. Para começar um criativo com base numa delas, use "Criar criativo a partir desta" no card.</p>
+    ${fontes.length ? `<p class="hint">Fontes consultadas: ${fontes.slice(0, 6).map((f) => esc(f.titulo || f.url)).join(' · ')}</p>` : ''}</div>`,
+  { largo: true, aoFechar: () => aoFechar?.(salvas) });
+  on(m.el, 'click', '[data-salvar-b]', async (btn) => {
+    const r = enriquecidos[Number(btn.dataset.salvarB)];
+    await ocupado(btn, async () => {
+      await db.criar(COL.referencias, {
+        clienteId: cliente.id, nicho: cliente.nicho, origem: 'busca', titulo: r.titulo || '', empresa: r.empresa || '', link: r.link || '',
+        texto: r.texto || '', diasNoAr: r.diasNoAr ?? null, sinal: r.sinal, analise: r.analise || null, evidencia: r.evidencia || '',
+      });
+      salvas++;
+      btn.outerHTML = '<span class="tag tag-ok">Salvo</span>'; toast('Referência salva.');
+    });
+  });
+  return enriquecidos.length;
 }
 
 const COR_SINAL = { forte: 'tag-ok', moderado: 'tag-warn', fraco: '' };
@@ -72,9 +119,19 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ${!r.analise ? `<button class="btn-ia btn-sm" data-analisar="${r.id}" title="A IA identifica ângulo, framework, público e o que vale replicar">Analisar o que replicar (IA)</button>` : ''}
       <button class="btn-danger btn-sm" data-apagar="${r.id}" title="Apagar esta referência"><i class="fa-solid fa-trash"></i></button></div></div>`;
 
+  // Da 2ª vez em diante a busca não roda sozinha: ao entrar aqui, um aviso discreto pergunta (uma vez por sessão).
+  const pedido = consumirPedidoBusca(cliente.id);
+  const perguntar = !pedido && podePerguntar(cliente);
+  if (perguntar) marcarPerguntado(cliente.id);
+  const aviso = perguntar ? `<div class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50/50 p-2 text-sm" data-aviso-busca>
+      <span><i class="fa-solid fa-magnifying-glass mr-1 text-indigo-500"></i>${cliente.buscaMercadoFeita === false ? 'A busca inicial de exemplos de mercado ainda não foi feita para este cliente. Buscar agora?' : 'Buscar novos exemplos de mercado agora?'}
+        <span class="hint">Usa IA e pesquisa na web; você escolhe o que salvar.</span></span>
+      <span class="flex gap-2"><button class="btn-ghost btn-sm" data-aviso-nao>Dispensar</button><button class="btn-primary btn-sm" data-aviso-sim>Sim, buscar</button></span></div>` : '';
+
   root.innerHTML = `${cabecalho('Referências', `Anúncios de concorrentes que estão dando certo, com a análise do que copiar. As salvas alimentam a geração de criativos. "Sinal" = há quanto tempo o anúncio está no ar (forte: ${cfg.cortes.forte}+ dias, moderado: ${cfg.cortes.moderado}+): quem paga por um anúncio por muito tempo costuma estar vendendo.`,
     `<button class="btn-ia" data-buscar title="Pesquisa na web anúncios ativos de empresas de destaque no nicho (mínimo ${cfg.diasMinimosReferencia} dias no ar)"><i class="fa-solid fa-magnifying-glass"></i> Buscar exemplos de mercado</button>
      <button class="btn-ghost" data-manual title="Cadastre um anúncio de concorrente que você encontrou">Cadastrar anúncio que encontrei</button>`)}
+    ${aviso}
     <div id="painel"></div>
     ${refs.length ? `<div class="grid gap-3 lg:grid-cols-2">${refs.map(cartao).join('')}</div>`
       : vazio('bookmark', 'Seu swipe file está vazio', 'Busque exemplos de mercado ou cadastre um anúncio que você achou bom.')}`;
@@ -122,37 +179,11 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   // ----- busca de mercado -----
   on(root, 'click', '[data-buscar]', async (b) => {
     if ((await oferecerReuso(cliente, cfg, recarregar)) !== 'buscar') return;
-    await ocupado(b, async () => {
-      const { itens, fontes } = await buscarReferencias({ cliente, diasMinimos: cfg.diasMinimosReferencia });
-      const enriquecidos = itens.map((i) => ({ ...i, sinal: classificarSinal(i.diasNoAr, cfg) }));
-      const m = modal('Exemplos de mercado encontrados', `<div class="space-y-3">
-        ${iaNota(`A IA pesquisou na web e encontrou ${enriquecidos.length} exemplo(s) no nicho "${cliente.nicho}", com análise estratégica de cada um. Confira o link antes de salvar: a busca pode não confirmar o tempo no ar — nesse caso aparece "sinal n/d" e você pode preencher depois.`)}
-        ${enriquecidos.length ? enriquecidos.map((r, i) => `<div class="rounded-lg border border-slate-200 p-3">
-          <div class="flex justify-between gap-2"><b>${esc(r.titulo)}</b>${r.sinal ? tag('sinal ' + r.sinal, COR_SINAL[r.sinal]) : tag('sinal n/d')}</div>
-          <div class="mt-1 flex flex-wrap gap-1">${r.empresa ? tag(r.empresa) : ''}${r.diasNoAr != null ? tag(r.diasNoAr + ' dias no ar') : tag('tempo no ar não confirmado', 'tag-warn')}
-          ${r.diasNoAr != null && r.diasNoAr < cfg.diasMinimosReferencia ? tag(`abaixo do mínimo (${cfg.diasMinimosReferencia}d)`, 'tag-bad') : ''}</div>
-          ${r.evidencia ? `<p class="hint">Fonte da informação: ${esc(r.evidencia)}</p>` : ''}
-          ${r.texto ? `<p class="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-slate-600">${esc(r.texto)}</p>` : ''}
-          ${blocoAnalise(r.analise)}
-          <p class="hint">${r.link ? `<a class="text-indigo-600" href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.link)}</a>` : 'sem link'}</p>
-          <button class="btn-primary btn-sm mt-2" data-salvar-b="${i}"><i class="fa-solid fa-bookmark"></i> Salvar no swipe file</button></div>`).join('')
-          : '<p class="caption">Nada encontrado desta vez. Tente de novo ou cadastre manualmente.</p>'}
-        <p class="caption">Salve as que fizerem sentido: elas aparecem na aba Referências e entram na geração de criativos deste cliente. Para começar um criativo com base numa delas, use "Criar criativo a partir desta" no card.</p>
-        ${fontes.length ? `<p class="hint">Fontes consultadas: ${fontes.slice(0, 6).map((f) => esc(f.titulo || f.url)).join(' · ')}</p>` : ''}</div>`, { largo: true });
-      on(m.el, 'click', '[data-salvar-b]', async (btn) => {
-        const r = enriquecidos[Number(btn.dataset.salvarB)];
-        await ocupado(btn, async () => {
-          await db.criar(COL.referencias, {
-            clienteId: cliente.id, nicho: cliente.nicho, origem: 'busca', titulo: r.titulo || '', empresa: r.empresa || '', link: r.link || '',
-            texto: r.texto || '', diasNoAr: r.diasNoAr ?? null, sinal: r.sinal, analise: r.analise || null, evidencia: r.evidencia || '',
-          });
-          btn.outerHTML = '<span class="tag tag-ok">Salvo</span>'; toast('Referência salva.');
-        });
-      });
-      m.el.addEventListener('mousedown', (e) => { if (e.target === m.el) recarregar(); });
-      on(m.el, 'click', '[data-fechar]', () => recarregar());
-    });
+    await ocupado(b, () => buscarExemplosMercado(cliente, cfg, { aoFechar: () => recarregar() }));
   });
+  on(root, 'click', '[data-aviso-sim]', () => { $('[data-aviso-busca]', root)?.remove(); $('[data-buscar]', root).click(); });
+  on(root, 'click', '[data-aviso-nao]', () => $('[data-aviso-busca]', root)?.remove());
+  if (pedido) $('[data-buscar]', root).click(); // veio do aviso "Sim, buscar" em outra tela
 
   on(root, 'click', '[data-analisar]', async (b) => {
     const r = refs.find((x) => x.id === b.dataset.analisar);

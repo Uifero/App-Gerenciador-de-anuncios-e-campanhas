@@ -10,6 +10,40 @@ import { cartaoCusto, totalArquivadoDoCliente } from './custo.js';
 import { exportarDados } from './backup.js';
 import { contarDependentesCliente, apagarClienteEmCascata } from '../lib/cascata.js';
 import { abrirDiagnostico } from './diagnostico.js';
+import { pedirBuscaInicial, consumirBuscaInicial, deveBuscarAutomatico, iniciouBusca, terminouBusca, buscaEmAndamento, marcarPerguntado } from './busca-mercado.js';
+import { buscarExemplosMercado } from './referencias.js';
+
+/**
+ * Busca de exemplos de mercado do primeiro uso: roda sozinha na tela do cliente recém-cadastrado, mostra o que está
+ * fazendo num cartão e abre os resultados na mesma janela de revisão da busca manual. Se falhar (servidor de IA fora,
+ * orçamento recusado), o cliente continua com buscaMercadoFeita=false e o cartão oferece tentar de novo.
+ */
+async function buscaInicial(c) {
+  // Procura o cartão na hora de escrever: se a pessoa trocou de aba no meio da busca, a tela foi redesenhada (e se
+  // foi para outro cliente, não há cartão deste — a janela com os resultados abre do mesmo jeito).
+  const cartao = (html, cor = 'border-indigo-200 bg-indigo-50/50') => { const caixa = document.querySelector(`#busca-inicial[data-cliente="${c.id}"]`); if (caixa) caixa.innerHTML = `<div class="card mb-5 ${cor} text-sm" data-busca-inicial>${html}</div>`; };
+  cartao(`<p class="font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1 text-indigo-500"></i>Buscando exemplos de mercado do nicho "${esc(c.nicho)}" automaticamente, só na primeira vez…</p>
+    <p class="hint">A IA pesquisa na web anúncios que estão dando certo nesse nicho (leva de 10 a 60 segundos). Os resultados abrem para você revisar e escolher o que salvar em Referências. Pode continuar usando o app enquanto isso.</p>`);
+  iniciouBusca(c.id);
+  try {
+    const cfg = await obterConfig();
+    await buscarExemplosMercado(c, cfg, {
+      aoFechar: (salvas) => {
+        // Se a pessoa já está na aba Referências deste cliente, a lista na tela é anterior às salvas: redesenha (a própria
+        // lista confirma o que foi salvo). Em outra aba, o cartão avisa e leva até lá.
+        if (salvas && location.hash === `#/c/${c.id}/referencias`) { window.dispatchEvent(new Event('hashchange')); toast(`Busca inicial concluída: ${salvas} referência(s) salva(s). Da próxima vez, o app pergunta antes de buscar.`); return; }
+        cartao(`<div class="flex flex-wrap items-center justify-between gap-2"><p><i class="fa-solid fa-circle-check mr-1 text-emerald-500"></i><b>Busca inicial concluída:</b> ${salvas} referência(s) salva(s). Da próxima vez, a busca não roda sozinha: o app pergunta antes.</p>
+          <span class="flex gap-2">${salvas ? `<a class="btn-primary btn-sm" href="#/c/${c.id}/referencias">Ver em Referências</a>` : ''}<button class="btn-ghost btn-sm" data-ok-busca>Ok</button></span></div>`, 'border-emerald-200 bg-emerald-50/50');
+      },
+    });
+    // Acabou de buscar: o convite "Buscar novos exemplos agora?" só volta numa próxima sessão, não logo em seguida.
+    marcarPerguntado(c.id);
+    cartao(`<p><i class="fa-solid fa-list-check mr-1 text-indigo-500"></i>Resultados abertos para revisão: salve os que fizerem sentido e feche a janela.</p>`);
+  } catch (e) {
+    cartao(`<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-amber-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Não foi possível buscar exemplos de mercado agora: ${esc(e.message || 'erro desconhecido')}</p>
+      <span class="flex gap-2"><button class="btn-primary btn-sm" data-tentar-busca>Tentar de novo</button><button class="btn-ghost btn-sm" data-ok-busca>Agora não</button></span></div>`, 'border-amber-300 bg-amber-50');
+  } finally { terminouBusca(c.id); }
+}
 
 export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]);
 
@@ -33,7 +67,10 @@ export function montarDadosCliente(v, escopo) {
  * opts: { playbook, baseId, copiar: { hooks, campanhas } }
  */
 export async function criarCliente(v, escopo, opts = {}) {
-  const novo = await db.criar(COL.clientes, montarDadosCliente(v, escopo));
+  // buscaMercadoFeita só existe a partir da criação (a edição usa montarDadosCliente e não mexe nele): false = a tela
+  // do cliente, logo depois do cadastro, dispara a busca de exemplos de mercado sozinha (ver busca-mercado.js).
+  const novo = await db.criar(COL.clientes, { ...montarDadosCliente(v, escopo), buscaMercadoFeita: false });
+  pedirBuscaInicial(novo.id);
   if (opts.baseId) {
     const r = await copiarEstrutura(opts.baseId, novo, opts.copiar);
     if (r.hooks || r.campanhas) toast(`Copiado do cliente base: ${r.hooks} hook(s) e ${r.campanhas} estrutura(s) de campanha.`);
@@ -203,6 +240,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Baixar backup</button>
       <button class="btn-ghost btn-sm" data-mais title="Duplicar como base, playbooks e outras ações"><i class="fa-solid fa-ellipsis"></i> Mais ações</button>
       <button class="btn-danger btn-sm" data-excluir title="Apagar este cliente"><i class="fa-solid fa-trash"></i></button></div></div>
+    <div id="busca-inicial" data-cliente="${esc(id)}">${buscaEmAndamento(id) ? `<div class="card mb-5 border-indigo-200 bg-indigo-50/50 text-sm"><i class="fa-solid fa-spinner fa-spin mr-1 text-indigo-500"></i>Busca inicial de exemplos de mercado em andamento… os resultados abrem numa janela assim que chegarem.</div>` : ''}</div>
     <div id="cards"><div class="card mb-5 h-16 animate-pulse" aria-hidden="true"></div></div>
     <nav class="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200" aria-label="Abas do cliente">
       ${abas.map((a) => `<a href="#/c/${id}/${a.id}" title="${esc(a.legenda)}" class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${a.id === atual.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}"><i class="fa-solid fa-${a.icone} mr-1"></i>${a.nome}</a>`).join('')}
@@ -241,6 +279,11 @@ export async function viewCliente(el, id, aba, abasMap) {
   window.addEventListener('gcc:mudou', aoMudar);
 
   on(el, 'click', '[data-exportar]', (b) => ocupado(b, () => exportarDados(c)));
+
+  // Primeiro uso: logo após o cadastro, busca exemplos de mercado sem precisar clicar em nada.
+  if (consumirBuscaInicial(id) && deveBuscarAutomatico(c)) buscaInicial(c);
+  on(el, 'click', '[data-ok-busca]', () => { $('#busca-inicial', el).innerHTML = ''; });
+  on(el, 'click', '[data-tentar-busca]', () => buscaInicial(c));
 
   on(el, 'click', '[data-mais]', async () => {
     const pbs = await db.listar(COL.playbooks);
