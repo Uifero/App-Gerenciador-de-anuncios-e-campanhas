@@ -62,7 +62,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
     <div class="grid gap-4 lg:grid-cols-2">
       <form id="fc" class="card space-y-3"><h3 class="font-semibold">1. Conteúdo da loja</h3>
-        <p class="caption">Gere os textos com IA ou preencha à mão. ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : ''}</p>
+        <p class="caption">Preencha à mão e clique em "Salvar conteúdo", ou use "Gerar textos com IA": ela escreve banner, história da marca, depoimentos-modelo e políticas, e <b>substitui</b> o que estiver nos campos. ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : ''}</p>
         <div><label class="label">Título do banner (hero)</label><input class="input" name="heroTitulo" value="${esc(c.heroTitulo)}"></div>
         <div><label class="label">Subtítulo</label><input class="input" name="heroSubtitulo" value="${esc(c.heroSubtitulo)}"></div>
         <div><label class="label">Texto do botão do banner</label><input class="input" name="heroCta" value="${esc(c.heroCta)}"></div>
@@ -86,7 +86,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         ${custom ? `
           <p class="caption">Baixe o site (um único arquivo <code>index.html</code>). Abra no navegador para conferir e depois publique em qualquer hospedagem estática.</p>
           <button class="btn-primary" data-baixar-site ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-download"></i> Baixar site (index.html)</button>
-          <button class="btn-ghost" data-preview ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-eye"></i> Pré-visualizar</button>`
+          <button class="btn-ghost" data-preview ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-eye"></i> Pré-visualizar em nova aba</button>`
         : `
           <div><label class="label">Plataforma</label><select class="input" data-plat>${opcoes(PLATAFORMAS, site.plataforma)}</select></div>
           <button class="btn-primary" data-csv ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-file-csv"></i> Baixar catálogo (CSV)</button>

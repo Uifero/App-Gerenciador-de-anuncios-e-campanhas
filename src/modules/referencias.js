@@ -68,13 +68,13 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     ${blocoAnalise(r.analise)}
     <p class="hint mt-2">${r.link ? `<a class="text-indigo-600" href="${esc(r.link)}" target="_blank" rel="noopener">abrir anúncio</a> · ` : ''}${dataBR(r.criadoEm)}</p>
     <div class="mt-2 flex flex-wrap gap-1">
-      <button class="btn-primary btn-sm" data-criativo="${r.id}" title="Abre a aba Criativos já usando esta referência como ponto de partida"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar criativo</button>
-      ${!r.analise ? `<button class="btn-ia btn-sm" data-analisar="${r.id}">Analisar com IA</button>` : ''}
+      <button class="btn-primary btn-sm" data-criativo="${r.id}" title="Abre a aba Criativos já usando esta referência como ponto de partida"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar criativo a partir desta</button>
+      ${!r.analise ? `<button class="btn-ia btn-sm" data-analisar="${r.id}" title="A IA identifica ângulo, framework, público e o que vale replicar">Analisar o que replicar (IA)</button>` : ''}
       <button class="btn-danger btn-sm" data-apagar="${r.id}" title="Apagar esta referência"><i class="fa-solid fa-trash"></i></button></div></div>`;
 
-  root.innerHTML = `${cabecalho('Referências', 'Seu swipe file: anúncios de mercado com análise. As salvas alimentam a geração de criativos.',
+  root.innerHTML = `${cabecalho('Referências', `Anúncios de concorrentes que estão dando certo, com a análise do que copiar. As salvas alimentam a geração de criativos. "Sinal" = há quanto tempo o anúncio está no ar (forte: ${cfg.cortes.forte}+ dias, moderado: ${cfg.cortes.moderado}+): quem paga por um anúncio por muito tempo costuma estar vendendo.`,
     `<button class="btn-ia" data-buscar title="Pesquisa na web anúncios ativos de empresas de destaque no nicho (mínimo ${cfg.diasMinimosReferencia} dias no ar)"><i class="fa-solid fa-magnifying-glass"></i> Buscar exemplos de mercado</button>
-     <button class="btn-ghost" data-manual title="Cadastre um anúncio de concorrente que você encontrou">Adicionar manual</button>`)}
+     <button class="btn-ghost" data-manual title="Cadastre um anúncio de concorrente que você encontrou">Cadastrar anúncio que encontrei</button>`)}
     <div id="painel"></div>
     ${refs.length ? `<div class="grid gap-3 lg:grid-cols-2">${refs.map(cartao).join('')}</div>`
       : vazio('bookmark', 'Seu swipe file está vazio', 'Busque exemplos de mercado ou cadastre um anúncio que você achou bom.')}`;
@@ -137,6 +137,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <p class="hint">${r.link ? `<a class="text-indigo-600" href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.link)}</a>` : 'sem link'}</p>
           <button class="btn-primary btn-sm mt-2" data-salvar-b="${i}"><i class="fa-solid fa-bookmark"></i> Salvar no swipe file</button></div>`).join('')
           : '<p class="caption">Nada encontrado desta vez. Tente de novo ou cadastre manualmente.</p>'}
+        <p class="caption">Salve as que fizerem sentido: elas aparecem na aba Referências e entram na geração de criativos deste cliente. Para começar um criativo com base numa delas, use "Criar criativo a partir desta" no card.</p>
         ${fontes.length ? `<p class="hint">Fontes consultadas: ${fontes.slice(0, 6).map((f) => esc(f.titulo || f.url)).join(' · ')}</p>` : ''}</div>`, { largo: true });
       on(m.el, 'click', '[data-salvar-b]', async (btn) => {
         const r = enriquecidos[Number(btn.dataset.salvarB)];

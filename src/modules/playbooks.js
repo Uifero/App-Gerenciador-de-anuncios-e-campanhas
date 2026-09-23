@@ -92,8 +92,8 @@ export function abrirEditor(rascunho, aoSalvar, titulo = 'Playbook') {
 // ---------------- página da biblioteca ----------------
 export const view = (el) => montar(el, async (root, recarregar) => {
   const pbs = await db.listar(COL.playbooks);
-  root.innerHTML = `${cabecalho('Playbooks', 'Receitas reaproveitáveis por tipo de produto: a sequência de ângulos e hooks que costuma funcionar.',
-    `<button class="btn-ia" data-ia title="A IA sugere um playbook a partir do tipo de produto"><i class="fa-solid fa-wand-magic-sparkles"></i> Sugerir com IA</button>
+  root.innerHTML = `${cabecalho('Playbooks', 'Receitas reaproveitáveis por tipo de produto: a sequência de ângulos e hooks que costuma funcionar. Para usar num cliente: escolha o playbook ao cadastrar o cliente, ou dentro dele em "Mais ações" > "Aplicar playbook" — os hooks vão para a aba Hooks e os ângulos aparecem como sugestão ao criar criativos.',
+    `<button class="btn-ia" data-ia title="A IA sugere um playbook a partir do tipo de produto"><i class="fa-solid fa-wand-magic-sparkles"></i> Sugerir playbook com IA</button>
      <button class="btn-primary" data-novo title="Escreva um playbook você mesmo"><i class="fa-solid fa-plus"></i> Novo playbook</button>`)}
     <div id="painel"></div>
     ${pbs.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${pbs.map((p) => `<button data-abrir="${p.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
@@ -105,9 +105,10 @@ export const view = (el) => montar(el, async (root, recarregar) => {
   on(root, 'click', '[data-novo]', () => abrirEditor({}, recarregar, 'Novo playbook'));
   on(root, 'click', '[data-abrir]', (b) => abrirEditor(pbs.find((p) => p.id === b.dataset.abrir), recarregar, 'Editar playbook'));
   on(root, 'click', '[data-ia]', () => {
-    $('#painel', root).innerHTML = `<form id="fi" class="card mb-4 space-y-3"><div><label class="label">Para que tipo de produto?</label>
+    $('#painel', root).innerHTML = `<form id="fi" class="card mb-4 space-y-3"><p class="caption">A IA propõe ângulos e hooks que costumam funcionar para esse tipo de produto. Você revisa num editor antes de salvar.</p>
+      <div><label class="label">Para que tipo de produto?</label>
       <input class="input" name="tipo" placeholder="Ex.: suplemento para dormir melhor" required></div>
-      <button class="btn-ia" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar sugestão</button></form>`;
+      <button class="btn-ia" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar playbook sugerido</button></form>`;
   });
   on(root, 'submit', '#fi', async (f, ev) => {
     ev.preventDefault();

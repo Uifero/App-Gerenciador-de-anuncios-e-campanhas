@@ -2,6 +2,7 @@
 import { db, COL } from '../core/storage.js';
 import { CONFIG_PADRAO, TAREFAS_IA } from '../lib/constantes.js';
 import { cabecalho, lerForm, num, toast, on, ocupado, esc } from '../core/ui.js';
+import { htmlFerramentas } from '../lib/ferramentas-ia.js';
 
 const ID = 'global';
 let cache = null;
@@ -25,6 +26,7 @@ export async function view(el) {
   const c = await obterConfig();
   el.innerHTML = `${cabecalho('Configurações', 'Ajustes que valem para todos os clientes.')}
   <form class="card max-w-xl space-y-4" id="f">
+    <div><h3 class="font-semibold">Referências de mercado</h3><p class="hint">Usado na aba Referências para classificar anúncios de concorrentes pelo tempo no ar: quem paga por um anúncio por muitos dias costuma estar vendendo com ele.</p></div>
     <div><label class="label">Dias mínimos no ar para considerar uma referência de mercado</label>
       <input class="input" type="number" min="1" name="dias" value="${c.diasMinimosReferencia}">
       <p class="hint">Anúncio que fica muito tempo ativo costuma estar dando resultado. Padrão: 15.</p></div>
@@ -32,6 +34,8 @@ export async function view(el) {
       <div><label class="label">Sinal "moderado" a partir de (dias)</label><input class="input" type="number" min="1" name="moderado" value="${c.cortes.moderado}"></div>
       <div><label class="label">Sinal "forte" a partir de (dias)</label><input class="input" type="number" min="1" name="forte" value="${c.cortes.forte}"></div>
     </div>
+    <p class="hint -mt-2">Sinal = confiança de que o anúncio vende. As referências de sinal "forte" também entram na montagem de campanha e no diagnóstico.</p>
+    <h3 class="border-t border-slate-200 pt-4 font-semibold">Criativos no ar</h3>
     <div><label class="label">Alerta de fadiga de criativo após (dias em uso)</label>
       <input class="input" type="number" min="1" name="fadiga" value="${c.diasFadiga}">
       <p class="hint">Avisa nas campanhas quando um criativo está no ar há mais tempo que isso. Padrão: 14.</p></div>
@@ -62,7 +66,10 @@ export async function view(el) {
             <input class="input" type="number" min="256" max="32000" name="lim_${k}" value="${esc(c.limitesTokens?.[k])}" placeholder="padrão ${padrao}"></label>`).join('')}</div></details>
       </div></details>
     <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar configurações</button>
-  </form>`;
+  </form>
+  <section class="card mt-6 max-w-3xl" id="ferramentas-externas"><h3 class="font-semibold"><i class="fa-solid fa-toolbox mr-1 text-slate-400"></i>Ferramentas externas de referência</h3>
+    <p class="caption mb-2">Geradores gratuitos de imagem e vídeo por IA, para colar os prompts que o Estúdio escreve ("Gerar foto e vídeo" num criativo). O app não chama nenhuma delas: é só uma lista para consulta.</p>
+    ${htmlFerramentas()}</section>`;
   on(el, 'submit', '#f', async (f, ev) => {
     ev.preventDefault();
     const v = lerForm(f);

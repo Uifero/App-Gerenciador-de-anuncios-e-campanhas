@@ -3,7 +3,7 @@ import './style.css';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import { aoMudarUsuario, entrar, sair } from './core/auth.js';
 import { DEMO } from './core/firebase.js';
-import { esc, $, on, ativarCamposArquivo } from './core/ui.js';
+import { esc, $, on, ativarCamposArquivo, fecharModais } from './core/ui.js';
 import * as dashboard from './modules/dashboard.js';
 import * as configuracoes from './modules/configuracoes.js';
 import * as clientes from './modules/clientes.js';
@@ -120,6 +120,7 @@ aoMudarUsuario((u) => {
   layout(); rotear();
 });
 window.addEventListener('hashchange', () => {
+  fecharModais(); // janela da tela anterior não fica por cima da nova
   if (verPublico()) return;
   if (!usuario) { telaLogin(); return; }   // saiu do link público sem estar logado
   if (!$('#main')) layout();               // voltando de um link público para o painel

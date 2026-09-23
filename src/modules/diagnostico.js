@@ -115,7 +115,8 @@ function htmlResultadoIA(r, fontes = []) {
   return htmlLeituraImagens(r.imagens, fontes) +
     bloco('O que provavelmente está funcionando', r.funcionandoBem, 'bg-emerald-50') +
     bloco('Possível desperdício / oportunidade', r.desperdicio, 'bg-amber-50') +
-    bloco('Recomendações', r.recomendacoes, 'bg-indigo-50');
+    bloco('Recomendações', r.recomendacoes, 'bg-indigo-50') +
+    '<p class="caption mt-3"><b>Próximo passo:</b> comece pelas recomendações de prioridade alta. Depois de alguns dias, registre os novos números na aba Resultados e rode o diagnóstico de novo para comparar (o anterior fica no histórico abaixo).</p>';
 }
 function htmlResultadoManual(r, fontes = []) {
   const lista = (titulo, itens) => (itens.length ? `<div class="mt-2"><h5 class="text-xs font-semibold uppercase text-slate-500">${titulo}</h5><ul class="mt-1 list-disc pl-5 text-sm">${itens.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>` : '');

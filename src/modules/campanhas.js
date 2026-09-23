@@ -61,7 +61,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   root.innerHTML = `${cabecalho('Campanhas', 'Estrutura de teste, públicos e orçamento — pronta para replicar no Gerenciador de Anúncios do Meta.',
     '<button class="btn-primary" data-nova title="Cria uma campanha nova, com IA ou manualmente"><i class="fa-solid fa-plus"></i> Nova campanha</button>')}
     ${fadigados.length ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"><i class="fa-solid fa-triangle-exclamation"></i>
-      <b>Alerta de fadiga:</b> ${fadigados.map((c) => `“${esc(c.nome)}” (${diasDesde(c.emUsoDesde)} dias no ar)`).join('; ')} — passou de ${cfg.diasFadiga} dias. Considere trocar ou renovar o criativo.</div>` : ''}
+      <b>Alerta de fadiga:</b> ${fadigados.map((c) => `“${esc(c.nome)}” (${diasDesde(c.emUsoDesde)} dias no ar)`).join('; ')} — passou de ${cfg.diasFadiga} dias. Fadiga = o público já viu demais o anúncio e o resultado costuma cair: troque ou renove o criativo.</div>` : ''}
     ${campanhas.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${campanhas.map((c) => `<button data-abrir="${c.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <div class="flex items-start justify-between gap-2"><h3 class="font-semibold">${esc(c.nome)}</h3>${tag(nomeStatus(c.status), COR_STATUS[c.status])}</div>
       <p class="caption mt-1">${esc(c.resumo || c.objetivo || '')}</p>
@@ -88,14 +88,16 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <div><label class="label">Criativos aprovados a vincular</label>
             ${aprovados.length ? `<div class="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">${aprovados.map((c) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="cr_${c.id}"> ${esc(c.nome)} ${c.angulo ? `<span class="hint">(${esc(c.angulo)})</span>` : ''}</label>`).join('')}</div>`
               : '<p class="hint">Nenhum criativo aprovado ainda.</p>'}</div></details>
-      <div class="flex flex-wrap gap-2"><button class="btn-ia" type="submit" data-modo="ia"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar estrutura com IA</button>
-        <button class="btn-ghost" type="submit" data-modo="manual">Criar sem IA</button></div></form>`);
+      <p class="caption"><b>Com IA:</b> monta os públicos, a divisão do orçamento, o plano de teste (quantos dias e quando pausar) e escolhe quais criativos aprovados usar, com o motivo de cada um. <b>Sem IA:</b> cria a campanha com o que você preencher em "Estrutura manual" acima. Nos dois casos, a campanha abre em seguida com o passo a passo para montar no Meta.</p>
+      <div class="flex flex-wrap gap-2"><button class="btn-ia" type="submit" data-modo="ia"><i class="fa-solid fa-wand-magic-sparkles"></i> Montar estrutura completa com IA</button>
+        <button class="btn-ghost" type="submit" data-modo="manual">Criar com a estrutura manual</button></div></form>`);
     on(m.el, 'submit', '#fn', async (f, ev) => {
       ev.preventDefault();
       const btn = ev.submitter; const v = lerForm(f);
       if (!v.nome) return toast('Dê um nome à campanha.', 'erro');
       await ocupado(btn, async () => {
         const base = { clienteId: cliente.id, nome: v.nome, objetivo: v.objetivo, orcamentoDiario: num(v.orcamento), urlDestino: v.urlDestino || null, status: 'planejada', criativos: [] };
+        let nova;
         if (btn.dataset.modo === 'ia') {
           const nicho = await padroesPorNicho(cliente.nicho, cliente.id).catch(() => ({ padroes: null }));
           const e = await gerarEstruturaCampanha({
@@ -105,7 +107,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           // Defesa: só aceita ids que realmente existem entre os aprovados (a IA não pode inventar um criativo).
           const selecao = (e.selecaoCriativos || []).filter((s) => aprovados.some((a) => a.id === s.criativoId));
           const avisoCriativos = e.avisoCriativos || (!aprovados.length ? 'Nenhum criativo aprovado ainda — produza e aprove criativos antes de vincular à campanha.' : null);
-          await db.criar(COL.campanhas, {
+          nova = await db.criar(COL.campanhas, {
             ...base, origem: 'ia', resumo: e.resumo || '', publicos: e.publicos || [], estruturaTeste: e.estruturaTeste || {},
             orcamentoDiario: num(e.orcamento?.diario) ?? base.orcamentoDiario, orcamentoNota: e.orcamento?.distribuicao || '', checklistMeta: e.checklistMeta || [],
             criativos: selecao.map((s) => ({ id: s.criativoId, inicio: null })), selecaoCriativos: selecao, avisoCriativos,
@@ -113,7 +115,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           toast(avisoCriativos ? `A IA montou a estrutura, mas avisa: ${avisoCriativos}` : `A IA montou a estrutura e selecionou ${selecao.length} criativo(s) — veja o motivo de cada um na campanha.`, avisoCriativos ? 'info' : 'ok');
         } else {
           const selecionados = aprovados.filter((c) => f.elements['cr_' + c.id]?.checked);
-          await db.criar(COL.campanhas, {
+          nova = await db.criar(COL.campanhas, {
             ...base, origem: 'manual', resumo: '',
             publicos: listaDeLinhas(v.publicos).map((nome) => ({ nome, descricao: '' })),
             estruturaTeste: { conjuntos: v.conjuntos, duracaoDias: num(v.duracao), criterioDecisao: v.criterio }, checklistMeta: [],
@@ -121,7 +123,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           });
           toast('Campanha criada.');
         }
+        // Abre a campanha criada: é lá que estão o checklist para o Meta e os criativos (sem precisar achar o card).
         m.fechar(); recarregar();
+        if (nova) detalhe(nova, cliente, criativos, cfg, recarregar);
       });
     });
   });
@@ -152,7 +156,8 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
     <div class="mt-3"><label class="label">URL de destino</label><input class="input" data-url-destino value="${esc(c.urlDestino || '')}" placeholder="https://…">
       <p class="hint">${c.urlDestino ? 'Usada no checklist abaixo, já com parâmetros UTM.' : 'Sem link ainda — publique o site do cliente ou preencha manualmente.'}</p></div>
 
-    <div class="mt-4"><h4 class="mb-2 text-sm font-semibold">Criativos desta campanha</h4>
+    <div class="mt-4"><h4 class="mb-1 text-sm font-semibold">Criativos desta campanha</h4>
+      <p class="hint mb-2">Quando subir um criativo no Meta, clique em "Marcar em uso": o app anota a data e avisa quando ele passar de ${cfg.diasFadiga} dias no ar (fadiga: o público já viu demais e o resultado costuma cair).</p>
       ${(c.criativos || []).length ? `<div class="space-y-2">${c.criativos.map((k) => {
         const cr = doCli(k.id); if (!cr) return '';
         const dias = cr.status === 'em_uso' ? diasDesde(cr.emUsoDesde) : null; const fadiga = dias != null && dias >= cfg.diasFadiga;
@@ -168,6 +173,7 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
 
     <div class="mt-4 card"><div class="mb-2 flex items-center justify-between"><h4 class="text-sm font-semibold">Checklist para o Gerenciador de Anúncios do Meta</h4>
       <button class="btn-primary btn-sm" data-copiar><i class="fa-solid fa-copy"></i> Copiar checklist</button></div>
+      <p class="hint mb-2">Passo a passo para criar esta campanha no Gerenciador de Anúncios do Meta (business.facebook.com), igual à estrutura acima. Copie para seguir lá.</p>
       <ol class="list-decimal space-y-1 pl-5 text-sm">${checklistFinal(c, cliente).map((t) => `<li>${esc(t)}</li>`).join('')}</ol></div>
 
     <div class="mt-4 flex flex-wrap items-end justify-between gap-2"><div><label class="label">Status da campanha</label>

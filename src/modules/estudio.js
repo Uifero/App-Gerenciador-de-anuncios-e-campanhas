@@ -18,6 +18,9 @@ import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo } from 
 import { CENAS_UNBOXING } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
 import { montarEditorVideo } from './video-editor.js';
+import { htmlFerramentas } from '../lib/ferramentas-ia.js';
+
+const COLE_AQUI = 'Cole esse prompt numa dessas ferramentas:';
 
 /** slug() de lib/csv.js devolve '' para um nome vazio; aqui é nome de arquivo, então cai num nome genérico. */
 const nomeArquivo = (s) => (slug(s) || 'criativo').slice(0, 40);
@@ -68,10 +71,10 @@ export function abrirEstudio(criativo, cliente) {
       <div><label class="label">Cor do texto</label><input type="color" data-cor-texto value="${esc(est.corTexto)}" class="h-9 w-16 rounded border"></div>
     </div>
     <details class="mt-3 rounded-lg border border-violet-200 p-2"><summary class="cursor-pointer text-sm font-medium text-violet-800"><i class="fa-solid fa-lightbulb"></i> Sem foto ou sem cenas? A IA escreve os prompts para você colar num gerador</summary>
+      <p class="hint mt-1">O Claude não gera imagem nem vídeo: ele escreve o prompt (o pedido em texto) para você colar num gerador gratuito (a lista aparece junto do resultado). Os prompts saem em inglês porque os geradores entendem melhor; a tradução vem embaixo. Depois, baixe o que o gerador criar e envie aqui em "Fotos e vídeos".</p>
       <div class="mt-2 flex flex-wrap items-center justify-end gap-2"><select class="input !w-auto" data-modelo-prompt title="Modelo de roteiro">
           <option value="roteiro">Seguir o roteiro do criativo</option><option value="unboxing">UGC: unboxing + manuseio (6 cenas de 5 s)</option></select>
-        <button class="btn-ia btn-sm" data-sugerir-prompt>Sugerir prompts</button></div>
-      <p class="hint mt-1">O Claude não gera imagem nem vídeo: ele escreve o prompt (usa a sua assinatura). Os prompts são em inglês porque os geradores entendem melhor; a tradução aparece embaixo de cada um. Cole no Gemini, ChatGPT, Ideogram, Veo, Runway ou Kling, baixe o resultado e envie aqui em "Fotos e vídeos".</p>
+        <button class="btn-ia btn-sm" data-sugerir-prompt>Escrever prompts com IA</button></div>
       <div data-prompts class="mt-2 space-y-2"></div></details>
     <details class="mt-3 rounded-lg border border-indigo-200 p-2"><summary class="cursor-pointer text-sm font-medium text-indigo-800"><i class="fa-solid fa-film"></i> Animar uma foto com IA (clipe real de ~5 s)</summary>
       <p class="hint my-1">A IA dá movimento à foto (pessoa, tecido, câmera). Leva de 1 a 3 minutos. <b>A foto é enviada por 1 hora a uma hospedagem pública anônima e ao gerador</b>: use só fotos que o cliente autorizou.</p>
@@ -88,7 +91,7 @@ export function abrirEstudio(criativo, cliente) {
       <p class="hint my-2">O app tenta cada gerador gratuito configurado e, se um atingir a cota do dia, passa ao próximo. Peça a imagem sem texto: o texto entra pelo template, com letras nítidas. Para produto real, prefira a foto verdadeira.</p>
       <p class="mb-2 text-xs text-slate-600" data-status-ia>Carregando geradores…</p>
       <div class="flex gap-2"><input class="input" data-prompt-ia value="${esc(`Foto publicitária vertical, estilo orgânico de redes sociais, para anúncio de ${cliente.nicho || 'produto'}: ${criativo.hook}. Sem texto, sem logotipos.`)}">
-        <button class="btn-ia btn-sm" data-gerar-ia>Gerar</button></div></details>
+        <button class="btn-ia btn-sm shrink-0" data-gerar-ia>Gerar imagem</button></div></details>
   </section>
 
   <section class="mt-4 rounded-lg border border-slate-200 p-3" data-etapa="foto">
@@ -272,11 +275,12 @@ export function abrirEstudio(criativo, cliente) {
       <span class="flex gap-1">${cena !== null ? `<button class="btn-ia btn-sm" data-gerar-cena="${cena}" title="Gera a imagem desta cena e liga à cena do vídeo">Gerar imagem</button>` : ''}
       <button class="btn-ghost btn-sm" data-copiar-prompt>Copiar (inglês)</button></span></div><p class="whitespace-pre-wrap text-sm" data-texto-prompt>${esc(texto)}</p>
       ${pt ? `<p class="mt-1 whitespace-pre-wrap border-t border-slate-200 pt-1 text-xs text-slate-500"><b>Tradução:</b> ${esc(pt)}</p>` : ''}${cena !== null ? extra(cena) : ''}</div>`;
-    $('[data-prompts]', raiz).innerHTML = (r.foto ? caixa('Foto estática (4:5)', r.foto, r.fotoPt) : '') + (r.cenas.length ? `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 p-2"><span class="text-sm">Vídeo com IA: uma imagem por cena (${r.cenas.length} imagens, sai da cota do dia)</span>
+    $('[data-prompts]', raiz).innerHTML = (r.foto ? caixa('Foto estática (4:5)', r.foto, r.fotoPt) + htmlFerramentas({ grupos: ['imagem'], titulo: COLE_AQUI }) : '') + (r.cenas.length ? `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 p-2"><span class="text-sm">Vídeo com IA: uma imagem por cena (${r.cenas.length} imagens, sai da cota do dia)</span>
         <button class="btn-ia btn-sm" data-gerar-todas><i class="fa-solid fa-images"></i> Gerar imagem de todas as cenas</button></div>` : '')
       + (ugc && r.legendas.length ? `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2"><span class="text-sm">Modelo UGC: ${r.cenas.length} cenas de 5 s = ${r.cenas.length * 5} s. Filme cada cena ou gere os clipes.</span>
         <button class="btn-ghost btn-sm" data-usar-cenas-ugc><i class="fa-solid fa-list-ol"></i> Usar estas cenas na linha do tempo</button></div>` : '')
       + r.cenas.map((c, i) => caixa(`${ugc ? `Cena ${i + 1}: ${CENAS_UNBOXING[i] || ''}` : `Vídeo — cena ${i + 1}`} (9:16)`, c, r.cenasPt[i], i)).join('')
+      + (r.cenas.length ? htmlFerramentas({ grupos: ['video', 'imagem'], titulo: COLE_AQUI }) : '')
       + (r.dicas ? `<p class="hint">${esc(r.dicas)}</p>` : '');
     if (r.foto) $('[data-prompt-ia]', raiz).value = r.foto;
   }));

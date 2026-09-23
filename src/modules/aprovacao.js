@@ -107,7 +107,7 @@ export function abrirEnvio(cliente, criativos, { preSelecionar = [], aoMudar } =
     alvo.innerHTML = `
       ${novo ? `<div class="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800"><b>Link criado.</b> Envie ao cliente; ele abre sem login e só vê as peças selecionadas.
         <div class="mt-2 flex gap-2"><input class="input" readonly value="${esc(novo.link)}" data-link-novo><button class="btn-primary btn-sm shrink-0" data-copiar-novo><i class="fa-solid fa-copy"></i> Copiar</button></div>
-        <p class="hint">Válido por ${novo.dias} dias. O cliente pode apenas aprovar ou pedir ajuste, com um comentário.</p></div>` : ''}
+        <p class="hint">Válido por ${novo.dias} dias. O cliente pode apenas aprovar ou pedir ajuste, com um comentário. <b>Onde ver a resposta:</b> na aba Criativos — o criativo ganha a etiqueta "aprovado pelo cliente" ou "cliente pediu ajuste" (com o comentário dentro dele) e o status muda sozinho ao abrir a aba.</p></div>` : ''}
       ${linkSoLocal() ? '<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800"><i class="fa-solid fa-triangle-exclamation"></i> Você está usando o painel em <b>localhost</b>: o link gerado só abre neste computador. Publique o app e defina <code>VITE_URL_PUBLICA</code> (veja o README) para o cliente conseguir abrir.</div>' : ''}
       <p class="caption mb-2">Escolha as peças. O cliente vê uma cópia do que está agora; editar depois não muda o que ele vê (gere um novo link).</p>
       <div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
@@ -179,7 +179,7 @@ export async function viewPublica(host, token) {
   const cartao = (i) => {
     const r = estado[i.id];
     return `<article class="card mb-4" data-item="${esc(i.id)}">
-      <div class="mb-2 flex flex-wrap items-center gap-2"><h2 class="text-lg font-semibold">${esc(i.nome)}</h2>${tag(rotuloFormato(i.formato))}${i.framework ? tag(i.framework, 'tag-info') : ''}</div>
+      <div class="mb-2 flex flex-wrap items-center gap-2"><h2 class="text-lg font-semibold">${esc(i.nome)}</h2>${tag(rotuloFormato(i.formato))}</div>
       ${midia(i)}
       <p class="font-semibold">“${esc(i.hook)}”</p>
       <p class="mt-2 whitespace-pre-wrap text-sm">${esc(i.copy)}</p>
@@ -205,6 +205,7 @@ export async function viewPublica(host, token) {
       <header class="mb-5"><p class="caption">${esc(doc.clienteNome)}</p><h1 class="text-2xl font-bold">Aprovação de criativos</h1>
         <p class="caption">Confira ${doc.itens.length === 1 ? 'a peça abaixo' : 'as peças abaixo'} e escolha <b>Aprovar</b> ou <b>Pedir ajuste</b>. Você pode deixar um comentário.</p></header>
       ${doc.itens.map(cartao).join('')}
+      ${doc.itens.every((i) => estado[i.id] && !estado[`_editar_${i.id}`]) ? '<div class="card mb-4 border-emerald-300 bg-emerald-50 text-center text-emerald-800" data-tudo-respondido><p class="font-semibold"><i class="fa-solid fa-circle-check"></i> Tudo respondido, obrigado!</p><p class="text-sm">Sua resposta já foi enviada para a equipe. Você pode fechar esta página.</p></div>' : ''}
       <p class="hint text-center">Este link é pessoal. Ele permite apenas ver estas peças e responder sobre elas.</p></div>`;
     app.querySelectorAll('[data-item]').forEach((cx) => { const t = cx.querySelector('[data-comentario]'); if (t && digitado[cx.dataset.item] !== undefined) t.value = digitado[cx.dataset.item]; });
   };

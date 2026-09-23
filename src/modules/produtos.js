@@ -15,7 +15,7 @@ const variacoesTexto = (vs = []) => vs.map((v) => `${v.nome}: ${v.valores.join('
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const produtos = await db.listar(COL.produtos, { clienteId: cliente.id });
 
-  root.innerHTML = `${cabecalho('Produtos', 'Catálogo do cliente. É a base do site e do arquivo de importação para Shopify/Nuvemshop.',
+  root.innerHTML = `${cabecalho('Produtos', 'Catálogo do cliente. É a base do site e do arquivo de importação para Shopify/Nuvemshop (aba Site/Loja), e aparece para escolher ao criar um criativo (aba Criativos).',
     '<button class="btn-primary" data-novo title="Cadastrar um produto"><i class="fa-solid fa-plus"></i> Novo produto</button>')}
     ${produtos.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">${produtos.map((p) => `<button data-abrir="${p.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <div class="mb-2 flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-300">${p.fotos?.[0] ? `<img src="${esc(p.fotos[0].url)}" alt="${esc(p.nome)}" class="h-full w-full object-cover" loading="lazy">` : '<i class="fa-solid fa-image text-3xl"></i>'}</div>

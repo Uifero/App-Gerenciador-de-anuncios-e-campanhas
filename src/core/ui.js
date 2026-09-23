@@ -75,11 +75,24 @@ export function modal(titulo, corpo, { largo = false, aoFechar = null } = {}) {
     <div class="mb-4 flex items-center justify-between"><h3 class="text-lg font-semibold">${esc(titulo)}</h3>
     <button data-fechar class="text-slate-400 hover:text-slate-700" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
     <div data-corpo>${corpo}</div></div>`;
-  const fechar = () => { if (!wrap.isConnected) return; wrap.remove(); aoFechar?.(); };
+  const fechar = () => { if (!wrap.isConnected) return; wrap.remove(); const i = abertos.indexOf(fechar); if (i >= 0) abertos.splice(i, 1); aoFechar?.(); };
   wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) fechar(); });
   on(wrap, 'click', '[data-fechar]', fechar);
   document.body.appendChild(wrap);
+  abertos.push(fechar);
   return { el: wrap, fechar };
+}
+
+// Janelas abertas, da mais antiga para a mais nova: Esc fecha a de cima; trocar de tela (link, voltar do navegador)
+// fecha todas — senão uma janela da tela anterior ficava por cima da tela nova.
+const abertos = [];
+export function fecharModais() { [...abertos].reverse().forEach((f) => f()); }
+if (typeof document !== 'undefined') {
+  // Dentro de um campo de texto, Esc só sai do campo (fechar a janela ali perderia o que está sendo digitado/montado).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !abertos.length || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+    abertos[abertos.length - 1]();
+  });
 }
 
 export function confirmar(mensagem, textoBotao = 'Confirmar') {

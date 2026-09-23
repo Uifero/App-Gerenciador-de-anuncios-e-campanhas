@@ -67,13 +67,13 @@ export function painelAlertas(a) {
       ${total ? `<span class="tag tag-bad">${total} alerta(s)</span>` : '<span class="tag tag-ok">tudo em ordem</span>'}</div>
     <p class="caption mb-3">Tudo o que precisa de atenção em todos os clientes, sem entrar em cada um.</p>
     ${total ? `<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      ${bloco('Clientes no vermelho', 'Resultados recentes piores que a meta em mais de 20%.', a.vermelhos.map((v) => linha('text-rose-500', 'circle-exclamation', `<b>${esc(v.cliente.nome)}</b> está fora da meta`, `#/c/${v.cliente.id}/resultados`)))}
+      ${bloco('Clientes no vermelho', 'Resultados recentes piores que a meta em mais de 20%. Clique para ver os resultados.', a.vermelhos.map((v) => linha('text-rose-500', 'circle-exclamation', `<b>${esc(v.cliente.nome)}</b> está fora da meta`, `#/c/${v.cliente.id}/resultados`)))}
       ${bloco('Hora de escalar', 'Criativos batendo a meta de forma consistente.', a.escalar.map((e) => linha('text-emerald-500', 'arrow-trend-up', `<b>${esc(e.cliente.nome)}</b> · “${esc(e.nome)}” está na meta há ${e.dias} dias. Considere aumentar o orçamento ou duplicar o conjunto.`, `#/c/${e.cliente.id}/resultados`)))}
-      ${bloco('Padrão comprovado ainda não testado', 'Ângulo/framework com bom desempenho em clientes de nicho semelhante (Insights) — este cliente ainda não usou.', insights.map((s) => linha('text-violet-500', 'chart-simple', `<b>${esc(s.cliente.nome)}</b> · ${esc(s.rotulo)} “${esc(s.grupo.valor)}” (ROAS médio ${s.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x, ${s.grupo.amostras} amostra(s))`, `#/c/${s.cliente.id}/criativos`)))}
+      ${bloco('Padrão comprovado ainda não testado', 'Ângulo/framework com bom desempenho em clientes de nicho semelhante (Insights) — este cliente ainda não usou. Clique para criar um criativo com ele.', insights.map((s) => linha('text-violet-500', 'chart-simple', `<b>${esc(s.cliente.nome)}</b> · ${esc(s.rotulo)} “${esc(s.grupo.valor)}” (ROAS médio ${s.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x, ${s.grupo.amostras} amostra(s))`, `#/c/${s.cliente.id}/criativos`)))}
       ${bloco('Aguardando o cliente', 'Enviado para aprovação e sem resposta há muito tempo — vale cobrar.', a.aprovacaoPendente.map((x) => linha('text-amber-500', 'paper-plane', `<b>${esc(x.cliente.nome)}</b> · “${esc(x.nome)}” aguarda resposta há ${x.dias} dias`, `#/c/${x.cliente.id}/criativos`)))}
       ${bloco('Sem decisão', 'Criativo criado e nunca enviado, nem aprovado nem rejeitado — parado do nosso lado.', a.semDecisao.map((x) => linha('text-slate-500', 'circle-question', `<b>${esc(x.cliente.nome)}</b> · “${esc(x.nome)}” parado há ${x.dias} dias`, `#/c/${x.cliente.id}/criativos`)))}
       ${bloco('Orçamento de IA', 'Gasto com IA perto ou acima do limite do mês.', (a.orcamento || []).map((o) => linha(o.pct >= 100 ? 'text-rose-500' : 'text-amber-500', 'coins', `<b>${esc(o.nome)}</b>: ${Math.round(o.pct)}% do limite (${usd(o.gasto)} de ${usd(o.orc)})`, o.escopo === 'global' ? '#/config' : `#/c/${o.clienteId}`)))}
-      ${bloco('Fadiga de criativo', 'Criativos há muito tempo no ar.', a.fadiga.map((f) => linha('text-amber-500', 'hourglass-half', `<b>${esc(f.cliente.nome)}</b> · “${esc(f.nome)}” (${f.dias} dias no ar)`, `#/c/${f.cliente.id}/campanhas`)))}
+      ${bloco('Fadiga de criativo', 'Há muito tempo no ar: o público cansa de ver e o resultado costuma cair. Troque ou renove a peça.', a.fadiga.map((f) => linha('text-amber-500', 'hourglass-half', `<b>${esc(f.cliente.nome)}</b> · “${esc(f.nome)}” (${f.dias} dias no ar)`, `#/c/${f.cliente.id}/campanhas`)))}
     </div>` : '<p class="text-sm text-slate-500">Nenhum criativo em fadiga, nenhum cliente no vermelho e nada pedindo escala, resposta ou decisão agora.</p>'}</section>`;
 }
 
@@ -93,5 +93,6 @@ export function cartaoProgresso(c, resumo) {
       <span><i class="fa-solid ${e.feito ? 'fa-circle-check text-emerald-500' : 'fa-circle text-slate-300'} mr-2"></i><b>${i + 1}. ${esc(e.nome)}</b> <span class="text-slate-500">— ${esc(e.detalhe)}</span></span>
       ${e.feito ? '' : `<a class="btn-ghost btn-sm" href="#/c/${c.id}${e.aba === 'editar' ? '/editar' : '/' + e.aba}" title="Ir para esta etapa">Ir</a>`}</li>`).join('')}</ol>
     ${resumo.escalar.length ? `<p class="mt-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800"><i class="fa-solid fa-arrow-trend-up"></i> <b>Hora de escalar:</b> ${resumo.escalar.map((e) => `“${esc(e.nome)}” (${e.dias} dias na meta)`).join('; ')}.</p>` : ''}
-    <p class="hint mt-2">O progresso conta as etapas que já têm conteúdo cadastrado. Só entram as etapas do escopo deste cliente.</p></details>`;
+    <p class="hint mt-2"><b>Semáforo (${ROTULO[resumo.sem.estado]}):</b> ${esc(detalheSemaforo(resumo.sem, c.metas))}</p>
+    <p class="hint mt-1">O progresso conta as etapas que já têm conteúdo cadastrado. Só entram as etapas do escopo deste cliente.</p></details>`;
 }

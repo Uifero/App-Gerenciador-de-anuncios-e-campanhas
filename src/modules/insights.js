@@ -6,6 +6,7 @@
 import { db, COL } from '../core/storage.js';
 import { explicarInsights } from '../core/ia.js';
 import { esc, tag, ocupado } from '../core/ui.js';
+import { FORMATOS } from '../lib/constantes.js';
 
 const DIMENSOES = [['angulo', 'Ângulo'], ['framework', 'Framework de copy'], ['formato', 'Formato']];
 const normNicho = (s) => String(s || '').toLowerCase().trim();
@@ -104,7 +105,9 @@ export function sugestoesDashboard(clientes, criativosTodos, resultadosTodos, mi
 
 function linhaPadrao([campo, rotulo], grupos) {
   if (!grupos.length) return '';
-  const top = grupos.slice(0, 3).map((g) => `<li>${tag(g.valor, 'tag-info')} ROAS ${g.roasMedio != null ? g.roasMedio.toFixed(2) + 'x' : '—'} · CPA ${g.cpaMedio != null ? 'R$ ' + g.cpaMedio.toFixed(2) : '—'} <span class="hint">(${g.amostras} amostra(s))</span></li>`).join('');
+  // Formato é guardado como chave ("video_curto"): mostra o nome legível.
+  const nome = (v) => (campo === 'formato' ? FORMATOS.find(([k]) => k === v)?.[1] || v : v);
+  const top = grupos.slice(0, 3).map((g) => `<li>${tag(nome(g.valor), 'tag-info')} ROAS ${g.roasMedio != null ? g.roasMedio.toFixed(2) + 'x' : '—'} · CPA ${g.cpaMedio != null ? 'R$ ' + g.cpaMedio.toFixed(2) : '—'} <span class="hint">(${g.amostras} resultado(s))</span></li>`).join('');
   return `<div><h5 class="text-xs font-semibold uppercase text-slate-500">${esc(rotulo)}</h5><ul class="mt-1 space-y-0.5 text-sm">${top}</ul></div>`;
 }
 
@@ -123,7 +126,8 @@ export async function cartaoInsights(cliente, resultados) {
       <p class="hint mt-2">Ainda não há resultados suficientes (mínimo 2 por ângulo/framework/formato) para identificar um padrão. Registre mais resultados aqui ou em clientes do mesmo nicho.</p></details>`;
   }
   return `<details class="card mb-5" id="insights-card" open><summary class="cursor-pointer text-sm font-medium text-slate-600"><i class="fa-solid fa-chart-simple mr-1 text-slate-400"></i> Insights <span class="tag tag-info">sem custo de IA</span></summary>
-    <p class="hint mt-2 mb-3">Calculado direto dos números registrados (média ponderada pelo gasto, só com pelo menos 2 amostras) — nenhuma IA envolvida até aqui.</p>
+    <p class="hint mt-2">Calculado direto dos números registrados (média ponderada pelo gasto, só com pelo menos 2 resultados) — nenhuma IA envolvida até aqui.</p>
+    <p class="caption mb-3"><b>Como usar:</b> em cada coluna, o primeiro item é o que mais deu retorno. No próximo criativo, escreva esse ângulo/framework no campo "O que você quer comunicar?" (aba Criativos). ROAS acima de 3x costuma ser bom; abaixo de 1x é prejuízo.</p>
     ${temLocal ? `<div><p class="text-xs font-semibold text-slate-500 mb-1">NESTE CLIENTE</p><div class="grid gap-3 sm:grid-cols-3">${DIMENSOES.map((d) => linhaPadrao(d, locais[d[0]])).join('')}</div></div>` : ''}
     ${temNicho ? `<div class="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3"><p class="text-xs font-semibold text-indigo-700 mb-1" title="Agregado de ${nicho.clientes} outro(s) cliente(s) com o mesmo nicho — nunca mostra de qual cliente veio cada número">PADRÃO EM ${nicho.clientes} CLIENTE(S) DO MESMO NICHO (${esc(cliente.nicho || '')})</p>
       <div class="grid gap-3 sm:grid-cols-3">${DIMENSOES.map((d) => linhaPadrao(d, nicho.padroes[d[0]])).join('')}</div></div>` : ''}
@@ -145,6 +149,7 @@ export function ligarExplicacaoIA(root, cliente, resultados) {
     root.querySelector('[data-explicacao]').innerHTML = `<div class="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
       <p class="mb-1 text-xs font-semibold text-violet-700"><i class="fa-solid fa-wand-magic-sparkles"></i> Explicação da IA — baseada só nos números acima</p>
       <p>${esc(r.resumo || '')}</p>
-      ${(r.recomendacoes || []).length ? `<ul class="mt-2 list-disc space-y-0.5 pl-5">${r.recomendacoes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>`;
+      ${(r.recomendacoes || []).length ? `<ul class="mt-2 list-disc space-y-0.5 pl-5">${r.recomendacoes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      <p class="mt-2 text-xs text-violet-700"><b>Próximo passo:</b> aplique a recomendação no próximo criativo (aba Criativos) e registre o resultado aqui para confirmar se funcionou.</p></div>`;
   }));
 }

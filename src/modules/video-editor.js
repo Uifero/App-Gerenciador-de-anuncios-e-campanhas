@@ -75,7 +75,7 @@ export function montarEditorVideo(raiz, { criativo, cliente }) {
       <details class="mt-3 rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-700"><i class="fa-solid fa-crop"></i> Ajustar proporção</summary>
         <p class="hint mt-1 mb-2">Corta as bordas (mantendo o centro) para caber no formato do criativo.</p>
         <select class="input !w-auto" data-proporcao>${opcoes(PROPORCOES_VIDEO, '9:16')}</select>
-        <button class="btn-primary btn-sm ml-2" data-aplicar-proporcao>Aplicar</button></details>
+        <button class="btn-primary btn-sm ml-2" data-aplicar-proporcao>Aplicar recorte</button></details>
 
       <details class="mt-3 rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-700"><i class="fa-solid fa-font"></i> Texto sobreposto (hook / CTA)</summary>
         <p class="hint mt-1 mb-2">Queima o texto nos frames do início e/ou do final do vídeo. Pré-preenchido com o hook e o CTA deste criativo.</p>
@@ -88,7 +88,7 @@ export function montarEditorVideo(raiz, { criativo, cliente }) {
 
       <details class="mt-3 rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-700"><i class="fa-solid fa-volume-high"></i> Normalizar volume</summary>
         <p class="hint mt-1 mb-2">Ajusta o áudio para um nível padrão de redes sociais (-16 LUFS) — corrige áudio baixo ou irregular.</p>
-        <button class="btn-primary btn-sm" data-aplicar-volume>Normalizar</button></details>
+        <button class="btn-primary btn-sm" data-aplicar-volume>Normalizar volume</button></details>
 
       <details class="mt-3 rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-700"><i class="fa-solid fa-closed-captioning"></i> Transcrição e legenda</summary>
         ${!reconhecimentoDeVozDisponivel() ? '<p class="hint mt-1">Este navegador não tem reconhecimento de voz automático (Web Speech API) — funciona bem no Chrome. Você ainda pode digitar a legenda manualmente abaixo.</p>'
@@ -108,7 +108,7 @@ export function montarEditorVideo(raiz, { criativo, cliente }) {
           <div><label class="label">Proporção</label><select class="input" data-proporcao-montagem>${opcoes(PROPORCOES_VIDEO, '9:16')}</select></div>
           <div><label class="label">Transição</label><select class="input" data-transicao>${opcoes(TRANSICOES, 'corte')}</select></div>
         </div>
-        <button class="btn-primary btn-sm mt-2" data-aplicar-montagem>Montar</button></details>
+        <button class="btn-primary btn-sm mt-2" data-aplicar-montagem>Montar vídeo com estes arquivos</button></details>
 
       <details class="mt-3 rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-700"><i class="fa-solid fa-music"></i> Adicionar trilha de áudio</summary>
         <p class="hint mt-1 mb-2"><i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Use só música com direito de uso garantido (própria, com licença, ou de banco de músicas livres) — o app não verifica direitos autorais.</p>

@@ -37,13 +37,14 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <button class="btn-danger btn-sm" data-apagar="${h.id}" title="Apagar"><i class="fa-solid fa-trash"></i></button></div></div>`).join('')}</div>`;
   };
 
-  root.innerHTML = `${cabecalho('Hooks', 'Ganchos de abertura isolados. Filtre, avalie e reaproveite entre clientes.',
-    '<button class="btn-ia" data-ia title="A IA cria vários hooks com o perfil de marca do cliente"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar com IA</button><button class="btn-ghost" data-manual title="Escreva um hook você mesmo">Adicionar manual</button>')}
+  root.innerHTML = `${cabecalho('Hooks', 'Hook é a primeira frase do anúncio: a que faz a pessoa parar de rolar a tela. Guarde aqui os bons, dê nota depois de ver o resultado e reaproveite entre clientes.',
+    '<button class="btn-ia" data-ia title="A IA cria vários hooks com o perfil de marca do cliente"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar 8 hooks com IA</button><button class="btn-ghost" data-manual title="Escreva um hook você mesmo">Escrever um hook</button>')}
     <div id="painel"></div>
     <div class="mb-4 flex flex-wrap gap-2">
       <select class="input !w-auto" data-escopo><option value="cliente" ${escopo === 'cliente' ? 'selected' : ''}>Deste cliente</option><option value="generico" ${escopo === 'generico' ? 'selected' : ''}>Genéricos</option><option value="todos" ${escopo === 'todos' ? 'selected' : ''}>Todos os clientes</option></select>
       <select class="input !w-auto" data-cat><option value="">Todas as categorias</option>${opcoes(CATEGORIAS_HOOK, '')}</select>
       <input class="input !w-56" data-busca placeholder="Buscar no texto…"></div>
+    <p class="hint -mt-2 mb-3">Nota (1 a 5★): dê depois de ver como o anúncio com esse hook performou. Hooks com 4★ ou mais entram no playbook quando você salva este cliente como playbook ("Mais ações"). Para usar um hook, copie e cole no criativo (aba Criativos).</p>
     <div id="lista">${lista()}</div>`;
   const redesenhar = () => { $('#lista', root).innerHTML = lista(); };
   if (hookBusca) $(`[data-hook-id="${hookBusca.id}"]`, root)?.scrollIntoView({ block: 'center' });
@@ -56,9 +57,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   });
 
   on(root, 'click', '[data-manual]', () => {
-    $('#painel', root).innerHTML = `<form id="fm" class="card mb-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+    $('#painel', root).innerHTML = `<form id="fm" class="card mb-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]"><p class="caption sm:col-span-3">Escreva a frase de abertura e salve: ela entra na lista abaixo.</p>
       <input class="input" name="texto" placeholder="Texto do hook" required><select class="input" name="categoria">${opcoes(CATEGORIAS_HOOK, '')}</select>
-      <button class="btn-primary" type="submit">Salvar</button></form>`;
+      <button class="btn-primary" type="submit">Salvar hook</button></form>`;
   });
   on(root, 'submit', '#fm', async (f, ev) => {
     ev.preventDefault();
@@ -68,6 +69,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   on(root, 'click', '[data-ia]', () => {
     $('#painel', root).innerHTML = `<form id="fi" class="card mb-4 space-y-3">
+      <p class="caption">A IA escreve 8 frases de abertura no tom de voz deste cliente. Salve as que gostar: elas entram na lista abaixo.</p>
       <div class="grid gap-3 sm:grid-cols-3"><div class="sm:col-span-2"><label class="label">Sobre o quê? (opcional)</label><input class="input" name="tema" placeholder="Ex.: legging que não transparece"></div>
       <div><label class="label">Categoria</label><select class="input" name="categoria"><option value="">Variadas</option>${opcoes(CATEGORIAS_HOOK, '')}</select></div></div>
       <button class="btn-ia" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar 8 hooks</button><div id="res"></div></form>`;
@@ -80,7 +82,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       const res = $('#res', f); res._h = hooks;
       res.innerHTML = `<div class="mt-3 space-y-2">${iaNota(`A IA criou ${hooks.length} hooks nativos/orgânicos para ${cliente.nome}. Salve os que servirem.`)}
         ${hooks.map((h, i) => `<div class="flex items-center justify-between gap-2 rounded-lg border border-slate-200 p-2"><span class="text-sm">“${esc(h.texto)}” ${tag(nomeCat(h.categoria), 'tag-info')}</span>
-        <button type="button" class="btn-primary btn-sm shrink-0" data-salvar-h="${i}">Salvar</button></div>`).join('')}</div>`;
+        <button type="button" class="btn-primary btn-sm shrink-0" data-salvar-h="${i}">Salvar na lista</button></div>`).join('')}</div>`;
     });
   });
   on(root, 'click', '[data-salvar-h]', async (b) => {

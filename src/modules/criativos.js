@@ -58,7 +58,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         '<button class="btn-primary" data-novo><i class="fa-solid fa-plus"></i> Criar primeiro criativo</button>');
   };
 
-  root.innerHTML = `${cabecalho('Criativos', 'Anúncios prontos para revisar, aprovar e subir. Cada ajuste vira uma versão.',
+  root.innerHTML = `${cabecalho('Criativos', 'Caminho de cada anúncio: 1. gerar ou escrever → 2. abrir, revisar e completar o checklist → 3. enviar ao cliente aprovar → 4. "Gerar foto e vídeo" → 5. vincular na aba Campanhas. Cada ajuste vira uma versão.',
     `<select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
      <button class="btn-ghost" data-enviar title="Gera um link para o cliente final ver as peças e aprovar ou pedir ajuste, sem login"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação</button>
      <button class="btn-primary" data-novo title="Gerar ou escrever um criativo novo"><i class="fa-solid fa-plus"></i> Novo criativo</button>`)}
@@ -124,20 +124,22 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, variações, referência)</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           <div><label class="label">Modelo pronto</label><select class="input" name="modelo">${opcoes(MODELOS_CRIATIVO, '')}</select></div>
-          <div><label class="label">Framework de copy</label><select class="input" name="framework">${opcoes(FRAMEWORKS, 'livre')}</select></div>
+          <div><label class="label">Framework de copy</label><select class="input" name="framework">${opcoes(FRAMEWORKS, 'livre')}</select><p class="hint">A estrutura do texto (ex.: problema → solução). Na dúvida, deixe "livre".</p></div>
           <div><label class="label">Formato</label><select class="input" name="formato">${opcoes(FORMATOS, 'video_curto')}</select></div>
           <div><label class="label">Variações a gerar</label><select class="input" name="quantidade" title="Menos variações = menos custo de IA nesta geração">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === (Number(cfg.variacoesPadrao) || 4) ? 'selected' : ''}>${n}</option>`).join('')}</select><p class="hint">Menos variações = menos custo nesta geração.</p></div>
           <div><label class="label">Partir de uma referência salva</label><select class="input" name="referenciaId">
             <option value="">Nenhuma</option>${referencias.map((r) => `<option value="${r.id}" ${base?.id === r.id ? 'selected' : ''}>${esc(r.titulo || 'Referência')}${r.sinal ? ' · ' + r.sinal : ''}</option>`).join('')}</select></div>
         </div></details>
+      <p class="caption"><b>Com IA:</b> cria <span data-qtd>${Number(cfg.variacoesPadrao) || 4}</span> versões diferentes (hook, texto e CTA) para você comparar e salvar as melhores. <b>Sem IA:</b> abre um formulário em branco para escrever.</p>
       <div class="flex flex-wrap gap-2">
-        <button class="btn-ia" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar com IA</button>
+        <button class="btn-ia" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar <span data-qtd>${Number(cfg.variacoesPadrao) || 4}</span> variações com IA</button>
         <button class="btn-ghost" type="button" data-manual title="Escreva o criativo você mesmo, sem usar IA">Escrever sem IA</button>
       </div>
     </form>
     <div id="saida"></div></div>`;
   const form = $('#fg', alvo), saida = $('#saida', alvo);
   on(alvo, 'click', '[data-x]', () => { alvo.innerHTML = ''; });
+  on(alvo, 'change', '[name=quantidade]', (s) => { alvo.querySelectorAll('[data-qtd]').forEach((e) => { e.textContent = s.value; }); });
   on(alvo, 'click', '[data-ang]', (b) => { const t = form.elements.briefing; t.value = (t.value ? t.value + '\n' : '') + 'Ângulo: ' + b.dataset.ang; t.focus(); });
   on(alvo, 'click', '[data-insight]', (b) => {
     const rotulo = b.dataset.insightCampo === 'framework' ? 'Framework' : 'Ângulo';
@@ -183,7 +185,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
       });
       if (!vars.length) throw new Error('A IA não devolveu variações. Tente reescrever o briefing.');
       saida.innerHTML = `<div class="space-y-3 border-t border-slate-200 pt-4">
-        ${iaNota(`A IA criou ${vars.length} variações com hooks e ângulos diferentes, usando o perfil de marca${ref ? ' e a referência escolhida' : ''}. Salve as que gostar; depois dá para refinar cada uma.`)}
+        ${iaNota(`A IA criou ${vars.length} variações com hooks e ângulos diferentes, usando o perfil de marca${ref ? ' e a referência escolhida' : ''}. Salve as que gostar: elas vão para a lista abaixo como rascunho. Depois, abra cada uma para refinar, completar o checklist e enviar ao cliente.`)}
         ${vars.map((x, i) => variacao(x, i, cliente)).join('')}</div>`;
       saida._vars = vars;
       saida._ctx = { referenciaId: ref?.id || null, modelo: v.modelo || null, produtoId: v.produtoId || null };
@@ -210,8 +212,8 @@ function variacao(x, i, cliente) {
     <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700">${esc(x.copy)}</p>
     <p class="mt-1 text-sm"><b>CTA:</b> ${esc(x.cta)}</p>
     ${x.porque ? `<p class="hint">Por quê: ${esc(x.porque)}</p>` : ''}
-    <div class="mt-2 flex gap-2"><button class="btn-primary btn-sm" data-salvar-var="${i}"><i class="fa-solid fa-floppy-disk"></i> Salvar</button>
-      <button class="btn-ghost btn-sm" data-copiar-var="${i}"><i class="fa-solid fa-copy"></i> Copiar</button></div></div>`;
+    <div class="mt-2 flex gap-2"><button class="btn-primary btn-sm" data-salvar-var="${i}"><i class="fa-solid fa-floppy-disk"></i> Salvar este criativo</button>
+      <button class="btn-ghost btn-sm" data-copiar-var="${i}"><i class="fa-solid fa-copy"></i> Copiar texto</button></div></div>`;
 }
 
 async function salvarNovo(cliente, x, ctx) {
@@ -256,10 +258,10 @@ function detalhe(c, cliente, cfg, recarregar) {
     <div class="mt-5 rounded-lg border border-violet-200 p-3"><h4 class="mb-1 text-sm font-semibold text-violet-800"><i class="fa-solid fa-comments"></i> Refinar com IA</h4>
       <p class="hint mb-2">Ex.: “mais curto”, “tom mais debochado”, “troque o hook por uma pergunta”. Cada ajuste vira uma versão.</p>
       <div id="chat" class="mb-2 space-y-1 text-sm">${conversa.map((t) => `<p class="${t.role === 'user' ? 'text-slate-600' : 'text-violet-700'}"><b>${t.role === 'user' ? 'Você' : 'IA'}:</b> ${esc(t.content)}</p>`).join('')}</div>
-      <form id="fc" class="flex gap-2"><input class="input" name="instrucao" placeholder="O que ajustar?"><button class="btn-ia btn-sm" type="submit">Ajustar</button></form></div>
+      <form id="fc" class="flex gap-2"><input class="input" name="instrucao" placeholder="O que ajustar?"><button class="btn-ia btn-sm" type="submit">Ajustar com IA</button></form></div>
 
     <div class="mt-5"><div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h4 class="text-sm font-semibold">Checklist de qualidade <span class="font-normal text-slate-500">— necessário para aprovar</span></h4>
-      <button class="btn-ghost btn-sm" data-checar-ia title="A IA (modelo econômico) sugere as respostas e os motivos. Você revisa antes de aplicar."><i class="fa-solid fa-wand-magic-sparkles"></i> Sugerir com IA</button></div>
+      <button class="btn-ghost btn-sm" data-checar-ia title="A IA (modelo econômico) sugere as respostas e os motivos. Você revisa antes de aplicar."><i class="fa-solid fa-wand-magic-sparkles"></i> Sugerir respostas com IA</button></div>
       <div data-sugestoes></div>
       <div class="grid gap-1 sm:grid-cols-2">${CHECKLIST_QUALIDADE.map(([k, q]) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" data-chk="${k}" ${c.checklist?.[k] ? 'checked' : ''}>${q}</label>`).join('')}</div></div>
 

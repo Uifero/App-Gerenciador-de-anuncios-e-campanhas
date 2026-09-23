@@ -3,7 +3,8 @@ import { db, COL } from '../core/storage.js';
 import { criarPdf } from '../lib/pdf.js';
 import { STATUS_CRIATIVO } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js';
-import { $, on, montar, cabecalho, tag, dataBR, moeda, toast, ocupado } from '../core/ui.js';
+import { $, on, montar, cabecalho, tag, dataBR, moeda, toast, ocupado, esc } from '../core/ui.js';
+import { lerRoas, lerCtr, lerCpa, NIVEL_TAG, ROTULO_NIVEL } from '../lib/leitura-metricas.js';
 
 const media = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 const stat = (v, suf = '') => (v == null ? '—' : v.toFixed(2).replace('.', ',') + suf);
@@ -26,11 +27,12 @@ export async function coletar(cliente) {
 export const view = (el, cliente) => montar(el, async (root) => {
   const d = await coletar(cliente);
   root.innerHTML = `${cabecalho('Relatório', 'Resumo do cliente em PDF: criativos, campanhas, resultados e entregas.',
-    '<button class="btn-primary" data-pdf><i class="fa-solid fa-file-pdf"></i> Exportar PDF</button>')}
+    '<button class="btn-primary" data-pdf><i class="fa-solid fa-file-pdf"></i> Baixar relatório em PDF</button>')}
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       ${[['Criativos', d.criativos.length], ['Em uso', d.criativos.filter((c) => c.status === 'em_uso').length], ['Campanhas', d.campanhas.length], ['Gasto registrado', moeda(d.gasto)],
-        ['CTR médio', stat(d.ctr, '%')], ['CPA médio', d.cpa == null ? '—' : moeda(d.cpa)], ['ROAS médio', stat(d.roas, 'x')], ['Referências', d.referencias.length]]
-        .map(([k, v]) => `<div class="card"><p class="caption">${k}</p><p class="text-xl font-bold">${v}</p></div>`).join('')}</div>
+        ['CTR médio', stat(d.ctr, '%'), lerCtr(d.ctr)], ['CPA médio', d.cpa == null ? '—' : moeda(d.cpa), lerCpa(d.cpa, cliente.metas?.cpa)], ['ROAS médio', stat(d.roas, 'x'), lerRoas(d.roas, cliente.metas?.roas)], ['Referências', d.referencias.length]]
+        .map(([k, v, l]) => `<div class="card"><p class="caption">${k}</p><p class="text-xl font-bold">${v}</p>
+          ${l ? `<p class="mt-1 text-xs">${l.nivel ? tag(ROTULO_NIVEL[l.nivel], NIVEL_TAG[l.nivel]) + ' ' : ''}<span class="text-slate-500">${esc(l.texto)}</span></p>` : ''}</div>`).join('')}</div>
     <p class="caption mt-4">O PDF inclui esses números, o perfil de marca, a lista de criativos e campanhas e o status da loja.</p>`;
 
   on(root, 'click', '[data-pdf]', async (b) => {

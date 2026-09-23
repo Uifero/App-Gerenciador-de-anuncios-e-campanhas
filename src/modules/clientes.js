@@ -97,11 +97,12 @@ export async function viewForm(el, id, { baseId = null } = {}) {
         <div><label class="label">CPA médio (R$)</label><input class="input" type="number" step="0.01" name="cpaMedio" value="${esc(h.cpaMedio)}"></div>
         <div><label class="label">Orçamento diário (R$)</label><input class="input" type="number" step="0.01" name="orcamentoDiario" value="${esc(h.orcamentoDiario)}"></div>
         <div class="sm:col-span-2"><label class="label">Públicos que convertem</label><input class="input" name="publicosHist" value="${esc(h.publicos)}" placeholder="Ex.: mulheres 25-40, lookalike compradores"></div>
+        <p class="hint sm:col-span-2">Números de hoje, do Gerenciador de Anúncios (CPA = custo médio de cada venda). A IA parte deles nas sugestões e o "Diagnosticar campanha" já vem preenchido com eles.</p>
       </div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Ativa o semáforo verde/amarelo/vermelho e o alerta de hora de escalar">Meta de resultado (opcional)</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2"><div><label class="label">Meta de CPA (R$)</label><input class="input" type="number" step="0.01" min="0" name="metaCpa" value="${esc(metas.cpa)}"></div>
           <div><label class="label">Meta de ROAS</label><input class="input" type="number" step="0.01" min="0" name="metaRoas" value="${esc(metas.roas)}"></div></div>
-        <p class="hint">O semáforo compara os resultados recentes com essa meta. Deixe em branco para não usar.</p></details>
+        <p class="hint">CPA = quanto o cliente aceita pagar por venda (ex.: 40). ROAS = quanto precisa voltar em vendas para cada R$ 1 de anúncio (ex.: 3 = R$ 3 em vendas). O semáforo verde/amarelo/vermelho compara os resultados recentes com essa meta. Deixe em branco para não usar.</p></details>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Limite de gasto com IA só para este cliente">Orçamento mensal de IA deste cliente (opcional)</summary>
         <div class="mt-3"><label class="label">Limite por mês (US$)</label><input class="input" type="number" step="0.01" min="0" name="orcamentoIa" value="${esc(fonte?.orcamentoIaMensalUsd)}" placeholder="Sem limite">
         <p class="hint">Ao passar do limite, cada geração de IA para este cliente pede confirmação. O limite geral fica em Configurações.</p></div></details>
@@ -199,7 +200,7 @@ export async function viewCliente(el, id, aba, abasMap) {
     <div><a href="#/" class="caption hover:text-indigo-600"><i class="fa-solid fa-arrow-left"></i> Todos os clientes</a>
       <h1 class="text-2xl font-bold text-slate-900">${esc(c.nome)} <span class="text-base font-normal text-slate-500">· ${esc(c.nicho)}</span></h1></div>
     <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="#/c/${id}/editar" title="Editar dados, marca, metas e escopo"><i class="fa-solid fa-pen"></i> Editar</a>
-      <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Exportar dados</button>
+      <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Baixar backup</button>
       <button class="btn-ghost btn-sm" data-mais title="Duplicar como base, playbooks e outras ações"><i class="fa-solid fa-ellipsis"></i> Mais ações</button>
       <button class="btn-danger btn-sm" data-excluir title="Apagar este cliente"><i class="fa-solid fa-trash"></i></button></div></div>
     <div id="cards"><div class="card mb-5 h-16 animate-pulse" aria-hidden="true"></div></div>
@@ -251,7 +252,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       <div><button class="btn-ghost w-full" data-salvar-pb><i class="fa-solid fa-book-open"></i> Salvar como playbook</button>
         <p class="hint">Guarda os ângulos e hooks que funcionaram aqui como receita reaproveitável em novos clientes.</p></div>
       <div><label class="label">Aplicar um playbook a este cliente</label><div class="flex gap-2"><select class="input" data-pb>${pbs.length ? pbs.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('') : '<option value="">Nenhum playbook ainda</option>'}</select>
-        <button class="btn-primary" data-aplicar-pb ${pbs.length ? '' : 'disabled'}>Aplicar</button></div>
+        <button class="btn-primary" data-aplicar-pb ${pbs.length ? '' : 'disabled'}>Aplicar playbook</button></div>
         <p class="hint">Adiciona os hooks do playbook à biblioteca deste cliente e sugere os ângulos na hora de criar criativos.</p></div></div>`);
     on(m.el, 'click', '[data-diagnostico]', () => { m.fechar(); abrirDiagnostico(c); });
     on(m.el, 'click', '[data-duplicar]', () => { try { sessionStorage.setItem('gcc_base', id); } catch { /* sem storage */ } m.fechar(); location.hash = '#/clientes/novo/completo'; });
