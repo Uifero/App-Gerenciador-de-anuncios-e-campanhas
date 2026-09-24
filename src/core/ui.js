@@ -28,6 +28,10 @@ export function montar(el, fn) {
 
 export function dataBR(iso) {
   if (!iso) return '—';
+  // Data sem hora ("2026-09-24", do <input type="date">): o navegador leria como meia-noite UTC, que no Brasil
+  // (UTC-3) ainda é o dia anterior. Formata direto, sem fuso.
+  const so = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+  if (so) return `${so[3]}/${so[2]}/${so[1]}`;
   const d = new Date(iso);
   return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR');
 }

@@ -177,7 +177,9 @@ async function viaCli({ tarefa, t, estavel, system, messages, webSearch, imagens
     const saida = await new Promise((ok, falha) => {
       const p = spawn(CLI_BIN, args, { cwd: os.tmpdir(), env, windowsHide: true });
       let out = '', err = '';
-      const timer = setTimeout(() => { p.kill(); falha(new Error('A CLI do Claude demorou demais (3 min).')); }, 180_000);
+      // Busca na web (mercado) costuma levar 2 a 3 min: ganha 5 min. As demais, 3 min.
+      const limiteMs = busca ? 300_000 : 180_000;
+      const timer = setTimeout(() => { p.kill(); falha(new Error(`A CLI do Claude demorou demais (${limiteMs / 60_000} min).`)); }, limiteMs);
       p.stdout.on('data', (d) => (out += d)); p.stderr.on('data', (d) => (err += d));
       p.on('error', (e) => { clearTimeout(timer); falha(new Error('Não consegui executar a CLI "claude": ' + e.message)); });
       p.on('close', () => { clearTimeout(timer); ok({ out, err }); });
@@ -279,9 +281,11 @@ app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), a
     try { return res.json(await viaCli({ tarefa, t, estavel, system, messages, webSearch, imagens })); }
     catch (e) {
       console.error('[cli]', tarefa, e?.message);
-      // Ausente/sem login: pausa longa. Limite de uso ou outro erro: pausa curta.
+      // Sem ANTHROPIC_API_KEY não há reserva: pausar a CLI só derrubaria TODA a IA por minutos por causa de uma
+      // falha pontual (ex.: uma busca web lenta). Nesse caso devolve o erro desta chamada e a próxima tenta de novo.
+      if (!process.env.ANTHROPIC_API_KEY) return res.status(502).json({ erro: (e?.message || 'Falha ao chamar a CLI do Claude.') + ' Tente de novo em instantes ou use a opção manual.' });
+      // Com reserva: ausente/sem login = pausa longa; limite de uso ou outro erro = pausa curta (as chamadas vão para a API).
       cliPausadaAte = Date.now() + (/ENOENT|não consegui executar/i.test(e?.message || '') ? 30 : 5) * 60_000;
-      if (!process.env.ANTHROPIC_API_KEY) return res.status(502).json({ erro: (e?.message || 'Falha ao chamar a CLI do Claude.') + ' (sem ANTHROPIC_API_KEY para usar como reserva)' });
       console.warn('[api] assinatura indisponível; usando a API da Anthropic (CLI em pausa).');
     }
   }

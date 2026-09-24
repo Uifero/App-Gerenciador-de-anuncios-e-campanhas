@@ -23,7 +23,7 @@ async function buscaInicial(c) {
   // foi para outro cliente, não há cartão deste — a janela com os resultados abre do mesmo jeito).
   const cartao = (html, cor = 'border-indigo-200 bg-indigo-50/50') => { const caixa = document.querySelector(`#busca-inicial[data-cliente="${c.id}"]`); if (caixa) caixa.innerHTML = `<div class="card mb-5 ${cor} text-sm" data-busca-inicial>${html}</div>`; };
   cartao(`<p class="font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1 text-indigo-500"></i>Buscando exemplos de mercado do nicho "${esc(c.nicho)}" automaticamente, só na primeira vez…</p>
-    <p class="hint">A IA pesquisa na web anúncios que estão dando certo nesse nicho (leva de 10 a 60 segundos). Os resultados abrem para você revisar e escolher o que salvar em Referências. Pode continuar usando o app enquanto isso.</p>`);
+    <p class="hint">A IA pesquisa na web anúncios que estão dando certo nesse nicho (leva de 1 a 3 minutos). Os resultados abrem para você revisar e escolher o que salvar em Referências. Pode continuar usando o app enquanto isso, só não recarregue nem feche a página.</p>`);
   iniciouBusca(c.id);
   try {
     const cfg = await obterConfig();
