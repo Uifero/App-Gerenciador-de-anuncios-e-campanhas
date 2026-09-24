@@ -5,6 +5,7 @@ import { gerarConteudoSite, gerarTextosPacote } from '../core/ia.js';
 import { gerarSiteHTML } from '../lib/sitegen.js';
 import { csvShopify, csvNuvemshop, slug } from '../lib/csv.js';
 import { criarPdf } from '../lib/pdf.js';
+import { rastreamentoDe, passosRastreamentoPacote, indicadorPixel } from '../lib/rastreamento.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas } from '../core/ui.js';
 
@@ -59,6 +60,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     <div class="mb-4 flex flex-wrap gap-1">${tag(STATUS_SITE.find(([k]) => k === site.status)?.[1] || site.status, site.status === 'rascunho' ? '' : 'tag-ok')}${tag(produtos.length + ' produto(s)')}
       ${site.plataforma ? tag(nomePlat(site.plataforma), 'tag-info') : ''}${site.versaoManual ? tag('manual v' + site.versaoManual) : ''}${site.exportadoEm ? tag('exportado em ' + dataBR(site.exportadoEm)) : ''}
       ${cliente.siteReferencia ? `<a class="tag tag-info" href="${esc(cliente.siteReferencia)}" target="_blank" rel="noopener">site de referência</a>` : ''}</div>
+    <div class="-mt-2 mb-4">${indicadorPixel(cliente)}<span class="hint ml-2">${custom ? 'Com o ID preenchido, o código entra sozinho no site gerado.' : 'Com o ID preenchido, o manual traz o passo para colar na loja.'}</span></div>
 
     <div class="grid gap-4 lg:grid-cols-2">
       <form id="fc" class="card space-y-3"><h3 class="font-semibold">1. Conteúdo da loja</h3>
@@ -203,9 +205,19 @@ async function manualCustom({ cliente, site, produtos, versao }) {
     'No index.html, faça o window.checkoutHandler chamar seu servidor e redirecionar o cliente para o init_point.', 'Configure as URLs de retorno (sucesso/falha) e teste com usuários de teste do Mercado Pago.'], true);
   pdf.texto('Opção C — Stripe Payment Links', { negrito: true }).lista(['Crie uma conta Stripe e, no Dashboard, crie um Payment Link para cada produto (preço fixo).', 'Copie a URL de cada Payment Link (algo como buy.stripe.com/...).',
     'No index.html, associe cada produto ao seu link e faça o checkoutHandler redirecionar para ele. Payment Links não exigem servidor, mas atendem 1 produto por link (não o carrinho inteiro).', 'Para carrinho com vários itens, use Stripe Checkout Sessions em um servidor seu.', 'Teste com cartões de teste do Stripe antes de ativar o modo real.'], true);
-  pdf.secao('4. Newsletter e WhatsApp')
+  const r = rastreamentoDe(cliente);
+  pdf.secao('4. Pixel e rastreamento de conversão');
+  if (r.metaPixelId || r.googleAdsId) {
+    pdf.lista([
+      ...(r.metaPixelId ? [`Pixel do Meta ${r.metaPixelId}: já instalado no <head> do index.html, com PageView em cada visita e InitiateCheckout no botão "Finalizar compra".`] : []),
+      ...(r.googleAdsId ? [`Google Ads ${r.googleAdsId}: tag já instalada no <head>${r.googleAdsRotulo ? `, com a conversão ${r.googleAdsId}/${r.googleAdsRotulo} no botão "Finalizar compra"` : ', com o evento begin_checkout no botão "Finalizar compra" (para contar como conversão, cadastre o ID com o rótulo: AW-.../rótulo)'}.`] : []),
+      'A compra (Purchase) acontece no checkout do provedor: ative lá a integração com o Pixel/Google Ads (Shopify, Mercado Pago e Stripe têm).',
+      'Depois de publicar, confira no Gerenciador de Eventos do Meta (aba "Testar eventos") e no Google Ads (Conversões) se as visitas estão chegando.',
+    ]);
+  } else pdf.texto('Nenhum ID de Pixel/Google Ads cadastrado: o site foi gerado sem código de rastreamento. Para medir conversões, preencha em Editar cliente > Rastreamento e gere o site de novo.');
+  pdf.secao('5. Newsletter e WhatsApp')
     .lista(['Newsletter: o formulário só mostra confirmação local. Ligue-o ao Mailchimp, Brevo ou ferramenta similar (embed/ação do formulário).', `WhatsApp: ${site.config?.whatsapp ? 'já configurado (' + site.config.whatsapp + ').' : 'informe o número em "Configurar loja" e gere o site de novo.'}`]);
-  pdf.secao('5. Checklist final').lista(['Fotos e preços conferidos', 'Depoimentos reais', 'Políticas revisadas', 'Checkout testado de ponta a ponta', 'Domínio e HTTPS funcionando', 'Pixel/analytics instalados (se houver)']);
+  pdf.secao('6. Checklist final').lista(['Fotos e preços conferidos', 'Depoimentos reais', 'Políticas revisadas', 'Checkout testado de ponta a ponta', 'Domínio e HTTPS funcionando', 'Pixel/analytics instalados (se houver)']);
   return pdf;
 }
 
@@ -224,6 +236,10 @@ async function manualPacote({ cliente, site, produtos, versao }) {
   }
   const t = site.pacote?.briefingTema;
   if (t) pdf.secao('4. Briefing do tema').texto(`Estilo: ${t.estilo}`).texto(`Tipografia: ${t.tipografia}`).texto(`Paleta: ${(t.paletaSugerida || []).join(', ')}`).texto(`Seções da home: ${(t.secoesHome || []).join(' > ')}`).texto(t.observacoes || '');
+  const passosPixel = passosRastreamentoPacote(rastreamentoDe(cliente), site.plataforma, plat);
+  pdf.secao('Rastreamento (Pixel do Meta e Google Ads)');
+  if (passosPixel.length) pdf.lista(passosPixel, true);
+  else pdf.texto('Nenhum ID de Pixel/Google Ads cadastrado para este cliente. Sem isso, as campanhas não medem conversão na loja: cadastre em Editar cliente > Rastreamento e gere o manual de novo.');
   if (site.pacote?.banners?.length) pdf.secao('5. Banners').lista(site.pacote.banners.map((b) => `${b.uso}: "${b.titulo}" / "${b.subtitulo}" [${b.cta}]`));
   pdf.secao('Checklist final').lista(['Produtos e preços conferidos', 'Banners e textos publicados', 'Pagamento e frete configurados', 'Pedido de teste realizado', 'Domínio conectado']);
   return pdf;

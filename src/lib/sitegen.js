@@ -1,12 +1,16 @@
 // Gerador do site "custom": um único index.html autocontido (CSS + JS inline), com carrinho client-side.
 // NÃO processa pagamento: o botão de compra chama window.checkoutHandler(itens), ponto de encaixe para checkout de terceiro.
 import { esc } from '../core/ui.js';
+import { rastreamentoDe, codigoHead, codigoCheckout } from './rastreamento.js';
 
 const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 const brl = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {} }) {
   const cor = cfg.corPrimaria || '#4f46e5';
+  const rastro = rastreamentoDe(cliente); // Pixel do Meta / tag do Google Ads do cadastro (vazio = nenhum código)
+  const pixel = codigoHead(rastro);
+  const head = pixel ? `${pixel}\n` : '';
   const fundo = cfg.corFundo || '#ffffff';
   const zap = String(cfg.whatsapp || '').replace(/\D/g, '');
   const categorias = [...new Set(produtos.map((p) => p.categoria).filter(Boolean))];
@@ -29,7 +33,7 @@ export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg
   return `<!doctype html>
 <html lang="${esc(cliente.marca?.idioma || 'pt-BR')}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(cliente.nome)}</title><meta name="description" content="${esc(c.heroSubtitulo || cliente.nicho)}">
-<style>
+${head}<style>
 :root{--cor:${esc(cor)};--fundo:${esc(fundo)};--txt:#1f2937;--suave:#f3f4f6}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--txt);background:var(--fundo)}
 a{color:inherit}.wrap{max-width:1100px;margin:0 auto;padding:0 20px}
@@ -116,7 +120,8 @@ document.getElementById('news').onsubmit=e=>{e.preventDefault();document.getElem
 window.checkoutHandler=function(itens){
   alert('Checkout ainda não conectado. Veja o manual de handoff para ligar Shopify Buy Button, Mercado Pago ou Stripe.\\n\\nItens: '+itens.map(i=>i.nome+' × '+i.qtd).join(', '));
 };
-document.getElementById('finalizar').onclick=()=>{if(!carrinho.length)return;window.checkoutHandler(carrinho);};
+${codigoCheckout(rastro)}
+document.getElementById('finalizar').onclick=()=>{if(!carrinho.length)return;rastrearCheckout(carrinho);window.checkoutHandler(carrinho);};
 desenhar();
 </script></body></html>`;
 }

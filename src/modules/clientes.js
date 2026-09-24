@@ -12,6 +12,7 @@ import { contarDependentesCliente, apagarClienteEmCascata } from '../lib/cascata
 import { abrirDiagnostico } from './diagnostico.js';
 import { pedirBuscaInicial, consumirBuscaInicial, deveBuscarAutomatico, iniciouBusca, terminouBusca, buscaEmAndamento, marcarPerguntado } from './busca-mercado.js';
 import { buscarExemplosMercado } from './referencias.js';
+import { normalizarRastreamento, indicadorPixel } from '../lib/rastreamento.js';
 
 /**
  * Busca de exemplos de mercado do primeiro uso: roda sozinha na tela do cliente recém-cadastrado, mostra o que está
@@ -54,6 +55,8 @@ export function montarDadosCliente(v, escopo) {
     nome: v.nome, nicho: v.nicho, estagio: v.estagio, siteReferencia: v.siteReferencia || '', escopo,
     metas: { cpa: metaCpa > 0 ? metaCpa : null, roas: metaRoas > 0 ? metaRoas : null },
     orcamentoIaMensalUsd: num(v.orcamentoIa) > 0 ? num(v.orcamentoIa) : null,
+    // Pixel do Meta / tag do Google Ads (opcionais). Só vão para o código do site gerado; o app não envia nada a ninguém.
+    rastreamento: normalizarRastreamento({ metaPixelId: v.metaPixelId, googleAdsId: v.googleAdsId }).valor,
     historico: v.estagio === 'rodando' ? { cpaMedio: num(v.cpaMedio), orcamentoDiario: num(v.orcamentoDiario), publicos: v.publicosHist || '' } : {},
     marca: {
       tomDeVoz: v.tomDeVoz || '', linguagemDor: v.linguagemDor || '', objecoes: v.objecoes || '', provasSociais: v.provasSociais || '',
@@ -143,6 +146,14 @@ export async function viewForm(el, id, { baseId = null } = {}) {
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Limite de gasto com IA só para este cliente">Orçamento mensal de IA deste cliente (opcional)</summary>
         <div class="mt-3"><label class="label">Limite por mês (US$)</label><input class="input" type="number" step="0.01" min="0" name="orcamentoIa" value="${esc(fonte?.orcamentoIaMensalUsd)}" placeholder="Sem limite">
         <p class="hint">Ao passar do limite, cada geração de IA para este cliente pede confirmação. O limite geral fica em Configurações.</p></div></details>
+      <details class="rounded-lg border border-slate-200 p-3" data-rastreamento ${fonte?.rastreamento?.metaPixelId || fonte?.rastreamento?.googleAdsId ? 'open' : ''}><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Pixel do Meta e tag do Google Ads no site do cliente">Rastreamento: Pixel do Meta e Google Ads (opcional)</summary>
+        <p class="hint mt-2">Cole aqui o ID do Pixel/tag de conversão da sua conta de anúncios. Isso é necessário para a plataforma saber quem visitou o site e comprou, sem isso a campanha não consegue otimizar por conversão real.</p>
+        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+          <div><label class="label">ID do Pixel do Meta</label><input class="input" name="metaPixelId" inputmode="numeric" value="${esc(fonte?.rastreamento?.metaPixelId)}" placeholder="Ex.: 123456789012345">
+            <p class="hint">Onde achar: Gerenciador de Eventos do Meta > Pixels (o número abaixo do nome do pixel).</p></div>
+          <div><label class="label">ID de acompanhamento do Google Ads</label><input class="input" name="googleAdsId" value="${esc([fonte?.rastreamento?.googleAdsId, fonte?.rastreamento?.googleAdsRotulo].filter(Boolean).join('/'))}" placeholder="Ex.: AW-123456789">
+            <p class="hint">Onde achar: Google Ads > Ferramentas > Medição > Conversões. Se quiser contar a conversão no botão de compra, cole com o rótulo: AW-123456789/AbCdEf.</p></div></div>
+        <p class="hint">Em branco: o site é gerado normalmente, sem nenhum código de rastreamento. Preenchido: o site personalizado já sai com o código, e o manual do pacote Nuvemshop/Shopify traz os IDs para colar na loja. O app não envia esses dados a ninguém.</p></details>
     </section>
 
     <section data-passo="1" class="hidden space-y-4">
@@ -191,12 +202,21 @@ export async function viewForm(el, id, { baseId = null } = {}) {
   };
   mostrar();
 
+  /** ID de pixel com formato errado: avisa e abre a seção (em branco é sempre aceito). */
+  const rastreamentoOk = (v) => {
+    const { erros } = normalizarRastreamento({ metaPixelId: v.metaPixelId, googleAdsId: v.googleAdsId });
+    if (!erros.length) return true;
+    $('[data-rastreamento]', form).open = true;
+    toast(erros.join(' '), 'erro');
+    return false;
+  };
   on(form, 'change', '[name=estagio]', (s) => $('[data-rodando]', form).classList.toggle('hidden', s.value !== 'rodando'));
   on(form, 'click', '[data-voltar]', () => { passo = Math.max(0, passo - 1); mostrar(); });
   on(form, 'click', '[data-avancar]', () => {
     if (passo === 0) {
       const v = lerForm(form);
       if (!v.nome || !v.nicho) return toast('Preencha o nome e o nicho para continuar.', 'erro');
+      if (!rastreamentoOk(v)) return;
     }
     passo = Math.min(2, passo + 1); mostrar();
   });
@@ -204,6 +224,7 @@ export async function viewForm(el, id, { baseId = null } = {}) {
     ev.preventDefault();
     const v = lerForm(form);
     if (!v.nome || !v.nicho) { passo = 0; mostrar(); return toast('Preencha o nome e o nicho.', 'erro'); }
+    if (!rastreamentoOk(v)) { passo = 0; mostrar(); return; }
     const escopo = Object.fromEntries(MODULOS.map((mod) => [mod.id, form.elements['esc_' + mod.id].checked]));
     await ocupado($('[data-salvar]', form), async () => {
       if (c) { await db.atualizar(COL.clientes, c.id, montarDadosCliente(v, escopo)); toast('Cliente atualizado.'); location.hash = `#/c/${c.id}`; return; }
@@ -235,7 +256,8 @@ export async function viewCliente(el, id, aba, abasMap) {
 
   el.innerHTML = `<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
     <div><a href="#/" class="caption hover:text-indigo-600"><i class="fa-solid fa-arrow-left"></i> Todos os clientes</a>
-      <h1 class="text-2xl font-bold text-slate-900">${esc(c.nome)} <span class="text-base font-normal text-slate-500">· ${esc(c.nicho)}</span></h1></div>
+      <h1 class="text-2xl font-bold text-slate-900">${esc(c.nome)} <span class="text-base font-normal text-slate-500">· ${esc(c.nicho)}</span></h1>
+      ${indicadorPixel(c, id)}</div>
     <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="#/c/${id}/editar" title="Editar dados, marca, metas e escopo"><i class="fa-solid fa-pen"></i> Editar</a>
       <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Baixar backup</button>
       <button class="btn-ghost btn-sm" data-mais title="Duplicar como base, playbooks e outras ações"><i class="fa-solid fa-ellipsis"></i> Mais ações</button>
