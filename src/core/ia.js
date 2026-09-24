@@ -37,20 +37,72 @@ export async function chamarClaude({ tarefa, cliente = null, estavel, system, me
   return corpo;
 }
 
-/** Extrai JSON de uma resposta (tolera cercas ```json e texto em volta). */
+/**
+ * Conserta os defeitos de JSON mais comuns em respostas de IA — principalmente texto copiado de anúncios reais:
+ * aspas soltas dentro de um texto ("Compre "agora""), quebra de linha crua dentro de um texto e vírgula sobrando
+ * antes de } ou ]. Uma aspa dentro de texto só é tratada como fim do texto se o próximo caractere útil for , : } ]
+ * (ou o fim); senão vira \". Não inventa conteúdo: só troca caracteres de lugar/escape.
+ */
+export function repararJSON(texto) {
+  const t = String(texto);
+  let out = '', dentro = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (!dentro) { if (c === '"') dentro = true; out += c; continue; }
+    if (c === '\\') { out += c + (t[i + 1] ?? ''); i++; continue; }
+    if (c === '\n' || c === '\r') { if (c === '\n') out += '\\n'; continue; }
+    if (c === '\t') { out += '\\t'; continue; }
+    if (c === '"') {
+      const prox = t.slice(i + 1).match(/^\s*(.)/s)?.[1];
+      if (prox === undefined || ',:}]'.includes(prox)) { dentro = false; out += c; } else out += '\\"';
+      continue;
+    }
+    out += c;
+  }
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
+/** Primeiro valor JSON completo do texto ({...} ou [...]), contando chaves/colchetes fora de textos. */
+function recortarJSON(limpo, i) {
+  let prof = 0, dentro = false;
+  for (let k = i; k < limpo.length; k++) {
+    const c = limpo[k];
+    if (dentro) { if (c === '\\') k++; else if (c === '"') dentro = false; continue; }
+    if (c === '"') dentro = true;
+    else if (c === '{' || c === '[') prof++;
+    else if ((c === '}' || c === ']') && --prof === 0) return limpo.slice(i, k + 1);
+  }
+  return null;
+}
+
+/** Extrai JSON de uma resposta (tolera cercas ```json, texto em volta e os defeitos que repararJSON corrige). */
 export function extrairJSON(texto) {
   const limpo = String(texto).replace(/```(?:json)?/gi, '');
   const i = limpo.search(/[[{]/);
   if (i < 0) throw new Error('A IA não devolveu dados estruturados. Tente de novo.');
-  const abre = limpo[i], fecha = abre === '{' ? '}' : ']';
-  const j = limpo.lastIndexOf(fecha);
-  try { return JSON.parse(limpo.slice(i, j + 1)); }
+  const fecha = limpo[i] === '{' ? '}' : ']';
+  const candidatos = [limpo.slice(i, limpo.lastIndexOf(fecha) + 1), recortarJSON(limpo, i)].filter(Boolean);
+  for (const c of candidatos) { try { return JSON.parse(c); } catch { /* tenta o próximo */ } }
+  for (const c of candidatos) { try { return JSON.parse(repararJSON(c)); } catch { /* tenta o próximo */ } }
+  // Depois do reparo as aspas mudam: recorta de novo a partir do texto já reparado.
+  const reparado = repararJSON(limpo.slice(i));
+  try { return JSON.parse(recortarJSON(reparado, 0) || reparado); }
   catch { throw new Error('A resposta da IA veio incompleta. Tente de novo com menos itens.'); }
 }
 
 async function gerarJSON(opts) {
   const r = await chamarClaude(opts);
-  return { dados: extrairJSON(r.texto), fontes: r.fontes || [] };
+  try { return { dados: extrairJSON(r.texto), fontes: r.fontes || [] }; }
+  catch (e) {
+    // Última tentativa, sem refazer o trabalho (ex.: a busca web de 2 min): o modelo leve só corrige a formatação.
+    if (!String(r.texto || '').trim()) throw e;
+    const fix = await chamarClaude({
+      tarefa: 'reparo', cliente: opts.cliente || null,
+      system: 'Você corrige JSON inválido. Devolva o MESMO conteúdo como JSON válido, sem mudar, resumir nem inventar nada. Escape aspas internas com \\". Sem texto antes ou depois, sem cercas de código.',
+      messages: [{ role: 'user', content: String(r.texto).slice(0, 60000) }],
+    });
+    return { dados: extrairJSON(fix.texto), fontes: r.fontes || [] };
+  }
 }
 
 // ---------- contexto e regras ----------

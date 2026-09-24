@@ -56,6 +56,7 @@ export const TAREFAS = {
   insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low' },
   diagnostico: { modelo: MODELO_COMPLEXO, max: 5000,  effort: 'medium', imagens: true },
   narracao:    { modelo: MODELO_LEVE,     max: 2500 },
+  reparo:      { modelo: MODELO_LEVE,     max: 12000 }, // corrige JSON inválido de outra resposta (sem refazer a tarefa)
 };
 
 // ---------- imagens anexadas (só tarefas com `imagens: true`, hoje o diagnóstico) ----------
