@@ -111,7 +111,7 @@ export function resumoProduto(p) {
 function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = null, atualizar = null, cfg = {}, produtos = [], sugestaoInsight = null) {
   alvo.innerHTML = `<div class="card mb-5 space-y-4">
     <div class="flex items-center justify-between"><h3 class="font-semibold">Novo criativo</h3><button class="text-slate-400" data-x aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
-    <form id="fg" class="space-y-3">
+    <form id="fg" class="space-y-3" data-aviso-sair>
       ${produtos.length ? `<div><label class="label">Produto (opcional)</label><select class="input" name="produtoId" data-produto>
           <option value="">Nenhum — descrever no briefing</option>${produtos.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select>
         <p class="hint">Preenche o briefing com os dados do produto (editável antes de gerar). Cadastrado na aba Produtos.</p></div>` : ''}
@@ -155,7 +155,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
 
   on(alvo, 'click', '[data-manual]', () => {
     const v = lerForm(form);
-    saida.innerHTML = `<form id="fm" class="space-y-3 border-t border-slate-200 pt-4">
+    saida.innerHTML = `<form id="fm" class="space-y-3 border-t border-slate-200 pt-4" data-aviso-sair>
       <p class="caption">Formulário manual — preencha e salve, sem IA.</p>
       <div class="grid gap-3 sm:grid-cols-2">
         <div><label class="label">Nome/legenda *</label><input class="input" name="nome"></div>
@@ -250,7 +250,7 @@ function detalhe(c, cliente, cfg, recarregar) {
       ${c.emUsoDesde ? tag(`em uso desde ${dataBR(c.emUsoDesde)}`, 'tag-ok') : ''}${tagAprovacao(c)}</div>
     ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
     ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
-    <form id="fe" class="space-y-3">
+    <form id="fe" class="space-y-3" data-aviso-sair>
       <p class="caption">Edite direto (sem IA) e salve como nova versão, ou peça um ajuste ao chat abaixo.</p>
       <div><label class="label">Hook</label><input class="input" name="hook" value="${esc(c.hook)}"></div>
       <div><label class="label">Copy / roteiro</label><textarea class="input" rows="7" name="copy">${esc(c.copy)}</textarea></div>

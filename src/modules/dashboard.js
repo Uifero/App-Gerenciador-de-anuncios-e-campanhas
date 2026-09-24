@@ -6,7 +6,7 @@ import { resumoCliente, semaforoHtml, agregar, painelAlertas } from './alertas.j
 import { sugestoesDashboard } from './insights.js';
 import { cabecalho, vazio, tag, ocupado, confirmar, toast, modal, esc } from '../core/ui.js';
 import { estadoOrcamento, definirMes, mesDe, usd, brl, fecharMesesPendentes } from './custo.js';
-import { exportarDados, lerArquivoBackup, resumoRestauracao, restaurarBackup } from './backup.js';
+import { exportarDados, lerArquivoBackup, resumoRestauracao, restaurarBackup, lembreteBackup } from './backup.js';
 
 /** Escolhe o arquivo, mostra o que seria gravado e, se confirmado, restaura. Recarrega a página inteira ao final
  * (mais simples e seguro que tentar atualizar cada tela que já leu dados antigos em memória). */
@@ -40,7 +40,8 @@ async function importarBackup() {
 
 export async function view(el) {
   el.addEventListener('click', (ev) => {
-    if (ev.target.closest('[data-exportar-tudo]')) ocupado(ev.target.closest('[data-exportar-tudo]'), () => exportarDados(null));
+    // Depois do backup completo, redesenha o Início para a data do último backup (e o lembrete) ficarem em dia.
+    if (ev.target.closest('[data-exportar-tudo]')) ocupado(ev.target.closest('[data-exportar-tudo]'), async () => { await exportarDados(null); window.dispatchEvent(new Event('hashchange')); });
     if (ev.target.closest('[data-importar]')) importarBackup();
   });
   // Fecha em segundo plano os meses passados que ainda tiverem registros soltos de gcc_uso_api (rollup mensal:
@@ -66,7 +67,13 @@ export async function view(el) {
   const total = (k, v) => criativos.filter((c) => c[k] === v).length;
   const orc = estadoOrcamento(cfg, clientes, usoMes);
 
+  const lembrete = lembreteBackup(cfg.ultimoBackupEm, cfg.diasLembreteBackup);
   el.innerHTML = `${cabecalho('Início', 'Visão de todos os clientes: o que precisa de atenção hoje, o custo de IA do mês e como está cada cliente. Clique num cliente para trabalhar nele.', acoes)}
+    ${lembrete.atrasado
+    ? `<div class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800" data-lembrete-backup>
+        <span><i class="fa-solid fa-clock-rotate-left mr-1"></i>${esc(lembrete.texto)} <span class="text-amber-700">O backup guarda os dados de todos os clientes num arquivo no seu computador.</span></span>
+        <button class="btn-primary btn-sm" data-exportar-tudo><i class="fa-solid fa-file-export"></i> Exportar agora</button></div>`
+    : `<p class="hint -mt-2 mb-4" data-ultimo-backup><i class="fa-solid fa-circle-check mr-1 text-emerald-600"></i>${esc(lembrete.texto)} (${esc(new Date(cfg.ultimoBackupEm).toLocaleDateString('pt-BR'))}).</p>`}
     <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       ${[['Clientes', clientes.length], ['Criativos em uso', total('status', 'em_uso')], ['Rascunho ou aguardando aprovação', total('status', 'rascunho') + total('status', 'pronto_aprovacao')], ['Campanhas ativas', campanhas.filter((c) => c.status === 'ativa').length]]
         .map(([k, v]) => `<div class="card"><p class="caption">${k}</p><p class="text-2xl font-bold">${v}</p></div>`).join('')}

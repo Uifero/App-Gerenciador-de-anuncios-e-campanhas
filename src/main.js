@@ -4,6 +4,7 @@ import '@fortawesome/fontawesome-free/css/all.min.css';
 import { aoMudarUsuario, entrar, sair } from './core/auth.js';
 import { DEMO } from './core/firebase.js';
 import { esc, $, on, ativarCamposArquivo, fecharModais } from './core/ui.js';
+import { ligarSalvamento, podeSair } from './core/salvamento.js';
 import * as dashboard from './modules/dashboard.js';
 import * as configuracoes from './modules/configuracoes.js';
 import * as clientes from './modules/clientes.js';
@@ -119,7 +120,13 @@ aoMudarUsuario((u) => {
   if (!u) { telaLogin(); return; }
   layout(); rotear();
 });
+// Texto não salvo: ao trocar de tela, pergunta antes (confirmação nativa). Se a pessoa ficar, a barra de endereço volta
+// para a tela atual sem recarregar nada (replaceState não dispara outro hashchange).
+ligarSalvamento();
+let rotaAtual = location.hash;
 window.addEventListener('hashchange', () => {
+  if (!podeSair()) { history.replaceState(null, '', rotaAtual || '#/'); return; }
+  rotaAtual = location.hash;
   fecharModais(); // janela da tela anterior não fica por cima da nova
   if (verPublico()) return;
   if (!usuario) { telaLogin(); return; }   // saiu do link público sem estar logado

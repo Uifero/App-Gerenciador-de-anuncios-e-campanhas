@@ -28,10 +28,31 @@ export function buscarEm({ clientes, criativos, hooks }, termo) {
 /** Guarda o que abrir ao chegar na aba de destino (lido por criativos.js e hooks.js). */
 function pedirAbertura(chave, id) { try { sessionStorage.setItem(chave, id); } catch { /* sem storage */ } }
 
+/** Mac usa ⌘K; os demais, Ctrl+K. */
+export const teclaAtalho = () => (/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌘K' : 'Ctrl+K');
+/** Ctrl+K / ⌘K: o atalho da busca global (Ctrl+Shift+K e afins ficam livres). */
+export const ehAtalhoBusca = (e) => Boolean((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && String(e.key).toLowerCase() === 'k');
+
+// Um único ouvinte para o app inteiro (montarBusca roda de novo quando o layout é refeito).
+let atalhoLigado = false;
+function ligarAtalho() {
+  if (atalhoLigado) return;
+  atalhoLigado = true;
+  document.addEventListener('keydown', (e) => {
+    if (!ehAtalhoBusca(e)) return;
+    const inp = document.getElementById('busca');
+    if (!inp) return; // tela sem busca (login, link público de aprovação)
+    e.preventDefault(); // no navegador, Ctrl+K abriria a busca da barra de endereço
+    inp.focus(); inp.select();
+  });
+}
+
 export function montarBusca(container, aoNavegar) {
+  ligarAtalho();
   container.innerHTML = `<div class="relative w-full max-w-md">
     <i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-    <input id="busca" type="search" autocomplete="off" class="input !pl-9" placeholder="Buscar clientes, criativos e hooks…" aria-label="Busca global" title="Busca por nome/legenda em clientes, criativos e hooks">
+    <input id="busca" type="search" autocomplete="off" class="input !pl-9 sm:!pr-16" placeholder="Buscar clientes, criativos e hooks…" aria-label="Busca global" aria-keyshortcuts="Control+K Meta+K" title="Busca por nome/legenda em clientes, criativos e hooks (atalho: ${teclaAtalho()}; Esc fecha)">
+    <kbd data-dica-atalho class="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px] text-slate-500 sm:block">${teclaAtalho()}</kbd>
     <div id="busca-res" class="absolute left-0 right-0 top-full z-40 mt-1 hidden max-h-96 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl" role="listbox"></div></div>`;
   const inp = $('#busca', container), res = $('#busca-res', container);
   let ultimo = 0;
@@ -60,6 +81,14 @@ export function montarBusca(container, aoNavegar) {
   inp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(buscar, 120); });
   inp.addEventListener('focus', () => { dados = null; if (inp.value.trim().length >= 2) buscar(); }); // refaz a leitura: dados podem ter mudado
   inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fechar(); inp.blur(); } });
+  // A dica do atalho some enquanto a busca está em uso (senão fica por cima do texto e do "x" do campo).
+  const dica = $('[data-dica-atalho]', container);
+  const mostrarDica = () => dica.classList.toggle('sm:block', document.activeElement !== inp && !inp.value);
+  inp.addEventListener('focus', mostrarDica); inp.addEventListener('blur', mostrarDica); inp.addEventListener('input', mostrarDica);
+  // Com uma janela aberta (fundo escuro z-50), o cabeçalho sobe por cima dela enquanto a busca está em uso.
+  const cab = container.closest('header');
+  inp.addEventListener('focus', () => cab?.classList.add('!z-[60]'));
+  inp.addEventListener('blur', () => setTimeout(() => cab?.classList.remove('!z-[60]'), 200)); // 200 ms: deixa o clique no resultado acontecer
   document.addEventListener('mousedown', (e) => { if (!container.contains(e.target)) fechar(); });
 
   on(res, 'click', '[data-tipo]', async (b) => {

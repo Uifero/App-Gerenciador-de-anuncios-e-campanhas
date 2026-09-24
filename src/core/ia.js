@@ -34,6 +34,7 @@ export async function chamarClaude({ tarefa, cliente = null, estavel, system, me
     if (!corpo.erro && [502, 503, 504].includes(r.status)) throw new Error('O servidor de IA não respondeu. Confirme que ele está rodando (npm run dev) ou use a opção manual.');
     throw new Error(corpo.erro || `Erro ${r.status} ao chamar a IA.`);
   }
+  try { window.dispatchEvent(new Event('gcc:ia-ok')); } catch { /* fora do navegador */ } // o texto enviado já foi usado (ver core/salvamento.js)
   return corpo;
 }
 

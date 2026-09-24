@@ -161,7 +161,7 @@ export async function fecharMes(mes) {
     mes, chamadas: regs.length, totalUsd, tokensEntrada: entrada, tokensSaida: saida, tokensCacheEscrita: cacheEscrita,
     tokensCacheLeitura: cacheLeitura, buscasWeb, porCliente, porCategoria, fechadoEm: new Date().toISOString(),
   };
-  await db.definir(COL_USO_RESUMO, mes, resumo);
+  await db.definir(COL_USO_RESUMO, mes, resumo, { silencioso: true });
   await Promise.all(regs.map((r) => db.remover(COL.usoApi, r.id)));
   return resumo;
 }

@@ -140,7 +140,7 @@ export async function abrirDiagnostico(cliente) {
   const raiz = $('#diag', m.el);
   raiz.innerHTML = `
     <p class="hint mb-3">Descreva o que já está no ar hoje. Os campos já vêm preenchidos com o que está cadastrado no perfil do cliente — ajuste para refletir o estado mais atual.</p>
-    <form id="fd" class="grid gap-3 sm:grid-cols-2">
+    <form id="fd" class="grid gap-3 sm:grid-cols-2" data-aviso-sair>
       <div><label class="label">Plataforma</label><select class="input" name="plataforma">${opcoes(PLATAFORMAS_ANUNCIO, 'meta')}</select></div>
       <div><label class="label">Orçamento diário atual (R$)</label><input class="input" type="number" step="0.01" name="orcamentoDiario" value="${esc(h.orcamentoDiario)}"></div>
       <div><label class="label">CPA atual (R$)</label><input class="input" type="number" step="0.01" name="cpaAtual" value="${esc(h.cpaMedio)}"></div>

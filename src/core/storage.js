@@ -59,6 +59,15 @@ const drv = DEMO ? local : remoto;
 
 /** Avisa a interface que uma coleção mudou (ex.: o card de progresso do cliente se recalcula). */
 const avisar = (col) => { try { window.dispatchEvent(new CustomEvent('gcc:mudou', { detail: { col } })); } catch { /* fora do navegador */ } };
+/**
+ * Avisa que o USUÁRIO salvou algo (a tela mostra "Salvo às HH:MM" e limpa o aviso de texto não salvo do formulário enviado).
+ * Gravações automáticas (custo de IA, sincronização, prévia em segundo plano...) passam { silencioso: true } e não avisam.
+ */
+const COLS_SEMPRE_SILENCIOSAS = new Set([COL.usoApi]);
+const avisarSalvo = (col, opts) => {
+  if (opts?.silencioso || COLS_SEMPRE_SILENCIOSAS.has(col)) return;
+  try { window.dispatchEvent(new CustomEvent('gcc:salvou', { detail: { col } })); } catch { /* fora do navegador */ }
+};
 
 export const db = {
   /** Lista documentos; `filtro` é igualdade simples (ex.: {clienteId}). Ordena por criadoEm desc. */
@@ -68,14 +77,15 @@ export const db = {
   },
   obter: (col, id) => drv.obter(col, id),
   /** Grava um documento exatamente como veio (sem criadoEm/atualizadoEm). Usado nas respostas públicas de aprovação, cujas regras aceitam só campos específicos. */
-  async definir(col, id, dados) { await drv.criar(col, semUndefined(dados), id); avisar(col); },
-  async criar(col, dados, id) {
+  // opts (último parâmetro, opcional): { silencioso: true } para gravações automáticas, que não são um "salvar" do usuário.
+  async definir(col, id, dados, opts) { await drv.criar(col, semUndefined(dados), id); avisar(col); avisarSalvo(col, opts); },
+  async criar(col, dados, id, opts) {
     const d = semUndefined({ ...dados, criadoEm: agora(), atualizadoEm: agora() });
     const nid = await drv.criar(col, d, id);
-    avisar(col);
+    avisar(col); avisarSalvo(col, opts);
     return { id: nid, ...d };
   },
-  async atualizar(col, id, patch) { await drv.atualizar(col, id, semUndefined({ ...patch, atualizadoEm: agora() })); avisar(col); },
+  async atualizar(col, id, patch, opts) { await drv.atualizar(col, id, semUndefined({ ...patch, atualizadoEm: agora() })); avisar(col); avisarSalvo(col, opts); },
   async remover(col, id) { await drv.remover(col, id); avisar(col); },
 };
 

@@ -73,7 +73,7 @@ export function salvarPrevia(cliente, criativo, arquivo) {
       const r = await enviarArquivoOuAvisar(caminho, new File([p.blob], `previa.${p.ext}`, { type: p.blob.type }));
       patch = { previaUrl: r.url, previaPath: r.path, previaTipo: p.tipo, previaDoArquivo: arquivoPath };
     }
-    await db.atualizar(COL.criativos, criativo.id, patch);
+    await db.atualizar(COL.criativos, criativo.id, patch, { silencioso: true }); // em segundo plano: não é um "salvar" do usuário
     Object.assign(criativo, patch);
     if (antigo && antigo !== patch.previaPath) await removerArquivo(antigo);
     return patch;
@@ -106,7 +106,7 @@ export async function garantirPrevia(cliente, criativo) {
 /** Remove a prévia do criativo (quando a peça final é removida). */
 export async function removerPrevia(criativo) {
   if (criativo.previaPath) await removerArquivo(criativo.previaPath);
-  await db.atualizar(COL.criativos, criativo.id, SEM_PREVIA);
+  await db.atualizar(COL.criativos, criativo.id, SEM_PREVIA, { silencioso: true });
   Object.assign(criativo, SEM_PREVIA);
 }
 

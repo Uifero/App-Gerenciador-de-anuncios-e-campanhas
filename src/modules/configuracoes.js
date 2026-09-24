@@ -22,6 +22,15 @@ export function classificarSinal(dias, cfg) {
   return 'fraco';
 }
 
+/** Guarda a data do backup completo que acabou de ser baixado (é a base do lembrete de backup do Início). */
+export async function registrarBackup(quando = new Date().toISOString()) {
+  const patch = { ultimoBackupEm: quando };
+  // silencioso: é consequência do download, não um "salvar" (o selo "Salvo às" não aparece).
+  if (await db.obter(COL.config, ID)) await db.atualizar(COL.config, ID, patch, { silencioso: true });
+  else await db.criar(COL.config, patch, ID, { silencioso: true });
+  if (cache) cache.ultimoBackupEm = quando;
+}
+
 export async function view(el) {
   const c = await obterConfig();
   el.innerHTML = `${cabecalho('Configurações', 'Ajustes que valem para todos os clientes.')}
@@ -48,7 +57,9 @@ export async function view(el) {
         <div><label class="label">Dias sem resposta do cliente para alertar</label><input class="input" type="number" min="1" name="diasAprovacaoPendente" value="${esc(c.diasAprovacaoPendente)}">
           <p class="hint">Criativo enviado para aprovação e sem resposta do cliente por este tempo entra na Central de Alertas. Padrão: 5.</p></div>
         <div><label class="label">Dias sem decisão para alertar</label><input class="input" type="number" min="1" name="diasCriativoSemDecisao" value="${esc(c.diasCriativoSemDecisao)}">
-          <p class="hint">Criativo em rascunho (nunca enviado) por este tempo entra na Central de Alertas. Padrão: 10.</p></div></div></details>
+          <p class="hint">Criativo em rascunho (nunca enviado) por este tempo entra na Central de Alertas. Padrão: 10.</p></div>
+        <div><label class="label">Dias para lembrar do backup</label><input class="input" type="number" min="1" name="diasLembreteBackup" value="${esc(c.diasLembreteBackup)}">
+          <p class="hint">Passado esse tempo desde o último "Baixar backup (todos os clientes)", o Início mostra um lembrete com o botão de exportar. Padrão: 14.</p></div></div></details>
     <details class="rounded-lg border border-slate-200 p-3" open><summary class="cursor-pointer text-sm font-medium text-slate-600">Custos e limites de IA</summary>
       <div class="mt-3 space-y-3">
         <div class="grid gap-3 sm:grid-cols-2">
@@ -81,6 +92,7 @@ export async function view(el) {
       diasEscalar: num(v.diasEscalar) || 7,
       diasAprovacaoPendente: num(v.diasAprovacaoPendente) || 5,
       diasCriativoSemDecisao: num(v.diasCriativoSemDecisao) || 10,
+      diasLembreteBackup: num(v.diasLembreteBackup) || 14,
       orcamentoIaMensalUsd: num(v.orcamentoIa) > 0 ? num(v.orcamentoIa) : null,
       cotacaoUsd: num(v.cotacao) > 0 ? num(v.cotacao) : 5.5,
       variacoesPadrao: Math.min(5, Math.max(1, Math.round(num(v.variacoes) || 4))),

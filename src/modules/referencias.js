@@ -48,7 +48,7 @@ async function oferecerReuso(cliente, cfg, aoCopiar) {
 /** Marca que a busca de mercado deste cliente já aconteceu (a partir daí ela nunca roda sozinha — ver busca-mercado.js). */
 export async function marcarBuscaFeita(cliente) {
   if (cliente.buscaMercadoFeita === true) return;
-  await db.atualizar(COL.clientes, cliente.id, { buscaMercadoFeita: true });
+  await db.atualizar(COL.clientes, cliente.id, { buscaMercadoFeita: true }, { silencioso: true });
   cliente.buscaMercadoFeita = true;
 }
 

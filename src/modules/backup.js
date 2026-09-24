@@ -3,6 +3,7 @@
 import { db, COL } from '../core/storage.js';
 import { baixarTexto, toast } from '../core/ui.js';
 import { slug } from '../lib/csv.js';
+import { registrarBackup } from './configuracoes.js';
 
 /** Monta o objeto de backup. `cliente` = exporta só esse cliente; sem ele, exporta tudo. */
 export async function montarBackup(cliente = null) {
@@ -34,7 +35,21 @@ export async function exportarDados(cliente = null) {
   const hoje = new Date().toISOString().slice(0, 10);
   baixarTexto(cliente ? `gcc-cliente-${slug(cliente.nome) || cliente.id}-${hoje}.json` : `gcc-backup-completo-${hoje}.json`, JSON.stringify(dados, null, 2), 'application/json;charset=utf-8');
   toast(`Exportado: ${total} documento(s) em ${Object.keys(dados.colecoes).length} coleções.`);
+  // Só o backup de TODOS os clientes conta para o lembrete (o de um cliente é parcial). Falhar aqui não desfaz o download.
+  if (!cliente) await registrarBackup().catch((e) => console.warn('[backup] não consegui guardar a data do backup:', e));
   return total;
+}
+
+/**
+ * Lembrete do Início. Devolve { dias (inteiros desde o último backup completo, ou null = nunca), atrasado, texto }.
+ * Atrasado = nunca fez backup, ou já passou do prazo (`limiteDias`, Configurações; padrão 14).
+ */
+export function lembreteBackup(ultimoBackupEm, limiteDias = 14, agora = Date.now()) {
+  const t = ultimoBackupEm ? new Date(ultimoBackupEm).getTime() : NaN;
+  if (!Number.isFinite(t)) return { dias: null, atrasado: true, texto: 'Último backup: nunca. Exportar agora?' };
+  const dias = Math.max(0, Math.floor((agora - t) / 864e5));
+  const quando = dias === 0 ? 'hoje' : dias === 1 ? 'há 1 dia' : `há ${dias} dias`;
+  return { dias, atrasado: dias > (Number(limiteDias) || 14), texto: dias > (Number(limiteDias) || 14) ? `Último backup: ${quando}. Exportar agora?` : `Último backup completo: ${quando}` };
 }
 
 // ---------------- importação / restauração ----------------

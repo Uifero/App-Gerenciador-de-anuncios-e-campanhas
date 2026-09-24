@@ -46,7 +46,7 @@ describe('fecharMes', () => {
     expect(resumo.porCategoria.criativos.chamadas).toBe(1);
     expect(resumo.porCategoria.hooks.chamadas).toBe(1);
     // gravou o resumo na coleção de arquivo, com o mês como id
-    expect(db.definir).toHaveBeenCalledWith(COL_USO_RESUMO, '2026-08', expect.objectContaining({ mes: '2026-08' }));
+    expect(db.definir).toHaveBeenCalledWith(COL_USO_RESUMO, '2026-08', expect.objectContaining({ mes: '2026-08' }), { silencioso: true }); // rollup automático: sem selo 'Salvo às'
     // apagou os registros individuais
     expect(bancos.usoApi.size).toBe(0);
   });

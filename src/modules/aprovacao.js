@@ -94,7 +94,7 @@ export async function sincronizarAprovacoes(cliente, criativos) {
       const seguiaResposta = anterior && c.status === (anterior === 'aprovado' ? 'aprovado' : 'rascunho'); // cliente mudou de ideia e o admin não mexeu depois
       const patch = { aprovacaoCliente: { status: r.status, comentario: r.comentario || '', em: r.em } };
       if (seguePendente || seguiaResposta) patch.status = r.status === 'aprovado' ? 'aprovado' : 'rascunho';
-      await db.atualizar(COL.criativos, c.id, patch);
+      await db.atualizar(COL.criativos, c.id, patch, { silencioso: true }); // sincronização automática ao abrir a aba
       Object.assign(c, patch);
       mudou++;
     } catch (e) {
