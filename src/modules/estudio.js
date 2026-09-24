@@ -19,6 +19,8 @@ import { CENAS_UNBOXING } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
 import { montarEditorVideo } from './video-editor.js';
 import { htmlFerramentas } from '../lib/ferramentas-ia.js';
+import { montarNarracao } from './narracao.js';
+import { montarBroll } from './broll.js';
 
 const COLE_AQUI = 'Cole esse prompt numa dessas ferramentas:';
 
@@ -44,7 +46,7 @@ export function abrirEstudio(criativo, cliente) {
   const fmtVideo = formatoDeVideo();
   const m = modal(`Gerar material — ${criativo.nome}`, `<div id="est"></div>`, {
     largo: true,
-    aoFechar: () => { est.ctrl?.abort(); est.midias.forEach((x) => URL.revokeObjectURL(x.url)); if (est.urlVideo) URL.revokeObjectURL(est.urlVideo); },
+    aoFechar: () => { est.ctrl?.abort(); narr?.parar(); est.midias.forEach((x) => URL.revokeObjectURL(x.url)); if (est.urlVideo) URL.revokeObjectURL(est.urlVideo); },
   });
   const raiz = $('#est', m.el);
   const dims = (f) => f.split('x').map(Number);
@@ -53,9 +55,9 @@ export function abrirEstudio(criativo, cliente) {
   <p class="caption mb-2">Monte a foto e o vídeo prontos para subir na campanha. Tudo é feito neste navegador e baixado no seu computador. As fotos que você escolher aqui não ficam salvas: escolha de novo na próxima vez.</p>
   <nav class="mb-3 flex flex-wrap items-center gap-1 text-xs" aria-label="Etapas">
     <span class="mr-1 text-slate-500">Caminho:</span>
-    <button class="btn-ghost btn-sm" data-ir="materiais">1. Enviar materiais</button><i class="fa-solid fa-chevron-right text-slate-400"></i>
+    <button class="btn-ghost btn-sm" data-ir="materiais">1. Enviar materiais</button><span class="text-slate-500">(+</span><button class="btn-ghost btn-sm" data-ir="broll">B-roll</button><span class="text-slate-500">opcional)</span><i class="fa-solid fa-chevron-right text-slate-400"></i>
     <button class="btn-ghost btn-sm" data-ir="foto">2. Foto (PNG)</button><span class="text-slate-500">e/ou</span>
-    <button class="btn-ghost btn-sm" data-ir="video">3. Vídeo a partir de fotos</button><span class="text-slate-500">ou</span>
+    <button class="btn-ghost btn-sm" data-ir="video">3. Vídeo a partir de fotos</button><span class="text-slate-500">(+</span><button class="btn-ghost btn-sm" data-ir="narracao">Narração</button><span class="text-slate-500">opcional) ou</span>
     <button class="btn-ghost btn-sm" data-ir="editor">4. Editar um vídeo gravado</button><i class="fa-solid fa-chevron-right text-slate-400"></i>
     <span class="text-slate-500">Baixar</span></nav>
 
@@ -94,6 +96,12 @@ export function abrirEstudio(criativo, cliente) {
         <button class="btn-ia btn-sm shrink-0" data-gerar-ia>Gerar imagem</button></div></details>
   </section>
 
+  <details class="mt-4 rounded-lg border border-sky-200 p-3" data-etapa="broll" data-secao-nova="broll"><summary class="cursor-pointer">
+      <span class="text-sm font-semibold"><i class="fa-solid fa-photo-film"></i> B-roll <span class="tag">opcional</span></span> <span class="so-fechado text-sm text-slate-500">— clique para abrir</span>
+      <p class="hint mt-1">Busque vídeos e fotos de banco gratuito relacionados ao seu produto, sem precisar sair do app.</p></summary>
+    <div class="mt-3" data-broll></div>
+  </details>
+
   <section class="mt-4 rounded-lg border border-slate-200 p-3" data-etapa="foto">
     <h4 class="mb-2 text-sm font-semibold"><i class="fa-solid fa-image"></i> 2. Foto (PNG)</h4>
     <div class="grid gap-3 sm:grid-cols-2">
@@ -131,10 +139,17 @@ export function abrirEstudio(criativo, cliente) {
       <button class="btn-danger btn-sm hidden" data-cancelar>Cancelar</button>
       <span data-total class="hint"></span></div>
     ${fmtVideo ? '' : '<p class="mt-2 text-sm text-rose-600">Este navegador não grava vídeo. Use o Chrome ou o Edge atualizado.</p>'}
+    <p class="mt-2 text-sm" data-info-narracao></p>
     <p class="hint mt-2">A gravação acontece em tempo real: um vídeo de 20 s leva 20 s. <b>Mantenha esta aba visível</b> até terminar.</p>
     <div data-progresso class="mt-2 hidden"><div class="h-2 w-full overflow-hidden rounded bg-slate-200"><div data-barra class="h-2 w-0 bg-indigo-600"></div></div></div>
     <div data-resultado class="mt-3"></div>
   </section>
+
+  <details class="mt-4 rounded-lg border border-rose-200 p-3" data-etapa="narracao" data-secao-nova="narracao"><summary class="cursor-pointer">
+      <span class="text-sm font-semibold"><i class="fa-solid fa-microphone-lines"></i> Narração <span class="tag">opcional</span></span> <span class="so-fechado text-sm text-slate-500">— clique para abrir</span>
+      <p class="hint mt-1">Gere o roteiro de fala e ouça uma prévia, ou grave sua própria voz. Navegadores não permitem baixar a voz sintética como arquivo, por isso a prévia é só pra ouvir.</p></summary>
+    <div class="mt-3" data-narracao></div>
+  </details>
 
   <details class="mt-4 rounded-lg border border-emerald-200 p-3" data-etapa="editor"><summary class="cursor-pointer text-sm font-semibold"><i class="fa-solid fa-film"></i> 4. Editor avançado de vídeo (corte, proporção, texto e legenda) <span class="so-fechado font-normal text-slate-500">— clique para abrir</span></summary>
     <div class="mt-3" data-editor-video></div>
@@ -175,6 +190,7 @@ export function abrirEstudio(criativo, cliente) {
     const t = est.cenas.reduce((a, c) => a + Number(c.dur || 0), 0), el = $('[data-total]', raiz);
     el.textContent = `Duração total: ${t.toFixed(1)} s (máximo ${LIMITE_VIDEO_S} s)`;
     el.classList.toggle('text-rose-600', t > LIMITE_VIDEO_S + 0.05); el.classList.toggle('font-semibold', t > LIMITE_VIDEO_S + 0.05);
+    narr?.cenasMudaram();
   };
   const listarCenas = () => {
     const velocidades = [0.8, 1, 1.1, 1.25, 1.5, 2];
@@ -194,6 +210,7 @@ export function abrirEstudio(criativo, cliente) {
     }).join('') || '<p class="hint">Sem cenas. Adicione pelo menos uma.</p>';
     mostrarTotal();
     atualizarAnimar();
+    narr?.cenasMudaram(); broll?.cenasMudaram();
   };
   const atualizarBase = () => {
     const sel = $('[data-base-video-sel]', raiz), atual = sel.value;
@@ -208,10 +225,37 @@ export function abrirEstudio(criativo, cliente) {
     f.innerHTML = fotos().length ? opcoes(fotos().map((x, i) => [String(i), `${i + 1}. ${x.nome}`]), fa || '0') : '<option value="">(envie ou gere uma foto antes)</option>';
     c.innerHTML = '<option value="">(nenhuma: escolho depois)</option>' + est.cenas.map((x, i) => x.tipo === 'cena' ? `<option value="${i}" ${ca === String(i) ? 'selected' : ''}>Cena ${i + 1}${x.texto ? ': ' + esc(x.texto).slice(0, 28) : ''}</option>` : '').join('');
   };
-  let editor = null;
-  listarMidias(); listarCenas();
-  editor = montarEditorVideo($('[data-editor-video]', raiz), { criativo, cliente });
+  let editor = null, narr = null, broll = null;
+  const infoNarracao = () => {
+    const n = narr?.obter();
+    $('[data-info-narracao]', raiz).innerHTML = n
+      ? `<i class="fa-solid fa-microphone-lines text-emerald-600"></i> Com narração (${n.duracao.toFixed(1)} s): ela entra neste vídeo, desde a primeira cena. Volumes na seção "Narração".`
+      : '<span class="hint">Sem narração (opcional): para colocar voz, use a seção "Narração" abaixo.</span>';
+  };
+  listarMidias(); listarCenas(); infoNarracao();
+  editor = montarEditorVideo($('[data-editor-video]', raiz), { criativo, cliente, obterNarracao: () => narr?.obter() || null });
   listarMidias();
+
+  // Seções opcionais: só montam (e só consultam o servidor) quando a pessoa abre.
+  const montarSecao = (nome) => {
+    if (nome === 'narracao' && !narr) {
+      narr = montarNarracao($('[data-narracao]', raiz), {
+        cliente, criativo, cenas: () => est.cenas, aoMudar: infoNarracao,
+        aoAjustarCenas: (novas) => { est.cenas = novas; listarCenas(); },
+      });
+    }
+    if (nome === 'broll' && !broll) {
+      broll = montarBroll($('[data-broll]', raiz), {
+        cliente, criativo, cenas: () => est.cenas, formatoVideo: () => est.formatoVideo,
+        aoAnexar: async (arquivo, cena) => {
+          est.midias.push(await carregarMidia(arquivo));
+          if (cena !== null && est.cenas[cena]) est.cenas[cena].midiaIdx = est.midias.length - 1;
+          listarMidias();
+        },
+      });
+    }
+  };
+  raiz.querySelectorAll('[data-secao-nova]').forEach((d) => d.addEventListener('toggle', () => { if (d.open) montarSecao(d.dataset.secaoNova); }));
 
   // Atalhos do "Caminho" e botões que levam de uma etapa à outra (ninguém precisa adivinhar onde clicar).
   const irPara = (etapa) => { const el = $(`[data-etapa="${etapa}"]`, raiz); if (el.tagName === 'DETAILS') el.open = true; el.scrollIntoView({ block: 'start' }); };
@@ -432,6 +476,7 @@ export function abrirEstudio(criativo, cliente) {
       try {
         const r = await gravarVideo({
           cenas: est.cenas.map((c) => ({ ...c, midia: c.midiaIdx != null ? est.midias[c.midiaIdx] : null })), midias: est.midias, cor: est.cor, corTexto: est.corTexto, logo: est.logo, musica: est.musica,
+          narracao: narr?.obter()?.arquivo || null, volumeNarracao: narr?.obter()?.volumeNarracao ?? 1, volumeMusica: narr?.obter()?.volumeMusica ?? 0.2,
           largura, altura, sinal: est.ctrl.signal, aoProgresso: (p) => { barra.style.width = `${Math.round(p * 100)}%`; },
         });
         if (est.urlVideo) URL.revokeObjectURL(est.urlVideo);

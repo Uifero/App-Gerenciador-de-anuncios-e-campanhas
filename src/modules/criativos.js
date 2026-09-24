@@ -7,6 +7,7 @@ import { perguntarBuscaMercado } from './busca-mercado.js';
 import { abrirEstudio } from './estudio.js';
 import { apagarCriativoEmCascata } from '../lib/cascata.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
+import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '../lib/previa.js';
 import { padroesPorNicho, sugestaoNaoTestada } from './insights.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
@@ -282,6 +283,7 @@ function detalhe(c, cliente, cfg, recarregar) {
     <details class="mt-5 rounded-lg border border-slate-200 p-3" ${c.arquivoUrl ? 'open' : ''}><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (anexo e histórico)</summary>
     <div class="mt-3"><h4 class="mb-2 text-sm font-semibold">Peça final (arquivo)</h4>
       ${c.arquivoUrl ? `<p class="mb-2 text-sm">${tag('com arquivo', 'tag-ok')} ${esc(c.arquivoNome || '')}</p>
+        ${tipoDaPeca(c.arquivoNome) ? `<p class="hint mb-2">${previaAtual(c) ? '<i class="fa-solid fa-circle-check text-emerald-600"></i> Prévia reduzida para o link de aprovação: pronta.' : '<i class="fa-solid fa-hourglass-half"></i> Prévia reduzida para o link de aprovação: é gerada sozinha nos bastidores (ou ao enviar para aprovação).'} O original fica em qualidade total.</p>` : ''}
         <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="${esc(c.arquivoUrl)}" target="_blank" rel="noopener" download="${esc(c.arquivoNome || 'criativo')}"><i class="fa-solid fa-download"></i> Baixar</a>
         <button class="btn-ghost btn-sm" data-link><i class="fa-solid fa-link"></i> Copiar link compartilhável</button>
         <button class="btn-danger btn-sm" data-rm-arq><i class="fa-solid fa-trash"></i> Remover</button></div>`
@@ -375,17 +377,19 @@ function detalhe(c, cliente, cfg, recarregar) {
       const patch = { arquivoUrl: r.url, arquivoPath: r.path, arquivoNome: f.name };
       await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch);
       toast('Arquivo enviado.'); desenhar(); recarregar();
+      previaEmSegundoPlano(cliente, c, f, desenhar); // versão reduzida para o link de aprovação, nos bastidores
     });
   });
   on(alvo, 'click', '[data-link]', () => copiar(c.arquivoUrl));
   on(alvo, 'click', '[data-rm-arq]', async () => {
     if (!(await confirmar('Remover o arquivo deste criativo?', 'Remover'))) return;
     await removerArquivo(c.arquivoPath);
+    if (c.previaPath || c.previaUrl) await removerPrevia(c);
     const patch = { arquivoUrl: null, arquivoPath: null, arquivoNome: null };
     await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch); desenhar(); recarregar();
   });
   on(alvo, 'click', '[data-apagar]', async () => {
     if (!(await confirmar('Apagar este criativo? Também apaga o arquivo anexado, os resultados registrados para ele e as respostas de aprovação recebidas. Esta ação não pode ser desfeita.', 'Apagar'))) return;
-    await apagarCriativoEmCascata(c.id, c.arquivoPath); m.fechar(); recarregar(); toast('Criativo e os dados ligados a ele foram apagados.');
+    await apagarCriativoEmCascata(c.id, c.arquivoPath, c.previaPath); m.fechar(); recarregar(); toast('Criativo e os dados ligados a ele foram apagados.');
   });
 }

@@ -5,6 +5,7 @@
 // e devolve o consumo de tokens + custo estimado para o app registrar em "gcc_uso_api".
 import { gerarImagem, statusImagens } from './imagens.js';
 import { animarImagem, statusVideo } from './videos.js';
+import { buscarBroll, baixarBroll, statusBroll } from './broll.js';
 import 'dotenv/config';
 import express from 'express';
 import helmet from 'helmet';
@@ -54,6 +55,7 @@ export const TAREFAS = {
   playbook:    { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'low' },
   insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low' },
   diagnostico: { modelo: MODELO_COMPLEXO, max: 5000,  effort: 'medium', imagens: true },
+  narracao:    { modelo: MODELO_LEVE,     max: 2500 },
 };
 
 // ---------- imagens anexadas (só tarefas com `imagens: true`, hoje o diagnóstico) ----------
@@ -234,6 +236,28 @@ app.post('/api/video', exigirLogin, express.json({ limit: '14mb' }), async (req,
   recentes.push(agora); videosPorUsuario.set(quem, recentes);
   try { const r = await animarImagem({ imagem, prompt, formato }); res.set('Content-Type', 'video/mp4').set('X-Provedor', encodeURIComponent(r.provedor)).send(r.video); }
   catch (e) { console.error('[video]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Falha ao gerar o vídeo.' }); }
+});
+
+// B-roll: busca em bancos gratuitos (Pexels/Pixabay; ver server/broll.js). As chaves ficam só aqui.
+// Teto de 120 buscas e 60 downloads por hora por usuário (os bancos limitam ~200 buscas/hora por chave).
+const brollPorUsuario = new Map();
+const tetoBroll = (req, res, tipo, max) => {
+  const chave = `${req.usuario?.sub || req.usuario?.email || 'x'}:${tipo}`, agora = Date.now();
+  const recentes = (brollPorUsuario.get(chave) || []).filter((t) => agora - t < 3_600_000);
+  if (recentes.length >= max) { res.status(429).json({ erro: `Limite de ${max} ${tipo === 'busca' ? 'buscas' : 'downloads'} de B-roll por hora atingido.` }); return false; }
+  recentes.push(agora); brollPorUsuario.set(chave, recentes); return true;
+};
+app.get('/api/broll/status', exigirLogin, (_req, res) => res.json(statusBroll()));
+app.get('/api/broll', exigirLogin, async (req, res) => {
+  if (!tetoBroll(req, res, 'busca', 120)) return;
+  const { termo, tipo, fonte, pagina, orientacao } = req.query;
+  try { res.json(await buscarBroll({ termo, tipo, fonte, pagina, orientacao })); }
+  catch (e) { console.error('[broll]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Falha na busca de B-roll.' }); }
+});
+app.post('/api/broll/arquivo', exigirLogin, async (req, res) => {
+  if (!tetoBroll(req, res, 'download', 60)) return;
+  try { const r = await baixarBroll(String(req.body?.url || '')); res.set('Content-Type', r.tipo).send(r.bytes); }
+  catch (e) { console.error('[broll/arquivo]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Falha ao baixar o arquivo.' }); }
 });
 
 app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), async (req, res) => {

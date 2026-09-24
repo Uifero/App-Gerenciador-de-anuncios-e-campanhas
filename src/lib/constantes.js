@@ -95,6 +95,7 @@ export const TAREFAS_IA = {
   hooks: ['Geração de hooks', 'hooks', 2000, 'Haiku'], referencias: ['Busca de mercado', 'mercado', 10000, 'Sonnet'], analise: ['Análise de referência', 'mercado', 2500, 'Sonnet'],
   site: ['Conteúdo do site', 'site', 6000, 'Sonnet'], pacote: ['Pacote de plataforma', 'site', 8000, 'Sonnet'], campanha: ['Estrutura de campanha', 'campanhas', 5000, 'Sonnet'], playbook: ['Playbooks', 'playbooks', 4000, 'Sonnet'],
   insights: ['Explicação de insights', 'insights', 3000, 'Sonnet'], diagnostico: ['Diagnóstico de campanha', 'campanhas', 5000, 'Sonnet'],
+  narracao: ['Roteiro de narração', 'criativos', 2500, 'Haiku'],
 };
 export const CATEGORIAS_CUSTO = { criativos: 'Criativos', hooks: 'Hooks', mercado: 'Análise de mercado', site: 'Site/Loja', campanhas: 'Campanhas', playbooks: 'Playbooks', insights: 'Insights' };
 

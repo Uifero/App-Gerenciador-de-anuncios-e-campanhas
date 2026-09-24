@@ -424,3 +424,66 @@ export async function misturarAudio({ arquivo, trilha, volumeTrilha = 0.3, aoPro
     await limpar(ffmpeg, [nomeVideo, nomeAudio, 'saida.mp4']);
   }
 }
+
+// ---------------- Prévia em qualidade reduzida (link de aprovação) ----------------
+
+/** Dimensões da prévia: lado MENOR com `alvo` px (480p), proporção mantida, números pares; nunca aumenta um vídeo pequeno. */
+export function dimensoesPreviaVideo(largura, altura, alvo = 480) {
+  const menor = Math.min(largura, altura);
+  const e = menor > alvo ? alvo / menor : 1;
+  const par = (n) => Math.max(2, Math.round((n * e) / 2) * 2);
+  return { largura: par(largura), altura: par(altura) };
+}
+
+/** Argumentos do ffmpeg para a prévia: 480p, H.264 comprimido (CRF 32), áudio AAC 64 kbps, pronto para tocar no navegador. */
+export function argsPreviaVideo(entrada, saida, { largura, altura }) {
+  return ['-i', entrada, '-vf', `scale=${largura}:${altura}`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '32', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '64k', '-ac', '2', '-movflags', '+faststart', saida];
+}
+
+/** Gera a versão reduzida de um vídeo (o original não é alterado). Devolve um Blob MP4. */
+export async function gerarPreviaVideo({ arquivo, aoProgresso }) {
+  const meta = await metadadosVideo(arquivo);
+  const dim = dimensoesPreviaVideo(meta.largura, meta.altura);
+  return rodarUmArquivo({ arquivo, aoProgresso, saida: 'previa.mp4', montarArgs: (entrada, saida) => argsPreviaVideo(entrada, saida, dim) });
+}
+
+// ---------------- Narração: mistura a voz com o áudio que o vídeo já tem ----------------
+
+/**
+ * Filtro de áudio da narração. A narração começa no segundo 0 (junto com a primeira cena) e ganha silêncio no fim
+ * (apad) para NUNCA encurtar o vídeo; o vídeo é quem define a duração final. Com áudio próprio (música/voz do
+ * vídeo), mistura os dois sem a normalização automática do amix (normalize=0), para que os volumes escolhidos
+ * valham como estão.
+ */
+export function filtroNarracao(temAudio, volumeNarracao = 1, volumeOriginal = 0.3) {
+  const vn = Math.max(0, Math.min(2, Number(volumeNarracao) || 0)), vo = Math.max(0, Math.min(2, Number(volumeOriginal) || 0));
+  return temAudio
+    ? `[1:a]volume=${vn},apad[n];[0:a]volume=${vo}[o];[o][n]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]`
+    : `[1:a]volume=${vn},apad[a]`;
+}
+
+/** Coloca a narração no vídeo do editor, ajustando o volume da narração e o do áudio que já existia (ex.: a música). */
+export async function misturarNarracao({ arquivo, narracao, volumeNarracao = 1, volumeOriginal = 0.3, aoProgresso }) {
+  const ffmpeg = await carregarFFmpeg();
+  const { fetchFile } = await importarPacote();
+  const nomeVideo = 'entrada.' + extensaoDe(arquivo.name);
+  const nomeAudio = 'narracao.' + extensaoDe(narracao.name || 'narracao.webm');
+  const onProg = aoProgresso ? ({ progress }) => aoProgresso(Math.min(1, Math.max(0, progress))) : null;
+  if (onProg) ffmpeg.on('progress', onProg);
+  try {
+    await ffmpeg.writeFile(nomeVideo, await fetchFile(arquivo));
+    await ffmpeg.writeFile(nomeAudio, await fetchFile(narracao));
+    const temAudio = await temFaixaDeAudio(ffmpeg, nomeVideo);
+    const cod = await ffmpeg.exec([
+      '-i', nomeVideo, '-i', nomeAudio, '-filter_complex', filtroNarracao(temAudio, volumeNarracao, volumeOriginal),
+      '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-shortest', 'saida.mp4',
+    ]);
+    if (cod !== 0) throw new Error('Não consegui misturar a narração. Use um áudio MP3, WAV, M4A ou WebM.');
+    const dados = await ffmpeg.readFile('saida.mp4');
+    return new Blob([dados.buffer], { type: 'video/mp4' });
+  } finally {
+    if (onProg) ffmpeg.off('progress', onProg);
+    await limpar(ffmpeg, [nomeVideo, nomeAudio, 'saida.mp4']);
+  }
+}

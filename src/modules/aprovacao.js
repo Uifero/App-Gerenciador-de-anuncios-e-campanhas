@@ -7,6 +7,7 @@
 import { db, COL } from '../core/storage.js';
 import { acharTermosProibidos } from '../core/ia.js';
 import { CHECKLIST_QUALIDADE, FORMATOS } from '../lib/constantes.js';
+import { garantirPrevia, previaAtual } from '../lib/previa.js';
 import { esc, $, on, modal, toast, copiar, ocupado, confirmar, dataBR, tag } from '../core/ui.js';
 
 /** Dias de validade padrão do link e limite de segurança para não sincronizar respostas de links muito antigos. */
@@ -35,13 +36,29 @@ export function motivoBloqueio(c, cliente) {
   return null;
 }
 
+/**
+ * O que a página pública mostra de cada peça. Com prévia reduzida (lib/previa.js), vai SÓ a prévia — o original em
+ * qualidade total não entra no link. Sem prévia (PDF, ou peça antiga cuja prévia não pôde ser gerada), segue como
+ * antes: o arquivo original.
+ */
+export function itemDoSnapshot(c) {
+  const comPrevia = previaAtual(c);
+  return {
+    id: c.id, nome: c.nome, hook: c.hook, copy: c.copy, cta: c.cta, formato: c.formato, framework: c.framework || '',
+    previaUrl: comPrevia ? c.previaUrl : null, previaTipo: comPrevia ? c.previaTipo : null,
+    arquivoUrl: comPrevia ? null : c.arquivoUrl || null, arquivoNome: comPrevia ? null : c.arquivoNome || null,
+  };
+}
+
 /** Cria o link para um ou mais criativos e marca-os como "aguardando cliente". */
 export async function criarLink(cliente, criativos, dias = 30) {
+  // Se a prévia reduzida ainda está sendo gerada (upload recente) ou falta (peça antiga), espera/gera antes do snapshot.
+  for (const c of criativos) await garantirPrevia(cliente, c);
   const token = novoToken();
   await db.criar(COL.aprovacoes, {
     clienteId: cliente.id, clienteNome: cliente.nome, expiraMs: Date.now() + dias * DIA, itensIds: criativos.map((c) => c.id),
     // Snapshot: cópia do que será exibido. Editar o criativo depois NÃO altera o que o cliente vê.
-    itens: criativos.map((c) => ({ id: c.id, nome: c.nome, hook: c.hook, copy: c.copy, cta: c.cta, formato: c.formato, framework: c.framework || '', arquivoUrl: c.arquivoUrl || null, arquivoNome: c.arquivoNome || null })),
+    itens: criativos.map(itemDoSnapshot),
   }, token);
   const quando = new Date().toISOString();
   await Promise.all(criativos.map((c) => {
@@ -109,7 +126,7 @@ export function abrirEnvio(cliente, criativos, { preSelecionar = [], aoMudar } =
         <div class="mt-2 flex gap-2"><input class="input" readonly value="${esc(novo.link)}" data-link-novo><button class="btn-primary btn-sm shrink-0" data-copiar-novo><i class="fa-solid fa-copy"></i> Copiar</button></div>
         <p class="hint">Válido por ${novo.dias} dias. O cliente pode apenas aprovar ou pedir ajuste, com um comentário. <b>Onde ver a resposta:</b> na aba Criativos — o criativo ganha a etiqueta "aprovado pelo cliente" ou "cliente pediu ajuste" (com o comentário dentro dele) e o status muda sozinho ao abrir a aba.</p></div>` : ''}
       ${linkSoLocal() ? '<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800"><i class="fa-solid fa-triangle-exclamation"></i> Você está usando o painel em <b>localhost</b>: o link gerado só abre neste computador. Publique o app e defina <code>VITE_URL_PUBLICA</code> (veja o README) para o cliente conseguir abrir.</div>' : ''}
-      <p class="caption mb-2">Escolha as peças. O cliente vê uma cópia do que está agora; editar depois não muda o que ele vê (gere um novo link).</p>
+      <p class="caption mb-2">Escolha as peças. O cliente vê uma cópia do que está agora; editar depois não muda o que ele vê (gere um novo link). Peças com imagem ou vídeo aparecem para ele como prévia em qualidade reduzida; o original continua só com você.</p>
       <div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
         ${elegiveis.length ? elegiveis.map((c) => { const b = motivoBloqueio(c, cliente); return `<label class="flex items-start gap-2 rounded px-2 py-1.5 text-sm ${b ? 'opacity-60' : 'hover:bg-slate-50'}">
           <input type="checkbox" data-sel="${c.id}" class="mt-1" ${b ? 'disabled' : ''} ${preSelecionar.includes(c.id) && !b ? 'checked' : ''}>
@@ -151,7 +168,15 @@ export function abrirEnvio(cliente, criativos, { preSelecionar = [], aoMudar } =
 // ---------------- página pública (sem login) ----------------
 const ext = (nome) => String(nome || '').split('.').pop().toLowerCase();
 
-function midia(i) {
+export const LEGENDA_PREVIA = 'Prévia em qualidade reduzida, a versão final enviada pra campanha está em qualidade original';
+
+export function midia(i) {
+  if (i.previaUrl) {
+    const el = i.previaTipo === 'video'
+      ? `<video src="${esc(i.previaUrl)}" controls playsinline preload="metadata" class="max-h-96 w-full rounded-lg bg-black" data-previa-publica></video>`
+      : `<img src="${esc(i.previaUrl)}" alt="${esc(i.nome)}" class="max-h-96 w-full rounded-lg object-contain bg-slate-100" data-previa-publica>`;
+    return `<figure class="mb-3">${el}<figcaption class="hint mt-1 text-center"><i class="fa-solid fa-circle-info"></i> ${LEGENDA_PREVIA}</figcaption></figure>`;
+  }
   if (!i.arquivoUrl) return '';
   const e = ext(i.arquivoNome);
   if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(e)) return `<img src="${esc(i.arquivoUrl)}" alt="${esc(i.nome)}" class="mb-3 max-h-96 w-full rounded-lg object-contain bg-slate-100">`;

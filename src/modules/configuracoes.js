@@ -68,7 +68,7 @@ export async function view(el) {
     <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar configurações</button>
   </form>
   <section class="card mt-6 max-w-3xl" id="ferramentas-externas"><h3 class="font-semibold"><i class="fa-solid fa-toolbox mr-1 text-slate-400"></i>Ferramentas externas de referência</h3>
-    <p class="caption mb-2">Geradores gratuitos de imagem e vídeo por IA, para colar os prompts que o Estúdio escreve ("Gerar foto e vídeo" num criativo). O app não chama nenhuma delas: é só uma lista para consulta.</p>
+    <p class="caption mb-2">Geradores gratuitos de imagem, vídeo e voz por IA, para colar os prompts e roteiros de narração que o Estúdio escreve ("Gerar foto e vídeo" num criativo). O app não chama nenhuma delas: é só uma lista para consulta.</p>
     ${htmlFerramentas()}</section>`;
   on(el, 'submit', '#f', async (f, ev) => {
     ev.preventDefault();

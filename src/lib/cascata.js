@@ -34,7 +34,7 @@ export async function contarDependentesCliente(clienteId) {
 export async function apagarClienteEmCascata(clienteId) {
   const f = { clienteId };
   const criativos = await db.listar(COL.criativos, f);
-  await Promise.all(criativos.filter((c) => c.arquivoPath).map((c) => removerArquivo(c.arquivoPath)));
+  await Promise.all(criativos.flatMap((c) => [c.arquivoPath, c.previaPath]).filter(Boolean).map((p) => removerArquivo(p))); // peça final + prévia reduzida
   await Promise.all([
     removerTodos(COL.criativos, f), removerTodos(COL.hooks, f), removerTodos(COL.referencias, f), removerTodos(COL.campanhas, f),
     removerTodos(COL.resultados, f), removerTodos(COL.produtos, f), removerTodos(COL.sites, f),
@@ -49,8 +49,9 @@ export async function apagarClienteEmCascata(clienteId) {
  * aprovação (`gcc_aprovacoes`) também ficam intocados: guardam uma CÓPIA do criativo no momento do envio, então a
  * página pública continua funcionando mesmo depois que o criativo original é apagado.
  */
-export async function apagarCriativoEmCascata(criativoId, arquivoPath) {
+export async function apagarCriativoEmCascata(criativoId, arquivoPath, previaPath = null) {
   if (arquivoPath) await removerArquivo(arquivoPath);
+  if (previaPath) await removerArquivo(previaPath); // prévia reduzida do link de aprovação
   await Promise.all([removerTodos(COL.resultados, { criativoId }), removerTodos(COL.respostas, { criativoId })]);
   await db.remover(COL.criativos, criativoId);
 }

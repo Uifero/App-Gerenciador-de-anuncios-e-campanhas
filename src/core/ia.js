@@ -383,3 +383,26 @@ export async function checarQualidade({ cliente, criativo, perguntas }) {
 Saída JSON: um objeto cujas chaves são exatamente as acima e cada valor é {"ok": boolean, "motivo": string}. ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'checklist', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
+
+// ---------- roteiro de narração (Estúdio > Narração) ----------
+/**
+ * Escreve a FALA de cada cena da linha do tempo do vídeo (mesma ordem e quantidade), com tom e ritmo, cabendo no
+ * tempo de cada cena. Equivalente sem IA: "Montar roteiro sem IA" (usa o texto de cada cena; lib/narracao.js).
+ */
+export async function gerarRoteiroNarracao({ cliente, criativo, cenas }) {
+  const system = 'Você é roteirista e diretor de locução de anúncios curtos para redes sociais. Escreve falas naturais, faladas (não lidas), em português do Brasil.';
+  const pedido = `Cliente: ${cliente.nome} (${cliente.nicho || 'e-commerce'}). Tom de voz da marca: ${cliente.marca?.tomDeVoz || 'natural'}.
+Criativo:
+Hook: ${criativo.hook}
+Copy/roteiro: ${criativo.copy}
+CTA: ${criativo.cta}
+
+Linha do tempo do vídeo (${cenas.length} cenas; cabem ~2,5 palavras por segundo):
+${cenas.map((c, i) => `${i + 1}. ${c.tipo === 'cta' ? '[FINAL/CTA] ' : ''}${Number(c.dur) || 0} s (cabem ~${Math.max(1, Math.round((Number(c.dur) || 0) * 2.5))} palavras) — texto na tela: "${c.texto || ''}"`).join('\n')}
+
+Escreva a narração falada, UMA fala por cena, exatamente ${cenas.length}, na mesma ordem. Cada fala deve caber no tempo da cena, soar como conversa (não como texto lido) e complementar o texto na tela, sem repeti-lo palavra por palavra. A primeira prende a atenção; a última pede a ação do CTA. Não invente preços, resultados, depoimentos nem promessas que não estejam no criativo.
+Para cada fala, indique o "tom" (ex.: animado, confiante, íntimo) e o "ritmo" (ex.: rápido, natural, pausado) em poucas palavras.
+"direcao": 1 frase de direção geral para a voz (gênero/idade sugeridos, energia).
+Saída JSON: {"direcao": string, "cenas": [{"fala": string, "tom": string, "ritmo": string}]}. ${SO_JSON}`;
+  return (await gerarJSON({ tarefa: 'narracao', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
+}

@@ -5,10 +5,11 @@
 import {
   ffmpegSuportado, metadadosVideo, cortarEConcatenar, validarCortes, ajustarProporcao, PROPORCOES_VIDEO,
   sobreporTexto, normalizarAudio, reconhecimentoDeVozDisponivel, validarSegmentosLegenda, gerarSrt, queimarLegenda,
-  montarClipes, TRANSICOES, misturarAudio,
+  montarClipes, TRANSICOES, misturarAudio, misturarNarracao,
 } from '../lib/video.js';
 import { db, COL, removerArquivo } from '../core/storage.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
+import { previaEmSegundoPlano } from '../lib/previa.js';
 import { $, $$, esc, on, toast, ocupado, opcoes, confirmar, campoArquivo } from '../core/ui.js';
 
 const AVISO_LENTIDAO = 'Isso pode demorar dependendo do seu computador (roda tudo aqui, sem servidor). Não feche esta aba enquanto processa.';
@@ -19,7 +20,7 @@ const fmtT = (s) => { const n = Number(s) || 0; return `${Math.floor(n / 60)}:${
  * e para o botão "Usar como peça final deste criativo" (reaproveita o mesmo upload já usado no detalhe do criativo).
  * Devolve { carregarVideo(file) } para o Estúdio abrir aqui um vídeo já enviado em "Materiais".
  */
-export function montarEditorVideo(raiz, { criativo, cliente }) {
+export function montarEditorVideo(raiz, { criativo, cliente, obterNarracao = () => null }) {
   const est = {
     arquivo: null, atual: null, url: null, meta: null, historico: [],
     cortes: [], legenda: [], reconhecimento: null, gravandoLegenda: false,
@@ -115,6 +116,14 @@ export function montarEditorVideo(raiz, { criativo, cliente }) {
         ${campoArquivo({ attrs: 'data-trilha', accept: 'audio/*', icone: 'music', texto: 'Enviar música (MP3/WAV)', destaque: false })}
         <label class="mt-2 block text-sm">Volume da trilha <input type="range" min="0" max="1" step="0.05" value="0.3" data-volume-trilha class="align-middle"></label>
         <button class="btn-primary btn-sm mt-2" data-aplicar-trilha>Misturar trilha</button></details>
+
+      <details class="mt-3 rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-700"><i class="fa-solid fa-microphone-lines"></i> Adicionar narração</summary>
+        <p class="hint mt-1 mb-2">Coloca a narração da seção "Narração" do Estúdio neste vídeo, a partir do segundo 0. O áudio que o vídeo já tem (ex.: a música) fica por baixo, no volume escolhido. O vídeo não é encurtado.</p>
+        <p class="text-sm" data-editor-narracao></p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+          <label class="text-sm">Volume da narração <input type="range" min="0" max="1.5" step="0.05" value="1" data-ed-vol-narracao class="w-full"></label>
+          <label class="text-sm">Volume do áudio atual do vídeo <input type="range" min="0" max="1" step="0.05" value="0.3" data-ed-vol-original class="w-full"></label></div>
+        <button class="btn-primary btn-sm mt-2" data-aplicar-narracao>Adicionar narração ao vídeo</button></details>
 
       <div class="mt-4 border-t border-slate-200 pt-3"><p class="mb-2 text-sm font-semibold"><span class="tag tag-info">3</span> Terminou de editar? Exporte:</p><div class="flex flex-wrap gap-2">
         <button class="btn-primary" data-baixar-editado><i class="fa-solid fa-download"></i> Baixar vídeo editado</button>
@@ -241,6 +250,19 @@ export function montarEditorVideo(raiz, { criativo, cliente }) {
     return misturarAudio({ arquivo: est.atual, trilha: trilhaEscolhida, volumeTrilha: Number($('[data-volume-trilha]', raiz).value) || 0.3, aoProgresso });
   }));
 
+  // ---- narração (vem da seção "Narração" do Estúdio) ----
+  on(raiz, 'click', 'summary', () => {
+    const el = $('[data-editor-narracao]', raiz); if (!el) return;
+    const n = obterNarracao();
+    el.innerHTML = n ? `<i class="fa-solid fa-circle-check text-emerald-600"></i> Narração pronta: ${esc(n.arquivo.name)} (${n.duracao.toFixed(1)} s).`
+      : '<span class="text-amber-700">Nenhuma narração ainda: grave ou envie o áudio na seção "Narração" do Estúdio (logo acima do editor).</span>';
+  });
+  on(raiz, 'click', '[data-aplicar-narracao]', (b) => aplicar(b, (aoProgresso) => {
+    const n = obterNarracao();
+    if (!n) throw new Error('Nenhuma narração: grave ou envie o áudio na seção "Narração" do Estúdio primeiro.');
+    return misturarNarracao({ arquivo: est.atual, narracao: n.arquivo, volumeNarracao: Number($('[data-ed-vol-narracao]', raiz).value), volumeOriginal: Number($('[data-ed-vol-original]', raiz).value), aoProgresso });
+  }));
+
   // ---- desfazer / exportar ----
   on(raiz, 'click', '[data-desfazer]', () => {
     if (!est.historico.length) return;
@@ -265,6 +287,7 @@ export function montarEditorVideo(raiz, { criativo, cliente }) {
       await db.atualizar(COL.criativos, criativo.id, patch);
       Object.assign(criativo, patch);
       toast('Vídeo editado salvo como a peça final do criativo.');
+      previaEmSegundoPlano(cliente, criativo, arquivo); // versão 480p para o link de aprovação, nos bastidores
     });
   });
 

@@ -249,10 +249,11 @@ async function clonarVideo(m) {
 /**
  * Grava o vídeo em tempo real (um vídeo de 24 s leva ~24 s; a aba precisa ficar visível).
  * Cada cena: { texto, dur, tipo, midia?, inicio? (s, onde começa no vídeo de origem), vel? (velocidade, 1 = normal), som? (usar o áudio original) }.
- * opts: { cenas, midias[], cor, corTexto, logo, musica (File|null), largura, altura, aoProgresso(0..1), sinal (AbortSignal) }
+ * opts: { cenas, midias[], cor, corTexto, logo, musica (File|null), largura, altura, aoProgresso(0..1), sinal (AbortSignal),
+ *         narracao (File|null: começa junto com a 1ª cena), volumeNarracao (padrão 1), volumeMusica (usado só com narração; padrão 0.2) }
  * Devolve { blob, ext, mime, duracao }.
  */
-export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corTexto = '#ffffff', logo = null, musica = null, largura = 1080, altura = 1920, aoProgresso = () => {}, sinal }) {
+export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corTexto = '#ffffff', logo = null, musica = null, narracao = null, volumeNarracao = 1, volumeMusica = 0.2, largura = 1080, altura = 1920, aoProgresso = () => {}, sinal }) {
   const fmt = formatoDeVideo();
   if (!fmt) throw new Error('Este navegador não grava vídeo. Use o Chrome ou o Edge atualizado.');
   if (!cenas.length) throw new Error('Não há cenas para gravar.');
@@ -272,7 +273,7 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
   const comSom = new Set(cenas.map((c, i) => (c.som ? resolver(c, i) : null)).filter((m) => m?.tipo === 'video').map((m) => m.el));
 
   let audio = null;
-  if (musica || comSom.size) {
+  if (musica || comSom.size || narracao) {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
     try {
       const destino = ac.createMediaStreamDestination();
@@ -280,8 +281,16 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
       if (musica) {
         const buf = await ac.decodeAudioData(await musica.arrayBuffer());
         audio.src = ac.createBufferSource(); audio.src.buffer = buf; audio.src.loop = true;
-        const ganho = ac.createGain(); ganho.gain.value = comSom.size ? 0.22 : 0.55; // música mais baixa quando há voz do vídeo
+        // Com narração, vale o volume escolhido na seção Narração; sem ela, o de sempre (mais baixo quando há voz do vídeo).
+        const ganho = ac.createGain(); ganho.gain.value = narracao ? volumeMusica : comSom.size ? 0.22 : 0.55;
         audio.src.connect(ganho); ganho.connect(destino);
+      }
+      if (narracao) {
+        let bufN;
+        try { bufN = await ac.decodeAudioData(await narracao.arrayBuffer()); } catch { throw new Error('Não consegui ler a narração. Use MP3, WAV, M4A ou WebM.'); }
+        audio.narr = ac.createBufferSource(); audio.narr.buffer = bufN; // sem loop: a fala acontece uma vez, desde a 1ª cena
+        const gN = ac.createGain(); gN.gain.value = volumeNarracao;
+        audio.narr.connect(gN); gN.connect(destino);
       }
       for (const el of comSom) {
         el.muted = false;
@@ -290,7 +299,11 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
         audio.ganhos.set(el, g);
       }
       destino.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
-    } catch (e) { ac.close(); throw new Error(musica && !comSom.size ? 'Não consegui ler a música. Use um MP3 ou WAV.' : 'Não consegui preparar o áudio: ' + (e.message || e)); }
+    } catch (e) {
+      ac.close();
+      if (/narração/.test(e?.message || '')) throw e;
+      throw new Error(musica && !comSom.size ? 'Não consegui ler a música. Use um MP3 ou WAV.' : 'Não consegui preparar o áudio: ' + (e.message || e));
+    }
   }
 
   const rec = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: 8_000_000 });
@@ -334,7 +347,7 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
 
   desenhar(0);
   rec.start(500);
-  if (audio) { audio.ac.resume(); audio.src?.start(); }
+  if (audio) { audio.ac.resume(); audio.src?.start(); audio.narr?.start(); }
   const t0 = performance.now();
   await new Promise((fim) => {
     // requestAnimationFrame dá 30+ quadros/s, mas o navegador o pausa em aba oculta; o relógio de reserva garante que a gravação
