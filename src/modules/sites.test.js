@@ -63,12 +63,14 @@ describe('FAQ no formulário', () => {
 });
 
 describe('Perguntas para montar o site', () => {
-  it('conta as 9 respostas a partir dos dados reais', () => {
+  it('conta as 10 respostas (0 a i) a partir dos dados reais', () => {
     expect(progressoSite({ marca: {} }, null, [])).toBe(0);
     const cli = { siteReferencia: 'https://x.com', marca: { tomDeVoz: 'premium', usp: 'u', objecoes: 'o', provasSociais: 'p' }, rastreamento: { metaPixelId: '123456789' } };
     const site = { modo: 'custom', pagamentoPreferido: 'stripe' };
+    expect(progressoSite(cli, site, [{ id: 'p' }])).toBe(9); // falta só a pergunta 0
+    cli.leituraSite = { url: 'https://loja.com.br/' };
     expect(Object.values(respostasSite(cli, site, [{ id: 'p' }])).every(Boolean)).toBe(true);
-    expect(progressoSite(cli, site, [{ id: 'p' }])).toBe(9);
+    expect(progressoSite(cli, site, [{ id: 'p' }])).toBe(10);
   });
   it('"ainda não tem pixel" conta como respondida; o formato vem do modo/plataforma', () => {
     expect(respostasSite({ marca: {} }, { semPixel: true }, []).pixel).toBe(true);

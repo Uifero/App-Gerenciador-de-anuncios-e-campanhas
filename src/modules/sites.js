@@ -3,7 +3,7 @@
 import { db, COL } from '../core/storage.js';
 import { gerarConteudoSite, gerarTextosPacote, gerarFaqSite, objecoesDe } from '../core/ia.js';
 import { gerarSiteHTML, faqValida, FORMAS_PAGAMENTO, PAGAMENTOS_PADRAO } from '../lib/sitegen.js';
-import { montarPerguntasSite, progressoSite, PAGAMENTOS_PRETENDIDOS } from './perguntas-site.js';
+import { montarPerguntasSite, progressoSite, PAGAMENTOS_PRETENDIDOS, TOTAL_PERGUNTAS } from './perguntas-site.js';
 import { csvShopify, csvNuvemshop, slug } from '../lib/csv.js';
 import { criarPdf } from '../lib/pdf.js';
 import { rastreamentoDe, passosRastreamentoPacote, indicadorPixel } from '../lib/rastreamento.js';
@@ -168,7 +168,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   on(root, 'submit', '#fc', async (f, ev) => { ev.preventDefault(); await ocupado(f.querySelector('[type=submit]'), async () => { await salvarSite(lerConteudo()); toast('Conteúdo salvo.'); recarregar(); }); });
 
   on(root, 'click', '[data-ia]', (b) => gerarComIa(b));
-  montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: progressoSite(cliente, site, produtos) < 9 && !site.exportadoEm });
+  montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: progressoSite(cliente, site, produtos) < TOTAL_PERGUNTAS && !site.exportadoEm });
   on(root, 'click', '[data-faq-manual]', () => {
     const t = $('#fc [name=faq]', root);
     t.value = [t.value.trim(), perguntasDasObjecoes(cliente)].filter(Boolean).join('\n');

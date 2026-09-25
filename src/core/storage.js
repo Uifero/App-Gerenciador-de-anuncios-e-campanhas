@@ -12,6 +12,7 @@ export const COL = {
   produtos: 'gcc_produtos', sites: 'gcc_sites', playbooks: 'gcc_playbooks',
   usoApi: 'gcc_uso_api', aprovacoes: 'gcc_aprovacoes', respostas: 'gcc_aprovacao_respostas',
   diagnosticos: 'gcc_diagnosticos', diagnosticoImagens: 'gcc_diagnostico_imagens',
+  materiais: 'gcc_materiais', // fotos salvas do cliente (ex.: importadas do site dele) para usar no Estúdio
 };
 
 const agora = () => new Date().toISOString();

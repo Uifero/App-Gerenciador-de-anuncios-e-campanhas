@@ -6,6 +6,7 @@
 import { gerarImagem, statusImagens } from './imagens.js';
 import { animarImagem, statusVideo } from './videos.js';
 import { buscarBroll, baixarBroll, statusBroll } from './broll.js';
+import { lerSite, baixarImagemSite } from './leitura-site.js';
 import 'dotenv/config';
 import express from 'express';
 import helmet from 'helmet';
@@ -58,6 +59,9 @@ export const TAREFAS = {
   diagnostico: { modelo: MODELO_COMPLEXO, max: 5000,  effort: 'medium', imagens: true },
   narracao:    { modelo: MODELO_LEVE,     max: 2500 },
   faq:         { modelo: MODELO_LEVE,     max: 2500 }, // FAQ do site a partir das objeções
+  leitura_site: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low' },            // interpreta o texto extraído do site do cliente
+  leitura_web:  { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // site do cliente que bloqueia leitura direta (busca web)
+  leitura_prints: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', imagens: true }, // prints do Instagram do cliente
   reparo:      { modelo: MODELO_LEVE,     max: 12000 }, // corrige JSON inválido de outra resposta (sem refazer a tarefa)
 };
 
@@ -249,7 +253,7 @@ const brollPorUsuario = new Map();
 const tetoBroll = (req, res, tipo, max) => {
   const chave = `${req.usuario?.sub || req.usuario?.email || 'x'}:${tipo}`, agora = Date.now();
   const recentes = (brollPorUsuario.get(chave) || []).filter((t) => agora - t < 3_600_000);
-  if (recentes.length >= max) { res.status(429).json({ erro: `Limite de ${max} ${tipo === 'busca' ? 'buscas' : 'downloads'} de B-roll por hora atingido.` }); return false; }
+  if (recentes.length >= max) { res.status(429).json({ erro: tipo === 'busca' || tipo === 'download' ? `Limite de ${max} ${tipo === 'busca' ? 'buscas' : 'downloads'} de B-roll por hora atingido.` : `Limite de ${max} (${tipo}) por hora atingido. Tente mais tarde.` }); return false; }
   recentes.push(agora); brollPorUsuario.set(chave, recentes); return true;
 };
 app.get('/api/broll/status', exigirLogin, (_req, res) => res.json(statusBroll()));
@@ -263,6 +267,18 @@ app.post('/api/broll/arquivo', exigirLogin, async (req, res) => {
   if (!tetoBroll(req, res, 'download', 60)) return;
   try { const r = await baixarBroll(String(req.body?.url || '')); res.set('Content-Type', r.tipo).send(r.bytes); }
   catch (e) { console.error('[broll/arquivo]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Falha ao baixar o arquivo.' }); }
+});
+
+// Leitura do site PRÓPRIO do cliente (pergunta 0 da aba Site/Loja; ver server/leitura-site.js). 30 leituras e 120 fotos/hora.
+app.post('/api/leitura-site', exigirLogin, async (req, res) => {
+  if (!tetoBroll(req, res, 'leitura', 30)) return;
+  try { res.json(await lerSite(String(req.body?.url || ''))); }
+  catch (e) { console.error('[leitura-site]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Não consegui ler o site.' }); }
+});
+app.post('/api/leitura-site/imagem', exigirLogin, async (req, res) => {
+  if (!tetoBroll(req, res, 'foto do site', 120)) return;
+  try { const r = await baixarImagemSite(String(req.body?.url || ''), String(req.body?.site || '')); res.set('Content-Type', r.tipo).send(r.bytes); }
+  catch (e) { console.error('[leitura-site/imagem]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Não consegui baixar a foto.' }); }
 });
 
 app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), async (req, res) => {

@@ -64,7 +64,7 @@ export function conferirLeituraImagens(resultado, total) {
 }
 
 /** Reduz a imagem (lado maior <= `lado`) e converte para JPEG. Devolve base64 puro (para a IA) e a data URL (para guardar/mostrar). */
-async function prepararImagem(file, lado, qualidade) {
+export async function prepararImagem(file, lado, qualidade) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => falha(new Error(`Não consegui abrir "${file.name}" como imagem.`)); i.src = url; });

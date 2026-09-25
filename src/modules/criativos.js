@@ -183,7 +183,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     await ocupado(form.querySelector('.btn-ia'), async () => {
       const vars = await gerarCriativos({
         cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref, produto, quantidade: Number(v.quantidade) || cfg.variacoesPadrao || 4,
-        referencias: referencias.filter((r) => r.analise), resultados,
+        referencias: referencias.filter((r) => r.analise), resultados, catalogo: produtos, // produtos reais (alguns lidos do site do cliente)
       });
       if (!vars.length) throw new Error('A IA não devolveu variações. Tente reescrever o briefing.');
       saida.innerHTML = `<div class="space-y-3 border-t border-slate-200 pt-4">

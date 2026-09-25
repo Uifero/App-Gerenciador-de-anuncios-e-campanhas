@@ -106,9 +106,9 @@ describe('imagens anexadas (diagnóstico com prints)', () => {
     expect(() => validarImagens('x')).toThrow(/formato inválido/);
   });
 
-  it('só o diagnóstico aceita imagens', () => {
+  it('só o diagnóstico e a leitura de prints do Instagram aceitam imagens', () => {
     expect(TAREFAS.diagnostico.imagens).toBe(true);
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.imagens).map(([n]) => n)).toEqual(['diagnostico']);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.imagens).map(([n]) => n)).toEqual(['diagnostico', 'leitura_prints']);
   });
 
   it('monta os blocos com as imagens antes do texto', () => {

@@ -4,6 +4,8 @@
 import { db, COL } from '../core/storage.js';
 import { normalizarRastreamento, rastreamentoDe } from '../lib/rastreamento.js';
 import { abrirProduto } from './produtos.js';
+import { perguntaZeroHtml, ligarPerguntaZero } from './leitura-site.js';
+import { textoMarca } from '../lib/leitura.js';
 import { esc, $, on, tag, toast, moeda } from '../core/ui.js';
 
 export const PAGAMENTOS_PRETENDIDOS = [['mercado_pago', 'Mercado Pago'], ['shopify', 'Shopify'], ['stripe', 'Stripe'], ['nativa', 'Nativa da plataforma (Nuvemshop/Shopify)'], ['nao_sei', 'Ainda não sabe']];
@@ -12,16 +14,21 @@ export const FORMATOS_SITE = [['custom', 'Site simples que eu hospedo', { modo: 
 export const formatoAtual = (site) => (!site?.modo ? '' : site.modo === 'custom' ? 'custom' : site.plataforma === 'shopify' ? 'shopify' : 'nuvemshop');
 
 const cheio = (v) => Boolean(String(v ?? '').trim());
-/** Quais das 9 perguntas já têm resposta (no dado real). Pura, para teste. */
+/** Quais das 10 perguntas (0 a i) já têm resposta (no dado real). Pura, para teste. */
 export function respostasSite(cliente, site, produtos = []) {
   const m = cliente?.marca || {}; const r = rastreamentoDe(cliente);
   return {
+    presenca: cheio(cliente?.leituraSite?.url) || Boolean(cliente?.leituraInstagram),
     produtos: produtos.length > 0, tom: cheio(m.tomDeVoz), usp: cheio(m.usp), objecoes: cheio(m.objecoes), provas: cheio(m.provasSociais),
     referencia: cheio(cliente?.siteReferencia), pixel: Boolean(r.metaPixelId || r.googleAdsId || site?.semPixel),
     pagamento: cheio(site?.pagamentoPreferido), formato: Boolean(site?.modo),
   };
 }
 export const progressoSite = (cliente, site, produtos) => Object.values(respostasSite(cliente, site, produtos)).filter(Boolean).length;
+export const TOTAL_PERGUNTAS = 10;
+
+/** Etiqueta "preenchido automaticamente do site, confirme ou edite" + botão Confirmar. */
+const marcaAuto = (m, attrs) => (m ? `<span class="mt-1 inline-flex flex-wrap items-center gap-1"><span class="tag tag-warn"><i class="fa-solid fa-robot mr-1"></i>${esc(textoMarca(m))}</span><button type="button" class="text-xs text-indigo-600 underline" ${attrs}>Confirmar</button></span>` : '');
 
 const TONS = ['descontraído', 'premium', 'técnico', 'acolhedor', 'divertido', 'direto'];
 
@@ -40,15 +47,16 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
   const pergunta = (chave, letra, titulo, destino, corpo) => `<li class="rounded-lg border border-slate-200 p-3" data-pergunta="${chave}">
     <div class="flex items-start justify-between gap-2"><p class="text-sm font-semibold">${letra}) ${titulo}</p><span data-ok="${chave}"></span></div>
     <p class="hint mb-2">Vai para: ${destino}</p>${corpo}</li>`;
-  const area = (campo, valor, ph) => `<textarea class="input" rows="2" data-marca="${campo}" placeholder="${esc(ph)}">${esc(valor)}</textarea>`;
+  const area = (campo, valor, ph) => `<textarea class="input" rows="2" data-marca="${campo}" placeholder="${esc(ph)}">${esc(valor)}</textarea>${marcaAuto(cliente.autoPreenchido?.[campo], `data-confirmar-campo="${campo}"`)}`;
 
   alvo.innerHTML = `<details class="card" ${aberto ? 'open' : ''} data-perguntas-site>
     <summary class="cursor-pointer"><span class="font-semibold"><i class="fa-solid fa-clipboard-question mr-1 text-indigo-500"></i> Perguntas para montar o site</span>
       <span class="ml-2 text-sm text-slate-500" data-progresso></span></summary>
     <p class="caption mt-2">Roteiro para a conversa com o cliente, antes ou durante a criação do site. Digite a resposta na hora: cada uma é salva <b>sozinha, ao sair do campo</b>, direto no lugar certo do app (perfil de marca, produtos, rastreamento…). Não é obrigatório responder tudo — o site pode ser gerado a qualquer momento.</p>
     <ol class="mt-3 space-y-2">
+      ${perguntaZeroHtml(cliente)}
       ${pergunta('produtos', 'a', 'Quais produtos você quer no site?', 'aba Produtos (nome, descrição, preço, variações e fotos)',
-        `<div class="text-sm">${produtos.length ? `<ul class="mb-2 space-y-0.5">${produtos.map((p) => `<li><button type="button" class="underline decoration-dotted" data-editar-prod="${p.id}">${esc(p.nome)}</button> <span class="hint">${moeda(p.precoPromocional || p.preco)}${p.fotos?.length ? ` · ${p.fotos.length} foto(s)` : ' · sem foto'}</span></li>`).join('')}</ul>` : '<p class="hint mb-2">Nenhum produto cadastrado ainda.</p>'}
+        `<div class="text-sm">${produtos.some((p) => p.origemAuto) ? `<p class="mb-1 flex flex-wrap items-center gap-2"><span class="tag tag-warn"><i class="fa-solid fa-robot mr-1"></i>${produtos.filter((p) => p.origemAuto).length} produto(s) ${esc(textoMarca(produtos.find((p) => p.origemAuto).origemAuto))}</span><button type="button" class="text-xs text-indigo-600 underline" data-confirmar-todos-prod>Confirmar todos</button><span class="hint">Clique no nome para conferir preço, variações e fotos.</span></p>` : ''}${produtos.length ? `<ul class="mb-2 space-y-0.5">${produtos.map((p) => `<li><button type="button" class="underline decoration-dotted" data-editar-prod="${p.id}">${esc(p.nome)}</button> <span class="hint">${p.preco ? moeda(p.precoPromocional || p.preco) : 'sem preço'}${p.fotos?.length ? ` · ${p.fotos.length} foto(s)` : ' · sem foto'}</span>${p.origemAuto ? ` <span class="tag tag-warn" title="${esc(textoMarca(p.origemAuto))}">${p.origemAuto.origem === 'instagram' ? 'do Instagram' : 'do site'}</span> <button type="button" class="text-xs text-indigo-600 underline" data-confirmar-prod="${p.id}">Confirmar</button>` : ''}</li>`).join('')}</ul>` : '<p class="hint mb-2">Nenhum produto cadastrado ainda.</p>'}
           <button type="button" class="btn-ghost btn-sm" data-novo-prod><i class="fa-solid fa-plus"></i> Cadastrar produto</button></div>`)}
       ${pergunta('tom', 'b', 'Como você descreveria o tom da sua marca? (descontraído, premium, técnico…)', 'perfil de marca → tom de voz',
         `${area('tomDeVoz', m.tomDeVoz, 'Ex.: descontraído, próximo, sem gírias')}<div class="mt-1 flex flex-wrap gap-1">${TONS.map((t) => `<button type="button" class="tag cursor-pointer" data-tom="${t}" title="Acrescentar ao campo">+ ${t}</button>`).join('')}</div>`)}
@@ -73,22 +81,43 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
 
   const pintar = () => {
     const rs = resp(); const n = Object.values(rs).filter(Boolean).length;
-    $('[data-progresso]', alvo).innerHTML = `${n} de 9 perguntas respondidas ${n === 9 ? tag('completo', 'tag-ok') : ''}`;
+    $('[data-progresso]', alvo).innerHTML = `${n} de ${TOTAL_PERGUNTAS} perguntas respondidas ${n === TOTAL_PERGUNTAS ? tag('completo', 'tag-ok') : ''}`;
     for (const [k, ok] of Object.entries(rs)) { const s = $(`[data-ok="${k}"]`, alvo); if (s) s.innerHTML = ok ? '<i class="fa-solid fa-circle-check text-emerald-600" title="Respondida"></i>' : '<i class="fa-regular fa-circle text-slate-300" title="Sem resposta"></i>'; }
   };
   pintar();
   $('[data-perguntas-site]', alvo).addEventListener('toggle', (e) => abertoPorCliente.set(cliente.id, e.target.open));
+  ligarPerguntaZero(alvo, ctx);
+  // Confirmar (ou editar) um campo preenchido automaticamente tira a etiqueta: a partir daí ele conta como dado da pessoa.
+  const semMarca = (campo) => { const a = { ...(cliente.autoPreenchido || {}) }; delete a[campo]; return a; };
+  on(alvo, 'click', '[data-confirmar-campo]', async (b) => {
+    const autoPreenchido = semMarca(b.dataset.confirmarCampo);
+    Object.assign(cliente, { autoPreenchido }); await db.atualizar(COL.clientes, cliente.id, { autoPreenchido });
+    b.parentElement.remove(); toast('Confirmado.');
+  });
+  on(alvo, 'click', '[data-confirmar-prod]', async (b) => {
+    await db.atualizar(COL.produtos, b.dataset.confirmarProd, { origemAuto: null });
+    const p = produtos.find((x) => x.id === b.dataset.confirmarProd); if (p) p.origemAuto = null;
+    b.previousElementSibling?.remove(); b.remove(); toast('Produto confirmado.');
+  });
+  on(alvo, 'click', '[data-confirmar-todos-prod]', async (b) => {
+    const marcados = produtos.filter((p) => p.origemAuto);
+    await Promise.all(marcados.map((p) => db.atualizar(COL.produtos, p.id, { origemAuto: null })));
+    marcados.forEach((p) => { p.origemAuto = null; });
+    toast(`${marcados.length} produto(s) confirmado(s).`); ctx.recarregar();
+  });
 
   const salvarCliente = async (patch, aviso) => {
     // Atualiza o objeto antes de gravar: se a pessoa sair do campo direto para "Gerar site", a IA já lê a resposta nova.
     Object.assign(cliente, patch); pintar();
     await db.atualizar(COL.clientes, cliente.id, patch); toast(aviso);
   };
-  const ROTULO = { tomDeVoz: 'Tom de voz salvo no perfil de marca.', usp: 'Diferencial salvo no perfil de marca.', objecoes: 'Objeções salvas no perfil de marca (alimentam a FAQ).', provasSociais: 'Provas sociais salvas no perfil de marca.' };
+  const ROTULO = { tomDeVoz: 'Tom de voz salvo no perfil de marca.', usp: 'Diferencial salvo no perfil de marca.', objecoes: 'Objeções salvas no perfil de marca (alimentam a FAQ).', provasSociais: 'Provas sociais salvas no perfil de marca.', estetica: 'Estética salva no perfil de marca.' };
   on(alvo, 'change', '[data-marca]', (t) => {
     const campo = t.dataset.marca; const valor = t.value.trim();
     if ((cliente.marca?.[campo] || '') === valor) return;
-    salvarCliente({ marca: { ...(cliente.marca || {}), [campo]: valor } }, ROTULO[campo]);
+    const marcado = cliente.autoPreenchido?.[campo];
+    salvarCliente({ marca: { ...(cliente.marca || {}), [campo]: valor }, ...(marcado ? { autoPreenchido: semMarca(campo) } : {}) }, ROTULO[campo]);
+    if (marcado) t.parentElement.querySelector('.tag-warn')?.parentElement.remove();
   });
   on(alvo, 'click', '[data-tom]', (b) => {
     const t = $('[data-marca="tomDeVoz"]', alvo); const atual = t.value.trim();

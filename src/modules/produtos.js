@@ -68,7 +68,7 @@ export function abrirProduto(cliente, p, aoSalvar) {
         const r = await enviarArquivoOuAvisar(`gcc/${cliente.id}/produtos/${id}/${Date.now()}_${arq.name.replace(/[^\w.-]/g, '_')}`, arq);
         fotos.push({ url: r.url, path: r.path });
       }
-      await db.atualizar(COL.produtos, id, { ...dados, fotos });
+      await db.atualizar(COL.produtos, id, { ...dados, fotos, origemAuto: null }); // salvar no formulário = a pessoa conferiu (tira a marca "do site")
       toast('Produto salvo.'); m.fechar(); aoSalvar?.();
     });
   });

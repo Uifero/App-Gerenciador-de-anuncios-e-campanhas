@@ -12,6 +12,7 @@ import { contarDependentesCliente, apagarClienteEmCascata } from '../lib/cascata
 import { abrirDiagnostico } from './diagnostico.js';
 import { pedirBuscaInicial, consumirBuscaInicial, deveBuscarAutomatico, iniciouBusca, terminouBusca, buscaEmAndamento, marcarPerguntado } from './busca-mercado.js';
 import { buscarExemplosMercado } from './referencias.js';
+import { marcasQueContinuam, textoMarca } from '../lib/leitura.js';
 import { normalizarRastreamento, indicadorPixel } from '../lib/rastreamento.js';
 
 /**
@@ -46,6 +47,9 @@ async function buscaInicial(c) {
   } finally { terminouBusca(c.id); }
 }
 
+/** Etiqueta discreta "preenchido automaticamente do site" ao lado do rótulo (some quando a pessoa edita e salva). */
+const etiquetaAuto = (c, campo) => (c?.autoPreenchido?.[campo] ? `<span class="tag tag-warn font-normal">${esc(textoMarca(c.autoPreenchido[campo]))}</span>` : '');
+
 export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]);
 
 /** Converte os campos do formulário/assistente no documento do cliente (mesma função para os dois caminhos). */
@@ -60,7 +64,7 @@ export function montarDadosCliente(v, escopo) {
     historico: v.estagio === 'rodando' ? { cpaMedio: num(v.cpaMedio), orcamentoDiario: num(v.orcamentoDiario), publicos: v.publicosHist || '' } : {},
     marca: {
       tomDeVoz: v.tomDeVoz || '', linguagemDor: v.linguagemDor || '', objecoes: v.objecoes || '', provasSociais: v.provasSociais || '',
-      usp: v.usp || '', idioma: v.idioma || 'pt-BR', termosProibidos: v.termosProibidos || '',
+      usp: v.usp || '', idioma: v.idioma || 'pt-BR', termosProibidos: v.termosProibidos || '', estetica: v.estetica || '',
     },
   };
 }
@@ -158,13 +162,14 @@ export async function viewForm(el, id, { baseId = null } = {}) {
 
     <section data-passo="1" class="hidden space-y-4">
       <p class="caption">Isso é o que faz a IA soar como a marca. Quanto mais real, melhor.</p>
-      <div><label class="label">Tom de voz</label><input class="input" name="tomDeVoz" value="${esc(m.tomDeVoz)}" placeholder="Ex.: próximo, bem-humorado, sem formalidade"></div>
+      <div><label class="label">Tom de voz ${etiquetaAuto(c, 'tomDeVoz')}</label><input class="input" name="tomDeVoz" value="${esc(m.tomDeVoz)}" placeholder="Ex.: próximo, bem-humorado, sem formalidade"></div>
       <div><label class="label">Como o público descreve a própria dor</label><textarea class="input" rows="2" name="linguagemDor" placeholder="Nas palavras deles: 'minha roupa nunca serve direito'">${esc(m.linguagemDor)}</textarea></div>
-      <div><label class="label">Diferencial (USP)</label><input class="input" name="usp" value="${esc(m.usp)}"></div>
+      <div><label class="label">Diferencial (USP) ${etiquetaAuto(c, 'usp')}</label><input class="input" name="usp" value="${esc(m.usp)}"></div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (objeções, provas, termos proibidos, site de referência)</summary>
         <div class="mt-3 space-y-4">
           <div><label class="label">Objeções comuns</label><textarea class="input" rows="2" name="objecoes">${esc(m.objecoes)}</textarea></div>
-          <div><label class="label">Provas sociais disponíveis (reais)</label><textarea class="input" rows="2" name="provasSociais">${esc(m.provasSociais)}</textarea></div>
+          <div><label class="label">Provas sociais disponíveis (reais) ${etiquetaAuto(c, 'provasSociais')}</label><textarea class="input" rows="2" name="provasSociais">${esc(m.provasSociais)}</textarea></div>
+          <div><label class="label">Estética / paleta de cor ${etiquetaAuto(c, 'estetica')}</label><textarea class="input" rows="2" name="estetica" placeholder="Ex.: tons terrosos, fundo claro, luz natural">${esc(m.estetica)}</textarea></div>
           <div><label class="label">Termos proibidos/restritos do nicho</label><textarea class="input" rows="2" name="termosProibidos" placeholder="Separe por vírgula. Ex.: cura, garantido, emagreça">${esc(m.termosProibidos)}</textarea>
             <p class="hint">A IA evita esses termos e o app avisa se algum aparecer no texto.</p></div>
           <div><label class="label">Site de referência (opcional)</label><input class="input" name="siteReferencia" value="${esc(fonte?.siteReferencia)}" placeholder="https://…"></div>
@@ -227,7 +232,11 @@ export async function viewForm(el, id, { baseId = null } = {}) {
     if (!rastreamentoOk(v)) { passo = 0; mostrar(); return; }
     const escopo = Object.fromEntries(MODULOS.map((mod) => [mod.id, form.elements['esc_' + mod.id].checked]));
     await ocupado($('[data-salvar]', form), async () => {
-      if (c) { await db.atualizar(COL.clientes, c.id, montarDadosCliente(v, escopo)); toast('Cliente atualizado.'); location.hash = `#/c/${c.id}`; return; }
+      if (c) {
+        const dados = montarDadosCliente(v, escopo);
+        if (c.autoPreenchido) dados.autoPreenchido = marcasQueContinuam(c.autoPreenchido, c.marca, dados.marca); // editou = confirmou
+        await db.atualizar(COL.clientes, c.id, dados); toast('Cliente atualizado.'); location.hash = `#/c/${c.id}`; return;
+      }
       const novo = await criarCliente(v, escopo, {
         playbook: playbooks.find((p) => p.id === v.playbookId),
         baseId: base?.id, copiar: { hooks: !!form.elements.copiarHooks?.checked, campanhas: !!form.elements.copiarCampanhas?.checked },
@@ -273,7 +282,7 @@ export async function viewCliente(el, id, aba, abasMap) {
     const partes = [
       n.criativos && `${n.criativos} criativo(s)`, n.hooks && `${n.hooks} hook(s)`, n.referencias && `${n.referencias} referência(s)`,
       n.campanhas && `${n.campanhas} campanha(s)`, n.resultados && `${n.resultados} resultado(s)`, n.produtos && `${n.produtos} produto(s)`,
-      n.sites && `${n.sites} site(s)`, n.aprovacoes && `${n.aprovacoes} link(s) de aprovação`, n.respostas && `${n.respostas} resposta(s) de cliente`, n.diagnosticos && `${n.diagnosticos} diagnóstico(s)`,
+      n.sites && `${n.sites} site(s)`, n.aprovacoes && `${n.aprovacoes} link(s) de aprovação`, n.respostas && `${n.respostas} resposta(s) de cliente`, n.diagnosticos && `${n.diagnosticos} diagnóstico(s)`, n.materiais && `${n.materiais} foto(s) salva(s) em Materiais`,
     ].filter(Boolean);
     const msg = partes.length
       ? `Apagar "${c.nome}" e tudo o que está ligado a ele — ${partes.join(', ')}? Esta ação não pode ser desfeita. Se quiser guardar esses dados, exporte um backup antes.`

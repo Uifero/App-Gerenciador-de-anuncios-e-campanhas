@@ -12,15 +12,15 @@ async function removerTodos(col, filtro) {
 /** Conta (sem apagar nada) o que seria removido ao apagar o cliente — para mostrar antes de confirmar. */
 export async function contarDependentesCliente(clienteId) {
   const f = { clienteId };
-  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, aprovacoes, respostas, diagnosticos] = await Promise.all([
+  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, aprovacoes, respostas, diagnosticos, materiais] = await Promise.all([
     db.listar(COL.criativos, f), db.listar(COL.hooks, f), db.listar(COL.referencias, f), db.listar(COL.campanhas, f),
     db.listar(COL.resultados, f), db.listar(COL.produtos, f), db.listar(COL.sites, f), db.listar(COL.aprovacoes, f), db.listar(COL.respostas, f),
-    db.listar(COL.diagnosticos, f),
+    db.listar(COL.diagnosticos, f), db.listar(COL.materiais, f),
   ]);
   return {
     criativos: criativos.length, hooks: hooks.length, referencias: referencias.length, campanhas: campanhas.length,
     resultados: resultados.length, produtos: produtos.length, sites: sites.length, aprovacoes: aprovacoes.length, respostas: respostas.length,
-    diagnosticos: diagnosticos.length,
+    diagnosticos: diagnosticos.length, materiais: materiais.length,
   };
 }
 
@@ -34,11 +34,13 @@ export async function contarDependentesCliente(clienteId) {
 export async function apagarClienteEmCascata(clienteId) {
   const f = { clienteId };
   const criativos = await db.listar(COL.criativos, f);
-  await Promise.all(criativos.flatMap((c) => [c.arquivoPath, c.previaPath]).filter(Boolean).map((p) => removerArquivo(p))); // peça final + prévia reduzida
+  const materiais = await db.listar(COL.materiais, f);
+  await Promise.all([...criativos.flatMap((c) => [c.arquivoPath, c.previaPath]), ...materiais.map((m) => m.path)].filter(Boolean).map((p) => removerArquivo(p))); // peça final + prévia reduzida + fotos salvas
   await Promise.all([
     removerTodos(COL.criativos, f), removerTodos(COL.hooks, f), removerTodos(COL.referencias, f), removerTodos(COL.campanhas, f),
     removerTodos(COL.resultados, f), removerTodos(COL.produtos, f), removerTodos(COL.sites, f),
     removerTodos(COL.aprovacoes, f), removerTodos(COL.respostas, f), removerTodos(COL.diagnosticos, f), removerTodos(COL.diagnosticoImagens, f),
+    removerTodos(COL.materiais, f),
   ]);
   await db.remover(COL.clientes, clienteId);
 }

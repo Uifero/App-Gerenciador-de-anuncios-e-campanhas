@@ -128,14 +128,19 @@ const REGRA_CRITICA = (cliente) => `REGRAS CRÍTICAS (valem para tudo que você 
 export function contextoCliente(c) {
   const m = c.marca || {};
   const h = c.historico || {};
+  // Campos preenchidos a partir do site/Instagram do PRÓPRIO cliente (leitura automática, ainda editáveis).
+  const auto = (campo) => (c.autoPreenchido?.[campo] ? ` (tirado do ${c.autoPreenchido[campo].origem === 'instagram' ? 'Instagram' : 'site'} do próprio cliente — é a voz real da marca)` : '');
   const l = [
     `CLIENTE: ${c.nome}`, `Nicho/produto: ${c.nicho}`,
     `Estágio: ${c.estagio === 'rodando' ? 'já roda anúncios' : 'novo, ainda não anuncia'}`,
-    m.tomDeVoz && `Tom de voz: ${m.tomDeVoz}`,
+    m.tomDeVoz && `Tom de voz${auto('tomDeVoz')}: ${m.tomDeVoz}`,
     m.linguagemDor && `Como o público descreve a própria dor (palavras reais): ${m.linguagemDor}`,
     m.objecoes && `Objeções comuns: ${m.objecoes}`,
-    m.provasSociais && `Provas sociais disponíveis (únicas que podem ser citadas): ${m.provasSociais}`,
-    m.usp && `Diferencial (USP): ${m.usp}`,
+    m.provasSociais && `Provas sociais disponíveis (únicas que podem ser citadas)${auto('provasSociais')}: ${m.provasSociais}`,
+    m.usp && `Diferencial (USP)${auto('usp')}: ${m.usp}`,
+    m.estetica && `Estética visual / paleta de cor${auto('estetica')}: ${m.estetica}`,
+    c.leituraSite?.resumo && `Como a marca se apresenta no site dela (leitura automática — reforço de contexto; se divergir do briefing ou dos campos acima, valem eles): ${c.leituraSite.resumo}`,
+    c.leituraInstagram?.resumo && `Como a marca se apresenta no Instagram dela (lido de prints — reforço de contexto; se divergir do briefing ou dos campos acima, valem eles): ${c.leituraInstagram.resumo}`,
     c.angulosSugeridos?.length && `Ângulos que costumam funcionar nesse tipo de produto (playbook "${c.playbookNome || ''}"): ${c.angulosSugeridos.join('; ')}`,
   ];
   if (c.estagio === 'rodando') {
@@ -170,14 +175,20 @@ const SO_JSON = 'Responda APENAS com JSON válido, sem texto antes ou depois, se
 
 // ---------- criativos ----------
 /** Descrição estruturada do produto (aba Produtos), além do que já foi escrito no briefing — reforça preço/categoria. */
+/** Produtos reais do catálogo (Produtos; alguns vindos do site do cliente) — só nomes e preços, até 10. */
+export function contextoCatalogo(produtos = []) {
+  const l = produtos.filter((p) => p?.nome).slice(0, 10);
+  if (!l.length) return '';
+  return `\nCATÁLOGO REAL DO CLIENTE (use estes nomes/preços se o briefing falar de produto; não invente outros): ${l.map((p) => `"${p.nome}"${p.precoPromocional || p.preco ? ` (R$ ${p.precoPromocional || p.preco})` : ''}${p.origemAuto ? ' [lido do site do cliente]' : ''}`).join('; ')}.`;
+}
 function contextoProduto(p) {
   if (!p) return '';
   return `\nPRODUTO SELECIONADO (dados exatos do catálogo — use-os, não invente outros): "${p.nome}"${p.categoria ? `, categoria ${p.categoria}` : ''}${p.preco ? `, preço R$ ${p.preco}` : ''}${p.precoPromocional ? ` (promocional R$ ${p.precoPromocional})` : ''}.${p.descricao ? ` Descrição: ${p.descricao}` : ''}`;
 }
 
-export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base, produto }) {
+export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base, produto, catalogo = [] }) {
   const n = Math.min(5, Math.max(1, Number(quantidade) || 4));
-  const system = `Você é um copywriter e estrategista de tráfego pago sênior. Cria anúncios que parecem conteúdo orgânico.${contextoReferencias(referencias)}${contextoResultados(resultados)}${contextoProduto(produto)}`;
+  const system = `Você é um copywriter e estrategista de tráfego pago sênior. Cria anúncios que parecem conteúdo orgânico.${contextoReferencias(referencias)}${contextoResultados(resultados)}${contextoProduto(produto)}${produto ? '' : contextoCatalogo(catalogo)}`;
   const pedido = [
     n === 1 ? 'Gere 1 variação de criativo.' : `Gere ${n} variações de criativo, cada uma com hook e ângulo diferentes.`,
     briefing && `Briefing: ${briefing}`,
@@ -442,6 +453,61 @@ export function textoPlano(d) {
   for (const k of ['heroTitulo', 'heroSubtitulo', 'heroCta', 'storytelling', 'newsletterTitulo', 'newsletterTexto']) out[k] = junta(out[k]);
   if (out.politicas && typeof out.politicas === 'object') out.politicas = Object.fromEntries(Object.entries(out.politicas).map(([k, v]) => [k, junta(v)]));
   return out;
+}
+
+// ---------- leitura do site / Instagram do PRÓPRIO cliente (pergunta 0 da aba Site/Loja) ----------
+const LEITURA_ITEM = '{"valor": string, "evidencia": string (trecho copiado do texto que comprova)} ou null se o texto não mostrar';
+/**
+ * Interpreta o que o servidor já extraiu do site (server/leitura-site.js): a IA NÃO navega aqui, só lê o texto.
+ * Cada campo vem com o trecho que o comprova; o app confere o trecho no texto (lib/leitura.js) antes de usar.
+ */
+export async function interpretarSite({ cliente, leitura }) {
+  const system = 'Você analisa o site de uma marca para preencher o perfil dela. Usa SÓ o que está no texto fornecido; nunca completa com suposição.';
+  const pedido = `Site do próprio cliente: ${leitura.url}
+Título: ${leitura.titulo || '-'} | Descrição: ${leitura.descricao || '-'}
+Produtos estruturados já encontrados (não repita): ${(leitura.produtos || []).map((p) => p.nome).join('; ') || 'nenhum'}
+TEXTO VISÍVEL DA PÁGINA:
+"""${String(leitura.texto || '').slice(0, 12000)}"""
+
+Devolva JSON: {"resumo": string (2-3 frases: como a marca se apresenta, só com o que está no texto),
+"tomDeVoz": ${LEITURA_ITEM} (descreva o tom em poucas palavras, ex.: "descontraído, usa 'você', emojis"; a evidência é um trecho que mostra esse tom),
+"usp": ${LEITURA_ITEM} (o diferencial que o próprio site afirma),
+"provasSociais": ${LEITURA_ITEM} (números, avaliações, depoimentos VISÍVEIS no texto; copie os números exatamente),
+"produtos": [{"nome", "descricao", "preco": number|null}] (só produtos cujo NOME aparece no texto e que não estão na lista acima; preço só se estiver escrito)}.
+Textos em português do Brasil. Use exatamente as chaves pedidas. ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'leitura_site', cliente, system, messages: [{ role: 'user', content: pedido }] });
+  return dados || {};
+}
+
+/** Site que bloqueou a leitura direta: busca web (a mesma da busca de mercado) sobre ESSE site. */
+export async function lerSitePelaBusca({ cliente, url }) {
+  const system = 'Você pesquisa na web informações PÚBLICAS de uma marca, a pedido dela própria. Você NUNCA inventa: só relata o que encontrou, com a fonte.';
+  const pedido = `O site ${url} (do próprio cliente) bloqueou a leitura direta. Pesquise na web o que estiver indexado sobre ESSE site (páginas dele nos resultados). Não invente nada que não apareceu nos resultados.
+JSON: {"encontrado": boolean, "resumo": string|null, "tomDeVoz": ${LEITURA_ITEM}, "usp": ${LEITURA_ITEM}, "provasSociais": ${LEITURA_ITEM}, "produtos": [{"nome","descricao","preco": number|null}] (só os que apareceram nos resultados), "fonte": string, "observacao": string}. Textos em português do Brasil. ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'leitura_web', cliente, system, messages: [{ role: 'user', content: pedido }], webSearch: { maxUses: 4 } });
+  return dados || {};
+}
+
+/**
+ * Prints do Instagram do PRÓPRIO cliente (bio, grid, posts), lidos pela IA como imagens — mesmo mecanismo da
+ * análise visual do Diagnóstico. `imagens` = [{ media_type, data }] na ordem enviada (print 1 = o primeiro).
+ */
+export async function analisarPrintsInstagram({ cliente, imagens }) {
+  const system = 'Você lê prints do Instagram de uma marca para preencher o perfil dela. Relata SÓ o que está visível e legível nos prints; nunca completa com suposição.';
+  const item = '{"valor": string, "evidencia": string (o que você leu/viu que comprova), "imagem": number (qual print)} ou null';
+  const pedido = `Seguem ${imagens.length} print(s) do Instagram do próprio cliente "${cliente.nome}" (nicho: ${cliente.nicho || 'n/d'}), numerados na ordem (print 1 = o primeiro).
+Extraia apenas o que dá para LER ou VER nos prints:
+- "tomDeVoz": o tom das legendas/bio visíveis (ex.: "descontraído, usa emojis e 'você'") — ${item}
+- "usp": o diferencial que a própria marca afirma (bio ou legendas) — ${item}
+- "provasSociais": comentários/elogios visíveis, nº de seguidores, curtidas ou avaliações (copie os números exatamente como aparecem). NÃO inclua nomes ou @ de pessoas comuns nem linhas como "Seguido por fulano"/"Seguidores: fulano" — isso é da conta de quem tirou o print, não da marca — ${item}
+- "estetica": estética visual e paleta de cor predominante do grid/posts (ex.: "tons terrosos, fundo claro, fotos com luz natural") — ${item}
+- "produtos": [{"nome","descricao","preco": number|null,"imagem": number,"evidencia": string}] — só produtos que aparecem com nome legível; preço só se estiver escrito
+- "imagens": UM item por print: {"numero": n, "legivel": boolean, "conteudo": "o que é (bio, grid, post, outro) e o que dá para ler; ou por que não serve"}
+- "legivel": false se NENHUM print tiver informação legível ou relevante sobre a marca; "motivo": explique nesse caso
+- "resumo": 1-2 frases de como a marca se apresenta no Instagram (só com o que está nos prints)
+Se um campo não aparece nos prints, use null. Textos em português do Brasil. Use exatamente as chaves pedidas. ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'leitura_prints', cliente, system, messages: [{ role: 'user', content: pedido }], imagens });
+  return dados || {};
 }
 
 // ---------- site / loja ----------

@@ -10,6 +10,7 @@
 // um histórico de peças geradas por cliente — não é o caso hoje.
 
 import { tokenAtual } from '../core/auth.js';
+import { db, COL } from '../core/storage.js';
 import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
   FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
@@ -66,6 +67,7 @@ export function abrirEstudio(criativo, cliente) {
     <label class="label">Fotos e vídeos (do produto, gerados por IA ou enviados pelo cliente)</label>
     ${campoArquivo({ attrs: 'data-midias', accept: 'image/*,video/*', multiple: true, texto: 'Enviar fotos ou vídeos', lista: true, dica: 'Pode escolher vários de uma vez (JPG, PNG, WebP, MP4, MOV).' })}
     <div data-lista-midias class="mt-2 flex flex-wrap gap-2"></div>
+    <div data-materiais-salvos class="mt-2"></div>
     <div class="mt-3 grid gap-3 sm:grid-cols-2">
       <div><label class="label">Logo (opcional)</label>${campoArquivo({ attrs: 'data-logo', accept: 'image/*', icone: 'copyright', texto: 'Enviar logo (PNG transparente)', destaque: false })}</div>
       <div><label class="label">Música do vídeo (opcional)</label>${campoArquivo({ attrs: 'data-musica', accept: 'audio/*', icone: 'music', texto: 'Enviar música (MP3/WAV)', destaque: false })}</div>
@@ -273,6 +275,23 @@ export function abrirEstudio(criativo, cliente) {
     listarMidias();
   };
   on(raiz, 'change', '[data-midias]', (i) => ocupado(i, async () => { await adicionarArquivos([...i.files]); i.value = ''; }));
+
+  // Materiais salvos do cliente (ex.: fotos importadas do site dele na aba Site/Loja): um clique traz para cá.
+  db.listar(COL.materiais, { clienteId: cliente.id }).then((salvos) => {
+    const alvo = $('[data-materiais-salvos]', raiz);
+    if (!alvo || !salvos.length) return;
+    alvo.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><p><i class="fa-solid fa-folder-open text-emerald-600"></i> <b>${salvos.length} foto(s) salva(s) do cliente</b>${[salvos.some((m) => m.origem === 'site') && 'do site dele', salvos.some((m) => m.origem === 'instagram') && 'prints do Instagram dele'].filter(Boolean).map((x, i) => (i ? ' e ' : ' — ') + x).join('')}.</p>
+      <div class="my-1 flex flex-wrap gap-1">${salvos.slice(0, 12).map((m) => `<img src="${esc(m.url)}" alt="" class="h-10 w-10 rounded object-cover" loading="lazy">`).join('')}</div>
+      <button type="button" class="btn-ghost btn-sm" data-usar-salvos><i class="fa-solid fa-plus"></i> Trazer para os materiais</button></div>`;
+    on(alvo, 'click', '[data-usar-salvos]', (b) => ocupado(b, async () => {
+      const arqs = [];
+      for (const m of salvos) {
+        try { const r = await fetch(m.url); if (r.ok) { const bl = await r.blob(); arqs.push(new File([bl], m.nome || 'foto.jpg', { type: bl.type || 'image/jpeg' })); } } catch { /* segue com as outras */ }
+      }
+      if (!arqs.length) throw new Error('Não consegui abrir as fotos salvas agora. Tente de novo.');
+      await adicionarArquivos(arqs); toast(`${arqs.length} foto(s) adicionada(s) aos materiais.`);
+    }));
+  }).catch(() => { /* sem materiais salvos: nada a mostrar */ });
   on(raiz, 'click', '[data-rm-midia]', (b) => {
     const k = Number(b.dataset.rmMidia), [x] = est.midias.splice(k, 1); URL.revokeObjectURL(x.url);
     est.cenas.forEach((c) => { if (c.midiaIdx === k) c.midiaIdx = null; else if (c.midiaIdx > k) c.midiaIdx--; }); // cada cena continua ligada à mesma imagem

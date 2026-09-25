@@ -52,9 +52,9 @@ export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg
     return `<article class="card" data-cat="${esc(p.categoria)}">
       <div class="ph">${foto ? `<img src="${esc(foto)}" alt="${esc(p.nome)}" loading="lazy">` : '<span>sem foto</span>'}${p.precoPromocional ? '<b class="badge">OFERTA</b>' : ''}</div>
       <h3>${esc(p.nome)}</h3>
-      <p class="preco">${p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>
+      <p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>
       ${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}
-      <button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button></article>`;
+      ${Number(p.preco) ? `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>` : '<!-- sem preço cadastrado: sem botão de compra -->'}</article>`;
   };
   const grade = (lista) => `<div class="grid">${lista.map(card).join('')}</div>`;
 
