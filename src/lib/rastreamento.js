@@ -38,28 +38,41 @@ export function statusPixel(cliente) {
 // JavaScript por JSON.stringify e para atributos de URL por encodeURIComponent: nada digitado vira código.
 const js = (s) => JSON.stringify(String(s)).replace(/</g, '\\u003c');
 
-/** Código para o <head>: Pixel do Meta (com PageView no carregamento) e tag global do Google Ads. '' sem IDs. */
+/** Chave do localStorage (no navegador do visitante) onde o banner de cookies do site guarda a escolha. */
+export const CHAVE_CONSENTIMENTO = 'consentimento_cookies';
+
+/**
+ * Código para o <head>: Pixel do Meta (com PageView) e tag global do Google Ads — '' sem IDs.
+ * LGPD: nada é carregado de cara. O código fica dentro de window.carregarRastreamento(), que só roda se o visitante
+ * já aceitou os cookies antes (escolha guardada no navegador) ou quando clicar em "Aceitar" no banner. Recusou = o
+ * Pixel e a tag nunca carregam (e os eventos de checkout, que testam window.fbq/window.gtag, não disparam).
+ * Sem o <noscript> do Pixel: sem JavaScript não há como pedir consentimento.
+ */
 export function codigoHead(r) {
   const partes = [];
   if (r.metaPixelId) {
-    partes.push(`<!-- Meta Pixel (código padrão do Meta; ID do cadastro do cliente) -->
-<script>
-!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', ${js(r.metaPixelId)});
-fbq('track', 'PageView');
-</script>
-<noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=${encodeURIComponent(r.metaPixelId)}&ev=PageView&noscript=1"></noscript>
-<!-- Fim do Meta Pixel -->`);
+    partes.push(`  // Meta Pixel (código padrão do Meta; ID do cadastro do cliente)
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', ${js(r.metaPixelId)});
+  fbq('track', 'PageView');`);
   }
   if (r.googleAdsId) {
-    partes.push(`<!-- Tag do Google Ads (gtag.js; ID do cadastro do cliente) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(r.googleAdsId)}"></script>
-<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config',${js(r.googleAdsId)});</script>
-<!-- Fim da tag do Google Ads -->`);
+    partes.push(`  // Tag do Google Ads (gtag.js; ID do cadastro do cliente)
+  var g=document.createElement('script');g.async=true;g.src='https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(r.googleAdsId)}';document.head.appendChild(g);
+  window.dataLayer=window.dataLayer||[];window.gtag=function(){dataLayer.push(arguments);};gtag('js',new Date());gtag('config',${js(r.googleAdsId)});`);
   }
-  return partes.join('\n');
+  if (!partes.length) return '';
+  return `<!-- Rastreamento (Pixel do Meta / Google Ads): só carrega depois que o visitante aceita os cookies no banner. -->
+<script>
+window.carregarRastreamento=function(){
+  if(window.__rastreamentoCarregado)return;window.__rastreamentoCarregado=true;
+${partes.join('\n')}
+};
+try{if(localStorage.getItem(${js(CHAVE_CONSENTIMENTO)})==='aceito')window.carregarRastreamento();}catch(e){}
+</script>
+<!-- Fim do rastreamento -->`;
 }
 
 /**

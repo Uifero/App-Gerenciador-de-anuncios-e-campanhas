@@ -1,8 +1,9 @@
 // Aba Site/Loja: modo "custom" (site HTML exportável) ou "pacote_plataforma" (CSV + textos p/ Nuvemshop/Shopify),
 // ambos com manual de handoff em PDF. Nunca processa pagamento: só marca o ponto de encaixe de checkout de terceiros.
 import { db, COL } from '../core/storage.js';
-import { gerarConteudoSite, gerarTextosPacote } from '../core/ia.js';
-import { gerarSiteHTML } from '../lib/sitegen.js';
+import { gerarConteudoSite, gerarTextosPacote, gerarFaqSite, objecoesDe } from '../core/ia.js';
+import { gerarSiteHTML, faqValida, FORMAS_PAGAMENTO, PAGAMENTOS_PADRAO } from '../lib/sitegen.js';
+import { montarPerguntasSite, progressoSite, PAGAMENTOS_PRETENDIDOS } from './perguntas-site.js';
 import { csvShopify, csvNuvemshop, slug } from '../lib/csv.js';
 import { criarPdf } from '../lib/pdf.js';
 import { rastreamentoDe, passosRastreamentoPacote, indicadorPixel } from '../lib/rastreamento.js';
@@ -24,6 +25,12 @@ export function mesclarDepoimentos(atuais = [], novos = []) {
   return [...atuais.filter((d) => d.origem !== 'criativo'), ...novos];
 }
 
+/** FAQ <-> texto do formulário: uma pergunta por linha, "pergunta | resposta". */
+export const faqParaTexto = (faq = []) => faq.map((f) => `${f.p} | ${f.r}`).join('\n');
+export const textoParaFaq = (txt) => listaDeLinhas(txt).map((l) => { const [p, ...r] = l.split('|'); return { p: p.trim(), r: r.join('|').trim() }; }).filter((f) => f.p);
+/** Sem IA: uma linha por objeção, já em forma de pergunta, com a resposta em branco para completar. */
+export const perguntasDasObjecoes = (cliente) => objecoesDe(cliente).map((o) => `${/[?？]$/.test(o) ? o : o.charAt(0).toUpperCase() + o.slice(1) + '?'} | `).join('\n');
+
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const [produtos, sites, criativos] = await Promise.all([
     db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
@@ -37,6 +44,22 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     else site = await db.criar(COL.sites, { clienteId: cliente.id, status: 'rascunho', versaoManual: 0, ...patch });
   };
 
+  // Geração dos textos com IA no modo do site — usada pelo botão do formulário e pelo "Gerar site com essas respostas".
+  const gerarComIa = (b) => ocupado(b, async () => {
+    if (site.modo === 'custom') {
+      const atual = site.conteudo || {};
+      const r = await gerarConteudoSite({ cliente, produtos });
+      // Depoimentos puxados de criativos aprovados não se perdem ao gerar de novo.
+      await salvarSite({ conteudo: { ...atual, ...r, depoimentos: [...(r.depoimentos || []), ...(atual.depoimentos || []).filter((d) => d.origem === 'criativo')] } });
+      toast(`Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. Revise e use "Pré-visualizar" ou "Baixar site".`);
+    } else {
+      const pacote = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma) });
+      await salvarSite({ pacote }); toast('Banners, briefing do tema e textos gerados. Revise abaixo.');
+    }
+    recarregar();
+  });
+  const ctxPerguntas = { cliente, produtos, salvarSite, recarregar, gerar: gerarComIa, get site() { return site; } };
+
   // ---------- escolha do modo ----------
   if (!site?.modo) {
     root.innerHTML = `${cabecalho('Site / Loja', 'Escolha como a loja deste cliente será entregue. Você pode trocar depois.')}
@@ -44,7 +67,10 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <button class="card text-left transition hover:border-indigo-400 hover:shadow-md" data-modo="custom"><div class="mb-2 text-2xl text-indigo-500"><i class="fa-solid fa-code"></i></div>
         <h3 class="font-semibold">Site personalizado</h3><p class="caption">Gera um site HTML pronto, com catálogo, carrinho, banner, depoimentos e WhatsApp. Você hospeda e liga o checkout de terceiros.</p></button>
       <button class="card text-left transition hover:border-indigo-400 hover:shadow-md" data-modo="pacote_plataforma"><div class="mb-2 text-2xl text-indigo-500"><i class="fa-solid fa-box-open"></i></div>
-        <h3 class="font-semibold">Pacote para Nuvemshop/Shopify</h3><p class="caption">Gera o catálogo em CSV, banners e textos prontos e o briefing do tema para importar na plataforma.</p></button></div>`;
+        <h3 class="font-semibold">Pacote para Nuvemshop/Shopify</h3><p class="caption">Gera o catálogo em CSV, banners e textos prontos e o briefing do tema para importar na plataforma.</p></button></div>
+    <p class="caption mt-4">Ainda não sabe? Converse com o cliente usando as perguntas abaixo — a pergunta (i) escolhe o modo por você.</p>
+    <div class="mt-2" data-perguntas></div>`;
+    montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: true });
     on(root, 'click', '[data-modo]', async (b) => { await salvarSite({ modo: b.dataset.modo, plataforma: b.dataset.modo === 'pacote_plataforma' ? 'nuvemshop' : null }); recarregar(); });
     return;
   }
@@ -60,11 +86,12 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     <div class="mb-4 flex flex-wrap gap-1">${tag(STATUS_SITE.find(([k]) => k === site.status)?.[1] || site.status, site.status === 'rascunho' ? '' : 'tag-ok')}${tag(produtos.length + ' produto(s)')}
       ${site.plataforma ? tag(nomePlat(site.plataforma), 'tag-info') : ''}${site.versaoManual ? tag('manual v' + site.versaoManual) : ''}${site.exportadoEm ? tag('exportado em ' + dataBR(site.exportadoEm)) : ''}
       ${cliente.siteReferencia ? `<a class="tag tag-info" href="${esc(cliente.siteReferencia)}" target="_blank" rel="noopener">site de referência</a>` : ''}</div>
-    <div class="-mt-2 mb-4">${indicadorPixel(cliente)}<span class="hint ml-2">${custom ? 'Com o ID preenchido, o código entra sozinho no site gerado.' : 'Com o ID preenchido, o manual traz o passo para colar na loja.'}</span></div>
+    <div class="-mt-2 mb-4">${indicadorPixel(cliente)}<span class="hint ml-2">${custom ? 'Com o ID preenchido, o código entra sozinho no site gerado (só carrega depois que o visitante aceita os cookies).' : 'Com o ID preenchido, o manual traz o passo para colar na loja.'}</span></div>
+    <div class="mb-4" data-perguntas></div>
 
     <div class="grid gap-4 lg:grid-cols-2">
       <form id="fc" class="card space-y-3"><h3 class="font-semibold">1. Conteúdo da loja</h3>
-        <p class="caption">Preencha à mão e clique em "Salvar conteúdo", ou use "Gerar textos com IA": ela escreve banner, história da marca, depoimentos-modelo e políticas, e <b>substitui</b> o que estiver nos campos. ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : ''}</p>
+        <p class="caption">Preencha à mão e clique em "Salvar conteúdo", ou use "Gerar textos com IA": ela escreve banner, história da marca, depoimentos-modelo, políticas${custom ? ' e a FAQ (a partir das objeções do perfil)' : ''}, e <b>substitui</b> o que estiver nos campos. ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : ''}</p>
         <div><label class="label">Título do banner (hero)</label><input class="input" name="heroTitulo" value="${esc(c.heroTitulo)}"></div>
         <div><label class="label">Subtítulo</label><input class="input" name="heroSubtitulo" value="${esc(c.heroSubtitulo)}"></div>
         <div><label class="label">Texto do botão do banner</label><input class="input" name="heroCta" value="${esc(c.heroCta)}"></div>
@@ -75,6 +102,12 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
             <div><label class="label">WhatsApp (com DDD)</label><input class="input" name="whatsapp" value="${esc(cfg.whatsapp)}" placeholder="5511999999999"></div>` : ''}
           <div><label class="label">Depoimentos escritos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => d.origem !== 'criativo').map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
             <p class="hint">Use depoimentos reais. Os gerados por IA são apenas modelos. Os depoimentos puxados de criativos (abaixo) não aparecem aqui — são geridos à parte.</p></div>
+          ${custom ? `<div><label class="label">Perguntas frequentes (uma por linha: pergunta | resposta)</label><textarea class="input" rows="4" name="faq" placeholder="E se não servir? | A troca é grátis em até 30 dias.">${esc(faqParaTexto(c.faq || []))}</textarea>
+            <p class="hint">Vira a seção "Perguntas frequentes" do site. Pergunta sem resposta não aparece. ${objecoesDe(cliente).length ? `Base: as ${objecoesDe(cliente).length} objeção(ões) do perfil de marca.` : 'Sem objeções no perfil de marca: com o campo vazio, a seção não aparece no site.'}</p>
+            ${objecoesDe(cliente).length ? `<div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ia btn-sm" data-faq-ia title="Só a FAQ: não mexe no resto do conteúdo"><i class="fa-solid fa-wand-magic-sparkles"></i> Escrever FAQ com IA a partir das objeções</button>
+              <button type="button" class="btn-ghost btn-sm" data-faq-manual title="Coloca as objeções como perguntas; você escreve as respostas">Montar perguntas das objeções (sem IA)</button></div>` : ''}</div>
+          <div><label class="label">Formas de pagamento no selo "Compra segura"</label><div class="flex flex-wrap gap-3 text-sm">${FORMAS_PAGAMENTO.map(([k, t]) => `<label class="flex items-center gap-1"><input type="checkbox" name="pag_${k}" ${(cfg.pagamentos || PAGAMENTOS_PADRAO).includes(k) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
+            <p class="hint">Aparece perto do botão "Finalizar compra", com ícones genéricos (sem logotipo de bandeira). Marque só o que o checkout do cliente aceita de verdade.</p></div>` : ''}
           <div><label class="label">Newsletter — título</label><input class="input" name="newsletterTitulo" value="${esc(c.newsletterTitulo)}"></div>
           <div><label class="label">Política de trocas</label><textarea class="input" rows="2" name="trocas">${esc(c.politicas?.trocas)}</textarea></div>
           <div><label class="label">Política de envio</label><textarea class="input" rows="2" name="envio">${esc(c.politicas?.envio)}</textarea></div>
@@ -128,21 +161,26 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const dep = [...escritos, ...(c.depoimentos || []).filter((d) => d.origem === 'criativo')];
     return {
       conteudo: { ...c, heroTitulo: v.heroTitulo, heroSubtitulo: v.heroSubtitulo, heroCta: v.heroCta, storytelling: v.storytelling, depoimentos: dep,
-        newsletterTitulo: v.newsletterTitulo, politicas: { trocas: v.trocas, envio: v.envio, privacidade: v.privacidade } },
-      config: { ...cfg, ...(custom ? { corPrimaria: v.corPrimaria, corFundo: v.corFundo, whatsapp: v.whatsapp } : {}) },
+        newsletterTitulo: v.newsletterTitulo, politicas: { trocas: v.trocas, envio: v.envio, privacidade: v.privacidade }, ...(custom ? { faq: textoParaFaq(v.faq) } : {}) },
+      config: { ...cfg, ...(custom ? { corPrimaria: v.corPrimaria, corFundo: v.corFundo, whatsapp: v.whatsapp, pagamentos: FORMAS_PAGAMENTO.map(([k]) => k).filter((k) => $('#fc', root).elements['pag_' + k]?.checked) } : {}) },
     };
   };
   on(root, 'submit', '#fc', async (f, ev) => { ev.preventDefault(); await ocupado(f.querySelector('[type=submit]'), async () => { await salvarSite(lerConteudo()); toast('Conteúdo salvo.'); recarregar(); }); });
 
-  on(root, 'click', '[data-ia]', async (b) => {
-    await ocupado(b, async () => {
-      const r = await gerarConteudoSite({ cliente, produtos });
-      await salvarSite({ conteudo: { ...c, ...r, depoimentos: r.depoimentos || [] } });
-      toast('Textos gerados pela IA. Revise antes de exportar.'); recarregar();
-    });
+  on(root, 'click', '[data-ia]', (b) => gerarComIa(b));
+  montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: progressoSite(cliente, site, produtos) < 9 && !site.exportadoEm });
+  on(root, 'click', '[data-faq-manual]', () => {
+    const t = $('#fc [name=faq]', root);
+    t.value = [t.value.trim(), perguntasDasObjecoes(cliente)].filter(Boolean).join('\n');
+    toast('Perguntas colocadas. Escreva a resposta depois do | e clique em "Salvar conteúdo".', 'info');
   });
+  on(root, 'click', '[data-faq-ia]', (b) => ocupado(b, async () => {
+    const faq = await gerarFaqSite({ cliente, produtos, politicas: c.politicas || {} });
+    $('#fc [name=faq]', root).value = faqParaTexto(faq);
+    toast(`A IA escreveu ${faq.length} pergunta(s). Revise e clique em "Salvar conteúdo".`, 'info');
+  }));
 
-  const html = () => gerarSiteHTML({ cliente, produtos, conteudo: (site.conteudo || {}), config: (site.config || {}) });
+  const html = () => gerarSiteHTML({ cliente, produtos, conteudo: (site.conteudo || {}), config: (site.config || {}), url: site.linkPublicado || '' });
   on(root, 'click', '[data-baixar-site]', async () => {
     baixarTexto(`${slug(cliente.nome) || 'loja'}-index.html`, html(), 'text/html;charset=utf-8');
     await salvarSite({ exportadoEm: new Date().toISOString(), status: site.status === 'rascunho' ? 'pronto' : site.status }); recarregar();
@@ -189,7 +227,8 @@ function pacoteTexto(p) {
 async function manualCustom({ cliente, site, produtos, versao }) {
   const pdf = await criarPdf(`Manual de handoff — ${cliente.nome}`, `Site personalizado · versão ${versao} · gerado em ${new Date().toLocaleDateString('pt-BR')} · ${produtos.length} produto(s)`);
   pdf.secao('1. O que você recebeu')
-    .texto('Um arquivo index.html autocontido (HTML, CSS e JavaScript no mesmo arquivo) com: banner principal, categorias, mais vendidos, sale, catálogo, história da marca, depoimentos, newsletter, rodapé com políticas, botão flutuante de WhatsApp e carrinho que funciona no navegador do visitante.')
+    .texto('Um arquivo index.html autocontido (HTML, CSS e JavaScript no mesmo arquivo) com: banner principal, categorias, mais vendidos, sale, catálogo, história da marca, depoimentos, perguntas frequentes (quando há), newsletter, rodapé com políticas, botão flutuante de WhatsApp, carrinho que funciona no navegador do visitante, selo de compra segura perto do "Finalizar compra" e aviso de cookies (LGPD).')
+    .texto('Prévia de compartilhamento: o <head> já traz título, descrição e as tags Open Graph (og:title, og:description e og:image com a 1ª foto de produto hospedada online). É isso que aparece quando o link é enviado no WhatsApp/redes. Informe o link publicado na aba Site/Loja e baixe de novo para incluir og:url.')
     .texto('IMPORTANTE: o site NÃO processa pagamentos. O botão "Finalizar compra" chama a função window.checkoutHandler(itens), no fim do arquivo. É o ponto de encaixe onde você liga um checkout de terceiro (seção 3).');
   pdf.secao('2. Como publicar o site')
     .lista(['Abra o index.html no navegador e confira textos, preços, fotos e cores.', 'Troque os depoimentos-modelo por depoimentos reais e revise as políticas com um profissional (texto-base, sem valor jurídico).',
@@ -197,27 +236,33 @@ async function manualCustom({ cliente, site, produtos, versao }) {
       'Informe o link publicado na aba Site/Loja do app para registrar a entrega.'], true);
   pdf.secao('3. Ligando o checkout (escolha UMA opção)')
     .texto('Em todos os casos, o pagamento acontece na página segura do provedor. Nunca coloque chaves secretas dentro do index.html — ele é público.', { negrito: true });
-  pdf.texto('Opção A — Shopify Buy Button', { negrito: true }).lista(['Crie uma conta Shopify e cadastre os mesmos produtos (dá para usar o CSV do modo pacote).', 'Instale/ative o canal "Buy Button" no admin da Shopify.',
+  const pref = site.pagamentoPreferido;
+  if (pref && pref !== 'nao_sei') pdf.texto(`Forma de pagamento pretendida pelo cliente: ${(PAGAMENTOS_PRETENDIDOS.find(([k]) => k === pref) || [, pref])[1]}${pref === 'nativa' ? ' — no site personalizado não há checkout nativo; considere o modo pacote (Nuvemshop/Shopify) ou uma das opções abaixo.' : ' — essa opção vem primeiro abaixo.'}`);
+  const checkouts = [];
+  checkouts.push(['shopify', () => pdf.texto('Opção A — Shopify Buy Button', { negrito: true }).lista(['Crie uma conta Shopify e cadastre os mesmos produtos (dá para usar o CSV do modo pacote).', 'Instale/ative o canal "Buy Button" no admin da Shopify.',
     'Crie um Buy Button para cada produto (ou uma coleção) e copie o código gerado.', 'No index.html, cole o código do botão no ponto marcado como PONTO DE ENCAIXE DO CHECKOUT, ou faça o checkoutHandler redirecionar para a URL de checkout do produto.',
-    'Teste uma compra em modo de teste antes de divulgar.'], true);
-  pdf.texto('Opção B — Mercado Pago Checkout Pro', { negrito: true }).lista(['Crie uma conta de vendedor no Mercado Pago e uma aplicação em "Suas integrações" para obter as credenciais.',
+    'Teste uma compra em modo de teste antes de divulgar.'], true)]);
+  checkouts.push(['mercado_pago', () => pdf.texto('Opção B — Mercado Pago Checkout Pro', { negrito: true }).lista(['Crie uma conta de vendedor no Mercado Pago e uma aplicação em "Suas integrações" para obter as credenciais.',
     'Como a criação da "preferência de pagamento" exige o Access Token (SECRETO), ela precisa rodar em um servidor seu (ex.: função serverless). Nunca no navegador.', 'Esse servidor recebe os itens do carrinho, cria a preferência via API e devolve a URL (init_point).',
-    'No index.html, faça o window.checkoutHandler chamar seu servidor e redirecionar o cliente para o init_point.', 'Configure as URLs de retorno (sucesso/falha) e teste com usuários de teste do Mercado Pago.'], true);
-  pdf.texto('Opção C — Stripe Payment Links', { negrito: true }).lista(['Crie uma conta Stripe e, no Dashboard, crie um Payment Link para cada produto (preço fixo).', 'Copie a URL de cada Payment Link (algo como buy.stripe.com/...).',
-    'No index.html, associe cada produto ao seu link e faça o checkoutHandler redirecionar para ele. Payment Links não exigem servidor, mas atendem 1 produto por link (não o carrinho inteiro).', 'Para carrinho com vários itens, use Stripe Checkout Sessions em um servidor seu.', 'Teste com cartões de teste do Stripe antes de ativar o modo real.'], true);
+    'No index.html, faça o window.checkoutHandler chamar seu servidor e redirecionar o cliente para o init_point.', 'Configure as URLs de retorno (sucesso/falha) e teste com usuários de teste do Mercado Pago.'], true)]);
+  checkouts.push(['stripe', () => pdf.texto('Opção C — Stripe Payment Links', { negrito: true }).lista(['Crie uma conta Stripe e, no Dashboard, crie um Payment Link para cada produto (preço fixo).', 'Copie a URL de cada Payment Link (algo como buy.stripe.com/...).',
+    'No index.html, associe cada produto ao seu link e faça o checkoutHandler redirecionar para ele. Payment Links não exigem servidor, mas atendem 1 produto por link (não o carrinho inteiro).', 'Para carrinho com vários itens, use Stripe Checkout Sessions em um servidor seu.', 'Teste com cartões de teste do Stripe antes de ativar o modo real.'], true)]);
+  // A opção que o cliente pretende usar (pergunta "h") sai primeiro; as demais seguem na ordem de sempre.
+  [...checkouts.filter(([k]) => k === pref), ...checkouts.filter(([k]) => k !== pref)].forEach(([, escrever]) => escrever());
   const r = rastreamentoDe(cliente);
   pdf.secao('4. Pixel e rastreamento de conversão');
   if (r.metaPixelId || r.googleAdsId) {
     pdf.lista([
       ...(r.metaPixelId ? [`Pixel do Meta ${r.metaPixelId}: já instalado no <head> do index.html, com PageView em cada visita e InitiateCheckout no botão "Finalizar compra".`] : []),
       ...(r.googleAdsId ? [`Google Ads ${r.googleAdsId}: tag já instalada no <head>${r.googleAdsRotulo ? `, com a conversão ${r.googleAdsId}/${r.googleAdsRotulo} no botão "Finalizar compra"` : ', com o evento begin_checkout no botão "Finalizar compra" (para contar como conversão, cadastre o ID com o rótulo: AW-.../rótulo)'}.`] : []),
+      'LGPD: o Pixel e a tag só carregam depois que o visitante clica em "Aceitar" no aviso de cookies do site. Quem recusa não é rastreado — por isso os números do Meta/Google ficam um pouco abaixo das visitas reais.',
       'A compra (Purchase) acontece no checkout do provedor: ative lá a integração com o Pixel/Google Ads (Shopify, Mercado Pago e Stripe têm).',
       'Depois de publicar, confira no Gerenciador de Eventos do Meta (aba "Testar eventos") e no Google Ads (Conversões) se as visitas estão chegando.',
     ]);
   } else pdf.texto('Nenhum ID de Pixel/Google Ads cadastrado: o site foi gerado sem código de rastreamento. Para medir conversões, preencha em Editar cliente > Rastreamento e gere o site de novo.');
   pdf.secao('5. Newsletter e WhatsApp')
     .lista(['Newsletter: o formulário só mostra confirmação local. Ligue-o ao Mailchimp, Brevo ou ferramenta similar (embed/ação do formulário).', `WhatsApp: ${site.config?.whatsapp ? 'já configurado (' + site.config.whatsapp + ').' : 'informe o número em "Configurar loja" e gere o site de novo.'}`]);
-  pdf.secao('6. Checklist final').lista(['Fotos e preços conferidos', 'Depoimentos reais', 'Políticas revisadas', 'Checkout testado de ponta a ponta', 'Domínio e HTTPS funcionando', 'Pixel/analytics instalados (se houver)']);
+  pdf.secao('6. Checklist final').lista(['Fotos e preços conferidos', 'Depoimentos reais', 'Respostas da FAQ conferidas', 'Formas de pagamento do selo iguais às do checkout', 'Políticas revisadas', 'Checkout testado de ponta a ponta', 'Domínio e HTTPS funcionando', 'Pixel/analytics instalados (se houver)']);
   return pdf;
 }
 
@@ -225,6 +270,7 @@ async function manualPacote({ cliente, site, produtos, versao }) {
   const plat = nomePlat(site.plataforma);
   const pdf = await criarPdf(`Manual de handoff — ${cliente.nome}`, `Pacote ${plat} · versão ${versao} · gerado em ${new Date().toLocaleDateString('pt-BR')} · ${produtos.length} produto(s)`);
   pdf.secao('1. O que você recebeu').lista(['Catálogo de produtos em CSV, no formato de importação da ' + plat + '.', 'Banners e textos prontos (título, subtítulo, CTA e onde usar).', 'Briefing do tema: estilo, paleta, tipografia e seções da home.', 'Textos de página (sobre, FAQ) e descrições/SEO dos produtos, quando gerados.']);
+  if (site.pagamentoPreferido && site.pagamentoPreferido !== 'nao_sei') pdf.texto(`Forma de pagamento pretendida pelo cliente: ${(PAGAMENTOS_PRETENDIDOS.find(([k]) => k === site.pagamentoPreferido) || [, site.pagamentoPreferido])[1]}. Ative-a primeiro em "Configurando a loja" (meios de pagamento).`);
   if (site.plataforma === 'shopify') {
     pdf.secao('2. Importando o catálogo na Shopify').lista(['No admin, vá em Produtos > Importar e selecione o CSV.', 'Marque a opção de sobrescrever apenas se já existirem produtos com o mesmo Handle.', 'Revise a prévia da importação e conclua.',
       'Confira preços, variações e imagens (as imagens são baixadas das URLs do CSV; elas precisam estar acessíveis).', 'Ajuste estoque, peso e categoria de produto, que vão em branco.'], true);

@@ -1,6 +1,8 @@
 // Testes da prova social: criativo aprovado -> depoimento do site, preservando os depoimentos escritos à mão.
 import { describe, it, expect } from 'vitest';
-import { criativoParaDepoimento, mesclarDepoimentos } from './sites.js';
+import { criativoParaDepoimento, mesclarDepoimentos, faqParaTexto, textoParaFaq, perguntasDasObjecoes } from './sites.js';
+import { respostasSite, progressoSite, formatoAtual } from './perguntas-site.js';
+import { objecoesDe, normalizarFaq } from '../core/ia.js';
 
 const cliente = { id: 'cli1', nome: 'Loja da Ana' };
 
@@ -41,5 +43,37 @@ describe('mesclarDepoimentos', () => {
   it('funciona com listas vazias', () => {
     expect(mesclarDepoimentos([], [])).toEqual([]);
     expect(mesclarDepoimentos(undefined, [{ nome: 'x', texto: 'y' }])).toHaveLength(1);
+  });
+});
+
+describe('FAQ no formulário', () => {
+  it('ida e volta texto <-> lista', () => {
+    const faq = [{ p: 'E se não servir?', r: 'Troca grátis | sem custo' }];
+    expect(textoParaFaq(faqParaTexto(faq))).toEqual(faq);
+  });
+  it('objeções viram perguntas com resposta em branco (sem IA)', () => {
+    const c = { marca: { objecoes: '- demora pra chegar\nE se não servir?;preço alto' } };
+    expect(objecoesDe(c)).toEqual(['demora pra chegar', 'E se não servir?', 'preço alto']);
+    expect(perguntasDasObjecoes(c)).toBe('Demora pra chegar? | \nE se não servir? | \nPreço alto? | ');
+    expect(perguntasDasObjecoes({ marca: {} })).toBe('');
+  });
+  it('normalizarFaq aceita pergunta/resposta por extenso e descarta incompletos', () => {
+    expect(normalizarFaq([{ pergunta: 'a', resposta: 'b' }, { p: 'c' }])).toEqual([{ p: 'a', r: 'b' }]);
+  });
+});
+
+describe('Perguntas para montar o site', () => {
+  it('conta as 9 respostas a partir dos dados reais', () => {
+    expect(progressoSite({ marca: {} }, null, [])).toBe(0);
+    const cli = { siteReferencia: 'https://x.com', marca: { tomDeVoz: 'premium', usp: 'u', objecoes: 'o', provasSociais: 'p' }, rastreamento: { metaPixelId: '123456789' } };
+    const site = { modo: 'custom', pagamentoPreferido: 'stripe' };
+    expect(Object.values(respostasSite(cli, site, [{ id: 'p' }])).every(Boolean)).toBe(true);
+    expect(progressoSite(cli, site, [{ id: 'p' }])).toBe(9);
+  });
+  it('"ainda não tem pixel" conta como respondida; o formato vem do modo/plataforma', () => {
+    expect(respostasSite({ marca: {} }, { semPixel: true }, []).pixel).toBe(true);
+    expect(formatoAtual({ modo: 'pacote_plataforma', plataforma: 'shopify' })).toBe('shopify');
+    expect(formatoAtual({ modo: 'custom' })).toBe('custom');
+    expect(formatoAtual(null)).toBe('');
   });
 });

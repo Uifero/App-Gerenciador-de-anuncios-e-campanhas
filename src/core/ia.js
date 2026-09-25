@@ -448,9 +448,30 @@ export function textoPlano(d) {
 export async function gerarConteudoSite({ cliente, produtos }) {
   const system = 'Você é copywriter de e-commerce.';
   const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.
-Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": [{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais),"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}]}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": [{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais),"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)})}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
-  return textoPlano(d);
+  return { ...textoPlano(d), faq: objecoesDe(cliente).length ? normalizarFaq(d?.faq) : [] };
+}
+
+// ---------- FAQ do site (a partir das objeções do perfil de marca) ----------
+/** Objeções cadastradas no perfil de marca, uma por linha (ou separadas por ;). */
+export const objecoesDe = (cliente) => String(cliente?.marca?.objecoes || '').split(/[\n;]+/).map((s) => s.replace(/^[-•*\d.)\s]+/, '').trim()).filter(Boolean);
+const INSTRUCAO_FAQ = (cliente) => (objecoesDe(cliente).length
+  ? `perguntas frequentes: UMA por objeção de venda do perfil (${objecoesDe(cliente).map((o) => `"${o}"`).join('; ')}), escrita como o cliente final perguntaria, e a resposta curta e honesta usando SÓ fatos do perfil de marca, dos produtos e das políticas — sem inventar prazo, garantia ou número; se faltar o fato, responda de forma geral e sugira falar no WhatsApp`
+  : 'o perfil não tem objeções cadastradas: devolva []');
+/** Aceita {p,r} ou {pergunta,resposta}; descarta itens incompletos. */
+export const normalizarFaq = (faq) => (Array.isArray(faq) ? faq : []).map((f) => ({ p: String(f?.p || f?.pergunta || '').trim(), r: String(f?.r || f?.resposta || '').trim() })).filter((f) => f.p && f.r);
+
+/** Só a FAQ (sem reescrever o resto do conteúdo do site). Sem objeções no perfil: [] sem chamar a IA. */
+export async function gerarFaqSite({ cliente, produtos = [], politicas = {} }) {
+  if (!objecoesDe(cliente).length) return [];
+  const system = 'Você escreve a seção de perguntas frequentes de lojas online.';
+  const pedido = `Produtos: ${produtos.map((p) => `${p.nome}${p.preco ? ' (R$ ' + p.preco + ')' : ''}`).join(', ') || 'a definir'}.
+Políticas da loja: trocas: ${politicas.trocas || 'não informada'}; envio: ${politicas.envio || 'não informada'}.
+Escreva as ${INSTRUCAO_FAQ(cliente)}.
+Saída: array JSON de {"p","r"}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'faq', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
+  return normalizarFaq(Array.isArray(dados) ? dados : dados?.faq);
 }
 
 export async function gerarTextosPacote({ cliente, produtos, plataforma }) {
