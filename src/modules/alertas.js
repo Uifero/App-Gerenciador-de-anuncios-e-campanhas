@@ -12,7 +12,7 @@ const n2 = (v) => Number(v).toFixed(2).replace('.', ',');
 export function resumoCliente(c, d, cfg) {
   const crs = d.criativos.filter((x) => x.clienteId === c.id);
   const rs = d.resultados.filter((x) => x.clienteId === c.id);
-  const cps = d.campanhas.filter((x) => x.clienteId === c.id);
+  const cps = d.campanhas.filter((x) => x.clienteId === c.id && x.status !== 'rascunho'); // rascunho de estrutura ainda não é campanha
   const site = d.sites.find((x) => x.clienteId === c.id) || null;
   return {
     sem: semaforo(rs, c.metas, cfg),

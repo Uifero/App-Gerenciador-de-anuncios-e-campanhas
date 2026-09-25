@@ -45,3 +45,30 @@
 .dark .card, .dark .input, .dark .btn-ghost, .dark .btn-danger, .dark .bg-white { background-color: #111a2e; }
 .dark .text-indigo-600 { color: #a5b4fc; }
 .dark ::placeholder { color: #64748b; }
+
+/* ===== Diagrama da campanha (modules/campanhas.js diagramaHtml) =====
+   Árvore campanha -> conjuntos -> criativos só com bordas: cada ramo desenha o traço vertical que sobe até a barra
+   horizontal, e a barra é a soma dos ::after de cada ramo (o primeiro/último cortam a metade de fora). */
+.arvore { --linha: #94a3b8; }
+.arvore-topo { position: relative; margin-bottom: 1rem; }
+.arvore-topo::after { content: ''; position: absolute; left: 50%; bottom: calc(-1rem - 2px); height: 1rem; border-left: 2px solid var(--linha); }
+.arvore-ramos { display: flex; gap: .75rem; overflow-x: auto; padding-bottom: .25rem; }
+.arvore-ramo { position: relative; flex: 1 1 0; min-width: 12.5rem; padding-top: 1rem; }
+.arvore-ramo::before { content: ''; position: absolute; top: 0; left: 50%; height: 1rem; border-left: 2px solid var(--linha); }
+.arvore-ramo::after { content: ''; position: absolute; top: 0; left: -.375rem; right: -.375rem; border-top: 2px solid var(--linha); }
+.arvore-ramo:first-child::after { left: 50%; }
+.arvore-ramo:last-child::after { right: 50%; }
+.arvore-ramo:only-child::after { display: none; }
+.arvore-folhas { margin-left: .75rem; padding-left: .75rem; border-left: 2px solid var(--linha); padding-top: .5rem; display: flex; flex-direction: column; gap: .5rem; }
+.arvore-criativo { position: relative; }
+.arvore-criativo::before { content: ''; position: absolute; left: calc(-.75rem - 2px); top: 1.25rem; width: .75rem; border-top: 2px solid var(--linha); }
+/* Celular: conjuntos um embaixo do outro, ligados por uma linha à esquerda. */
+@media (max-width: 639px) {
+  .arvore-ramos { flex-direction: column; overflow: visible; margin-left: 1rem; padding-left: .75rem; border-left: 2px solid var(--linha); }
+  .arvore-ramo { min-width: 0; padding-top: 0; }
+  .arvore-ramo::before { left: calc(-.75rem - 2px); top: 1.25rem; width: .75rem; height: 0; border-left: 0; border-top: 2px solid var(--linha); }
+  .arvore-ramo::after { display: none; }
+  .arvore-topo::after { left: 1rem; }
+  .arvore-topo { margin-bottom: 0; }
+}
+.dark .arvore { --linha: #475569; }

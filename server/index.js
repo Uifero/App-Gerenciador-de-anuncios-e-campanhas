@@ -47,7 +47,8 @@ export const TAREFAS = {
   checklist:   { modelo: MODELO_LEVE,     max: 1200 },
   imagem:      { modelo: MODELO_LEVE,     max: 1800 },
   criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium' },
-  campanha:    { modelo: MODELO_COMPLEXO, max: 5000,  effort: 'medium' },
+  campanha:    { modelo: MODELO_COMPLEXO, max: 7000,  effort: 'medium' },
+  discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium' }, // chat do rascunho de campanha
   referencias: { modelo: MODELO_COMPLEXO, max: 10000, effort: 'medium', web: true },
   analise:     { modelo: MODELO_COMPLEXO, max: 2500,  effort: 'low' },
   site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low' },

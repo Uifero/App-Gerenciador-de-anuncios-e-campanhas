@@ -5,14 +5,14 @@ import { db, COL } from '../core/storage.js';
 /** Contagens do que pode ser copiado (para mostrar no aviso do formulário). */
 export async function resumoBase(baseId) {
   const f = { clienteId: baseId };
-  const [hooks, campanhas] = await Promise.all([db.listar(COL.hooks, f), db.listar(COL.campanhas, f)]);
+  const [hooks, campanhas] = await Promise.all([db.listar(COL.hooks, f), db.listar(COL.campanhas, f).then((l) => l.filter((c) => c.status !== 'rascunho'))]);
   return { hooks: hooks.length, campanhas: campanhas.length };
 }
 
 /** Copia hooks e/ou estruturas de campanha do cliente base para o novo. */
 export async function copiarEstrutura(baseId, novo, { hooks = true, campanhas = true } = {}) {
   const f = { clienteId: baseId };
-  const [hs, cs] = await Promise.all([hooks ? db.listar(COL.hooks, f) : [], campanhas ? db.listar(COL.campanhas, f) : []]);
+  const [hs, cs] = await Promise.all([hooks ? db.listar(COL.hooks, f) : [], campanhas ? db.listar(COL.campanhas, f).then((l) => l.filter((c) => c.status !== 'rascunho')) : []]);
   // Gravações em paralelo: com dezenas de itens, uma a uma ficaria lento.
   await Promise.all([
     ...hs.map((h) => db.criar(COL.hooks, {
@@ -22,6 +22,7 @@ export async function copiarEstrutura(baseId, novo, { hooks = true, campanhas = 
     ...cs.map((c) => db.criar(COL.campanhas, {
       clienteId: novo.id, nome: c.nome, objetivo: c.objetivo || '', orcamentoDiario: c.orcamentoDiario ?? null, orcamentoNota: c.orcamentoNota || '',
       resumo: c.resumo || '', publicos: c.publicos || [], estruturaTeste: c.estruturaTeste || {}, checklistMeta: c.checklistMeta || [],
+      conjuntos: (c.conjuntos || []).map((k) => ({ ...k, criativos: [] })), // diagrama sem os criativos do cliente antigo
       origem: c.origem || 'manual', status: 'planejada', criativos: [], // sem criativos vinculados nem datas de início
     })),
   ]);

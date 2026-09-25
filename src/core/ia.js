@@ -227,50 +227,187 @@ function resumirPadroesCampanha(padroes) {
     `${campo}: ` + l.slice(0, 3).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio?.toFixed(2) ?? 'n/d'}, ${g.amostras} amostra(s))`).join('; '));
   return linhas.length ? linhas.join('\n') : '(nenhum com amostra suficiente ainda)';
 }
+const temPadrao = (p) => !!p && Object.values(p).some((l) => l?.length);
 
 /**
- * `criativosAprovados` = criativos com status aprovado/em_uso/pausado, disponíveis pra usar na campanha (cada um
- * com id/nome/angulo/framework/formato). `padroesLocais`/`padroesNicho` vêm do motor de Insights (insights.js) —
- * a IA só interpreta esses números já calculados, não inventa um padrão novo. `referenciasFortes` = referências
- * de mercado salvas com sinal forte, pra embasar a estrutura e a seleção.
+ * Bloco de contexto comum à geração e à discussão da estrutura: criativos aprovados, padrões de desempenho e referências.
+ * Diz explicitamente QUAIS fontes de dado existem, para a IA não inventar justificativa quando não há base.
  */
-export async function gerarEstruturaCampanha({ cliente, criativos, criativosAprovados = [], objetivo, orcamentoDiario, padroesLocais, padroesNicho, referenciasFortes = [] }) {
-  const system = 'Você é gestor de tráfego Meta Ads sênior. Estrutura testes enxutos e realistas, e escolhe os criativos certos pra cada conjunto com base em dados reais — nunca por preferência estética.';
+function contextoCampanha({ cliente, criativosAprovados = [], padroesLocais, padroesNicho, referenciasFortes = [], qtdResultados = 0, resultadosPorCriativo = [] }) {
   const listaCriativos = criativosAprovados.map((c) => `- id "${c.id}": "${c.nome}" — ângulo ${c.angulo || 'n/d'}, framework ${c.framework || 'n/d'}, formato ${c.formato || 'n/d'}`).join('\n') || '(nenhum criativo aprovado ainda)';
-  const pedido = `Monte a estrutura de campanha ${cliente.estagio === 'rodando' ? 'de ESCALA/otimização usando o histórico do cliente' : 'de PRIMEIRO TESTE (cliente novo, sem histórico)'}.
-Objetivo: ${objetivo || 'vendas'}. Orçamento diário disponível: ${orcamentoDiario ? 'R$ ' + orcamentoDiario : 'não informado — sugira uma faixa coerente e diga que é estimativa'}.
-Criativos disponíveis (contexto geral): ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
+  return `Estágio do cliente: ${cliente.estagio === 'rodando' ? 'RODANDO (já anuncia)' : 'NOVO (primeiro teste)'}.
 
-CRIATIVOS APROVADOS DISPONÍVEIS PRA USAR NA CAMPANHA (escolha entre estes, pelo id):
+CRIATIVOS APROVADOS DISPONÍVEIS (só estes podem ser usados, pelo id):
 ${listaCriativos}
 
-PADRÕES DE DESEMPENHO JÁ DETECTADOS (calculados sem IA, direto dos resultados registrados — média ponderada pelo gasto; USE para embasar a seleção, não invente outro padrão):
+FONTES DE DADO DISPONÍVEIS (use só estas; se uma está vazia, NÃO a cite como base):
+- Histórico de resultado deste cliente: ${qtdResultados} registro(s) de resultado${temPadrao(padroesLocais) ? '' : ' — sem padrão calculável ainda (poucas amostras)'}.
+- Padrão de outros clientes do mesmo nicho: ${temPadrao(padroesNicho) ? 'disponível (abaixo)' : 'NENHUM'}.
+- Referências de mercado salvas com sinal forte: ${referenciasFortes.length}.
+
+PADRÕES DE DESEMPENHO JÁ DETECTADOS (calculados sem IA, média ponderada pelo gasto; use para embasar, não invente outro padrão):
 Deste cliente:
 ${resumirPadroesCampanha(padroesLocais)}
 De clientes de nicho semelhante (sem identificar quem):
 ${resumirPadroesCampanha(padroesNicho)}
 
-Referências de mercado salvas de sinal forte: ${referenciasFortes.map((r) => `"${r.titulo || 'referência'}" (ângulo ${r.analise?.angulo || 'n/d'})`).join('; ') || '(nenhuma)'}.
+RESULTADOS BRUTOS DESTE CLIENTE POR CRIATIVO (somados pelo app; com poucos registros são INDÍCIO, não prova — cite-os assim, com o número de registros):
+${resultadosPorCriativo.map((r) => `- "${r.nome}": ${r.registros} registro(s), gasto R$ ${r.gasto.toFixed(2)}, CPA ${r.cpa != null ? "R$ " + r.cpa.toFixed(2) : "n/d"}, ROAS ${r.roas != null ? r.roas.toFixed(2) + 'x' : 'n/d'}`).join('\n') || '(nenhum)'}
 
-TAREFA EXTRA — seleção de criativos: escolha, entre os "criativos aprovados disponíveis" acima, quais usar nesta campanha, priorizando os que batem com os padrões de melhor desempenho. Para cada um escolhido, dê uma justificativa curta (1 frase, citando o dado real que embasou — ex.: "ROAS médio 4.2x nos últimos resultados deste cliente" ou "ângulo ainda não testado por este cliente mas comprovado em clientes do nicho"). Se NÃO houver criativos aprovados suficientes pra preencher a estrutura sugerida (ex.: menos de 1 por público/conjunto), NÃO force uma seleção fraca — deixe "selecaoCriativos" só com os que realmente valem a pena e explique em "avisoCriativos" o que falta produzir (ângulo/formato). Se não faltar nada, "avisoCriativos" é null.
+Referências de mercado de sinal forte: ${referenciasFortes.map((r) => `"${r.titulo || 'referência'}" (ângulo ${r.analise?.angulo || 'n/d'})`).join('; ') || '(nenhuma)'}.`;
+}
 
-Saída em JSON: {"resumo": string, "publicos": [{"nome","descricao","tipo"}], "orcamento": {"diario": number, "distribuicao": string}, "estruturaTeste": {"campanhas": number, "conjuntos": string, "criativosPorConjunto": string, "duracaoDias": number, "criterioDecisao": string}, "checklistMeta": [string], "selecaoCriativos": [{"criativoId","criativoNome","motivo"}], "avisoCriativos": string|null}.
-"checklistMeta" = passos práticos, na ordem, para configurar no Gerenciador de Anúncios do Meta. Escreva os textos em português do Brasil (é para o gestor de tráfego) e use EXATAMENTE as chaves JSON pedidas, sem traduzi-las. ${SO_JSON}`;
+/** Formato JSON da estrutura (igual na geração e no ajuste pelo chat). */
+const FORMATO_ESTRUTURA = `{"resumo": string,
+ "conjuntos": [{"nome": string, "publico": {"nome","descricao","tipo"}, "orcamentoDiario": number, "objetivo": string (o que este conjunto testa/entrega), "criativos": [{"criativoId","criativoNome","motivo"}]}],
+ "orcamento": {"diario": number, "distribuicao": string},
+ "estruturaTeste": {"campanhas": number, "conjuntos": string, "criativosPorConjunto": string, "duracaoDias": number, "criterioDecisao": string},
+ "raciocinio": {
+   "quantidadeConjuntos": string (por que ESSA quantidade de conjuntos, nem mais nem menos, para o estágio e orçamento deste cliente),
+   "publicos": [{"conjunto": string, "porque": string, "base": "historico_cliente" | "nicho" | "referencia" | "sem_dados"}] (um por conjunto; "porque" cita o dado exato em que se baseou),
+   "divisaoOrcamento": string (por que essa divisão e não uma divisão igual — ou, se for igual, por quê),
+   "objetivoEstrutura": string (o que esta estrutura tenta provar ou resolver),
+   "dadosInsuficientes": [string] (cada decisão tomada SEM dado suficiente, dita com franqueza; [] se não houver)
+ },
+ "checklistMeta": [string], "avisoCriativos": string|null}`;
+
+const REGRAS_ESTRUTURA = `REGRAS DA ESTRUTURA:
+- Cada criativo escolhido vai DENTRO do conjunto em que será usado, com "motivo" de 1 frase citando o dado real (ex.: "ROAS médio 4.2x neste cliente", "ângulo comprovado em clientes do nicho", ou "sem dado de performance ainda — escolhido por ser o único de formato vídeo"). O mesmo criativo pode aparecer em mais de um conjunto.
+- A soma de "orcamentoDiario" dos conjuntos deve bater com "orcamento.diario".
+- O id de um criativo só vai no campo "criativoId". Em TODO texto (resposta, motivo, raciocínio, checklist) cite o criativo pelo NOME entre aspas, nunca pelo id.
+- HONESTIDADE: quando não houver dado para uma decisão, diga isso claramente no raciocínio (ex.: "orçamento dividido igualmente porque ainda não há dado de performance deste cliente para pesar a divisão de outro jeito") e use "base": "sem_dados". Nunca cite histórico, nicho ou referência que não esteja nas fontes disponíveis.
+- Se NÃO houver criativos aprovados suficientes (menos de 1 por conjunto), não force uma escolha fraca: deixe o conjunto só com os que valem a pena e explique em "avisoCriativos" o que falta produzir (ângulo/formato). Senão, "avisoCriativos" é null.
+- "checklistMeta" = passos práticos, na ordem, para configurar no Gerenciador de Anúncios do Meta ESTA estrutura (nome e orçamento de cada conjunto, público, criativos de cada um).
+- Textos em português do Brasil (é para o gestor de tráfego). Use EXATAMENTE as chaves JSON pedidas, sem traduzi-las.`;
+
+/**
+ * `criativosAprovados` = criativos com status aprovado/em_uso/pausado (id/nome/angulo/framework/formato).
+ * `padroesLocais`/`padroesNicho` vêm do motor de Insights (insights.js) — a IA só interpreta esses números.
+ * `qtdResultados` = quantos resultados o cliente tem registrados (para a IA saber se há histórico de verdade).
+ */
+export async function gerarEstruturaCampanha({ cliente, criativos = [], criativosAprovados = [], objetivo, orcamentoDiario, padroesLocais, padroesNicho, referenciasFortes = [], qtdResultados = 0, resultadosPorCriativo = [] }) {
+  const system = 'Você é gestor de tráfego Meta Ads sênior. Estrutura testes enxutos e realistas, escolhe os criativos certos pra cada conjunto com base em dados reais — nunca por preferência estética — e explica cada decisão com franqueza, admitindo quando não há dado.';
+  const pedido = `Monte a estrutura de campanha ${cliente.estagio === 'rodando' ? 'de ESCALA/otimização usando o histórico do cliente' : 'de PRIMEIRO TESTE (cliente novo, sem histórico)'}.
+Objetivo: ${objetivo || 'vendas'}. Orçamento diário disponível: ${orcamentoDiario ? 'R$ ' + orcamentoDiario : 'não informado — sugira uma faixa coerente e diga que é estimativa'}.
+Criativos existentes (contexto geral): ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
+
+${contextoCampanha({ cliente, criativosAprovados, padroesLocais, padroesNicho, referenciasFortes, qtdResultados, resultadosPorCriativo })}
+
+${REGRAS_ESTRUTURA}
+
+Saída em JSON: ${FORMATO_ESTRUTURA}
+${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'campanha', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return normalizarCampanha(dados);
 }
 
+/** Estrutura atual do rascunho em forma compacta para mandar de volta à IA na discussão. */
+function estruturaParaPrompt(c) {
+  return JSON.stringify({
+    resumo: c.resumo, orcamento: { diario: c.orcamentoDiario, distribuicao: c.orcamentoNota }, estruturaTeste: c.estruturaTeste,
+    conjuntos: (c.conjuntos || []).map((k) => ({ nome: k.nome, publico: k.publico, orcamentoDiario: k.orcamentoDiario, objetivo: k.objetivo, criativos: k.criativos })),
+    raciocinio: c.raciocinio, checklistMeta: c.checklistMeta, avisoCriativos: c.avisoCriativos,
+  });
+}
+
+/**
+ * Chat "Discutir esta estrutura": a IA ou só explica (tipo "explicacao", estrutura null) ou devolve a estrutura
+ * COMPLETA ajustada (tipo "ajuste"). `conversa` = [{ role: 'user'|'assistant', content }] das mensagens anteriores.
+ */
+export async function discutirEstruturaCampanha({ cliente, campanha, mensagem, conversa = [], criativosAprovados = [], padroesLocais, padroesNicho, referenciasFortes = [], qtdResultados = 0, resultadosPorCriativo = [] }) {
+  const system = 'Você é gestor de tráfego Meta Ads sênior discutindo com o gestor uma estrutura de campanha em RASCUNHO. Responda com franqueza e com base nos dados; se o pedido for uma má ideia para o orçamento/estágio, diga, mas faça o que foi pedido quando for um ajuste explícito.';
+  const historico = conversa.slice(-12).map((t) => `${t.role === 'user' ? 'GESTOR' : 'VOCÊ'}: ${t.content}`).join('\n') || '(início da conversa)';
+  const pedido = `${contextoCampanha({ cliente, criativosAprovados, padroesLocais, padroesNicho, referenciasFortes, qtdResultados, resultadosPorCriativo })}
+
+ESTRUTURA ATUAL DO RASCUNHO (versão ${campanha.versaoRascunho || 1}):
+${estruturaParaPrompt(campanha)}
+
+CONVERSA ATÉ AGORA:
+${historico}
+
+NOVA MENSAGEM DO GESTOR: ${mensagem}
+
+Decida:
+- Se é só pergunta/pedido de explicação ("por quê...?", "vale a pena...?"): responda e NÃO mude nada → "tipo": "explicacao", "estrutura": null.
+- Se pede mudança (trocar criativo, mudar público, orçamento, número de conjuntos...): aplique e devolva a estrutura COMPLETA nova (não só o trecho), com o raciocínio e o checklist atualizados → "tipo": "ajuste". Na "resposta", diga em 1-3 frases o que mudou e o impacto esperado.
+
+${REGRAS_ESTRUTURA}
+
+Saída em JSON: {"tipo": "explicacao" | "ajuste", "resposta": string, "estrutura": ${FORMATO_ESTRUTURA} | null}
+${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'discussao_campanha', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
+  return normalizarDiscussao(dados);
+}
+
+/** Resposta do chat: só vira "ajuste" se trouxer de fato uma estrutura com conjuntos (senão é tratada como explicação). */
+export function normalizarDiscussao(d = {}) {
+  const resposta = String(pegar(d, 'resposta', 'respuesta', 'explicacao', 'mensagem') || '').trim() || 'Sem resposta em texto.';
+  const bruta = d.estrutura || d.estructura || null;
+  const estrutura = bruta && typeof bruta === 'object' ? normalizarCampanha(bruta) : null;
+  const ajuste = String(d.tipo || '').toLowerCase().startsWith('ajuste') && estrutura && estrutura.conjuntos.length > 0;
+  return { tipo: ajuste ? 'ajuste' : 'explicacao', resposta, estrutura: ajuste ? estrutura : null };
+}
+
 /** Aceita variações comuns de chave (o modelo às vezes escreve "nombre"/"name") e garante a forma que o app espera. */
 const pegar = (o, ...chaves) => { for (const k of chaves) if (o?.[k] != null && o[k] !== '') return o[k]; return ''; };
+const numero = (v) => { const n = Number(String(v ?? '').replace(',', '.').replace(/[^\d.]/g, '')); return Number.isFinite(n) && n > 0 ? n : null; };
+const lista = (v) => (Array.isArray(v) ? v : []);
+const BASES = ['historico_cliente', 'nicho', 'referencia', 'sem_dados'];
+
 export function normalizarCampanha(d = {}) {
   const t = d.estruturaTeste || d.estructuraTest || d.estrutura_teste || {};
+  const orc = d.orcamento || d.presupuesto || {};
+  const diario = orc.diario ?? null;
+  const normCriativo = (s) => ({ criativoId: String(pegar(s, 'criativoId', 'creativoId', 'id')), criativoNome: pegar(s, 'criativoNome', 'creativoNome', 'nome'), motivo: pegar(s, 'motivo', 'justificativa', 'razon') });
+  const normPublico = (p) => ({ nome: pegar(p, 'nome', 'nombre', 'name', 'titulo'), descricao: pegar(p, 'descricao', 'descripcion', 'descripción', 'description'), tipo: pegar(p, 'tipo', 'type') });
+
+  let conjuntos = lista(d.conjuntos || d.conjuntosAnuncio || d.adsets).map((k, i) => {
+    const pub = typeof k.publico === 'string' ? { nome: k.publico } : (k.publico || k.público || k.audiencia || {});
+    return {
+      nome: pegar(k, 'nome', 'nombre', 'name') || `Conjunto ${i + 1}`,
+      publico: normPublico(pub),
+      orcamentoDiario: numero(pegar(k, 'orcamentoDiario', 'presupuestoDiario', 'orcamento')),
+      objetivo: pegar(k, 'objetivo', 'objetivoTeste', 'meta'),
+      criativos: lista(k.criativos || k.creativos).map(normCriativo).filter((s) => s.criativoId),
+    };
+  });
+  // Divisão do orçamento: conjunto sem valor recebe a parte igual do que sobrou (marcado para a tela avisar).
+  const semValor = conjuntos.filter((k) => k.orcamentoDiario == null);
+  const total = numero(diario);
+  if (semValor.length && total) {
+    const resto = Math.max(0, total - conjuntos.reduce((s, k) => s + (k.orcamentoDiario || 0), 0));
+    const parte = Math.round((resto / semValor.length) * 100) / 100;
+    semValor.forEach((k) => { k.orcamentoDiario = parte || null; k.orcamentoEstimado = true; });
+  }
+
+  // Formato antigo (sem conjuntos): mantém públicos e seleção soltos, como antes.
+  const selecaoSolta = lista(d.selecaoCriativos || d.seleccionCreativos).map(normCriativo).filter((s) => s.criativoId);
+  const publicosSoltos = lista(d.publicos || d.públicos || d.audiencias).map(normPublico).filter((p) => p.nome);
+
+  // Seleção plana (usada no detalhe/checklist antigos): um item por criativo, juntando os motivos de cada conjunto.
+  const selecao = [];
+  conjuntos.forEach((k) => k.criativos.forEach((s) => {
+    const ja = selecao.find((x) => x.criativoId === s.criativoId);
+    if (!ja) selecao.push({ ...s });
+    else if (s.motivo && !ja.motivo.includes(s.motivo)) ja.motivo = `${ja.motivo} · ${s.motivo}`;
+  }));
+
+  const r = d.raciocinio || d.razonamiento || {};
   return {
     resumo: pegar(d, 'resumo', 'resumen', 'summary'),
-    publicos: (d.publicos || d.públicos || d.audiencias || []).map((p) => ({ nome: pegar(p, 'nome', 'nombre', 'name', 'titulo'), descricao: pegar(p, 'descricao', 'descripcion', 'descripción', 'description'), tipo: pegar(p, 'tipo', 'type') })).filter((p) => p.nome),
-    orcamento: { diario: d.orcamento?.diario ?? d.presupuesto?.diario ?? null, distribuicao: pegar(d.orcamento || d.presupuesto || {}, 'distribuicao', 'distribucion', 'distribución') },
+    conjuntos,
+    publicos: conjuntos.length ? conjuntos.map((k) => k.publico).filter((p) => p.nome) : publicosSoltos,
+    orcamento: { diario, distribuicao: pegar(orc, 'distribuicao', 'distribucion', 'distribución') },
     estruturaTeste: { campanhas: pegar(t, 'campanhas', 'campañas'), conjuntos: pegar(t, 'conjuntos'), criativosPorConjunto: pegar(t, 'criativosPorConjunto', 'creativosPorConjunto'), duracaoDias: pegar(t, 'duracaoDias', 'duracionDias', 'duracion'), criterioDecisao: pegar(t, 'criterioDecisao', 'criterioDecision', 'criterio') },
-    checklistMeta: d.checklistMeta || d.checklist || [],
-    selecaoCriativos: (d.selecaoCriativos || d.seleccionCreativos || []).map((s) => ({ criativoId: pegar(s, 'criativoId', 'creativoId', 'id'), criativoNome: pegar(s, 'criativoNome', 'creativoNome', 'nome'), motivo: pegar(s, 'motivo', 'justificativa', 'razon') })).filter((s) => s.criativoId),
+    raciocinio: {
+      quantidadeConjuntos: pegar(r, 'quantidadeConjuntos', 'cantidadConjuntos', 'quantidade'),
+      publicos: lista(r.publicos || r.públicos).map((p) => ({ conjunto: pegar(p, 'conjunto', 'nome'), porque: pegar(p, 'porque', 'motivo', 'razon'), base: BASES.includes(p.base) ? p.base : 'sem_dados' })).filter((p) => p.porque),
+      divisaoOrcamento: pegar(r, 'divisaoOrcamento', 'divisionPresupuesto', 'orcamento'),
+      objetivoEstrutura: pegar(r, 'objetivoEstrutura', 'objetivo', 'prova'),
+      dadosInsuficientes: lista(r.dadosInsuficientes || r.datosInsuficientes).map(String).filter(Boolean),
+    },
+    checklistMeta: lista(d.checklistMeta || d.checklist),
+    selecaoCriativos: conjuntos.length ? selecao : selecaoSolta,
     avisoCriativos: pegar(d, 'avisoCriativos', 'avisoCreativos') || null,
   };
 }

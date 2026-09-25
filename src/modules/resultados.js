@@ -27,7 +27,7 @@ export function versaoAtivaEm(criativo, dataISO) {
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const [resultados, criativos, campanhas] = await Promise.all([
-    db.listar(COL.resultados, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.campanhas, { clienteId: cliente.id }),
+    db.listar(COL.resultados, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.campanhas, { clienteId: cliente.id }).then((l) => l.filter((c) => c.status !== 'rascunho')),
   ]);
   const hoje = new Date().toISOString().slice(0, 10);
   const metas = cliente.metas || {};

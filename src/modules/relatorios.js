@@ -13,7 +13,7 @@ const nomeStatus = (v) => (STATUS_CRIATIVO.find(([k]) => k === v) || [, v])[1];
 export async function coletar(cliente) {
   const f = { clienteId: cliente.id };
   const [criativos, campanhas, resultados, referencias, produtos, sites] = await Promise.all([
-    db.listar(COL.criativos, f), db.listar(COL.campanhas, f), db.listar(COL.resultados, f), db.listar(COL.referencias, f), db.listar(COL.produtos, f), db.listar(COL.sites, f),
+    db.listar(COL.criativos, f), db.listar(COL.campanhas, f).then((l) => l.filter((c) => c.status !== 'rascunho')), db.listar(COL.resultados, f), db.listar(COL.referencias, f), db.listar(COL.produtos, f), db.listar(COL.sites, f),
   ]);
   const gasto = resultados.reduce((s, r) => s + (r.gasto || 0), 0);
   const melhor = [...resultados].filter((r) => r.roas).sort((a, b) => b.roas - a.roas)[0];
