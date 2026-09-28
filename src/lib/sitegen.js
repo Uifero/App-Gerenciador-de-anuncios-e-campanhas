@@ -2,6 +2,7 @@
 // NÃO processa pagamento: o botão de compra chama window.checkoutHandler(itens), ponto de encaixe para checkout de terceiro.
 import { esc } from '../core/ui.js';
 import { rastreamentoDe, codigoHead, codigoCheckout, CHAVE_CONSENTIMENTO, textoAvisoCookies } from './rastreamento.js';
+import { normalizarLayout, tituloBloco } from './site-blocos.js';
 
 /** Formas de pagamento que o selo "compra segura" pode mostrar (ícones genéricos desenhados aqui, sem logo de bandeira). */
 export const FORMAS_PAGAMENTO = [['cartao', 'Cartão de crédito'], ['pix', 'Pix'], ['boleto', 'Boleto']];
@@ -31,7 +32,10 @@ export function metaSeo({ cliente, produtos = [], conteudo: c = {}, url = '' }) 
 const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 const brl = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {}, url = '' }) {
+export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {}, url = '', layout: layoutBruto = null }) {
+  // Ordem, blocos ocultos, títulos, variações e imagens ("Ajustar este site", lib/site-blocos.js). Sem layout = padrão de sempre.
+  const L = normalizarLayout(layoutBruto || {});
+  const visivel = (k) => !L.ocultos.includes(k);
   const cor = cfg.corPrimaria || '#4f46e5';
   const rastro = rastreamentoDe(cliente); // Pixel do Meta / Google Ads / Hotjar / Tawk.to do cadastro (vazio = nenhum código)
   const pixel = codigoHead(rastro);
@@ -56,7 +60,26 @@ export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg
       ${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}
       ${Number(p.preco) ? `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>` : '<!-- sem preço cadastrado: sem botão de compra -->'}</article>`;
   };
-  const grade = (lista) => `<div class="grid">${lista.map(card).join('')}</div>`;
+  const grade = (lista, bloco) => { const n = L.variacoes[bloco]?.colunas; return `<div class="grid${n ? ` cols${n}` : ''}">${lista.map(card).join('')}</div>`; };
+  const deps = (c.depoimentos || []).filter((d) => !L.depoimentosOcultos.includes(d.texto));
+  const alturaHero = { curto: '40px', alto: '140px' }[L.variacoes.hero?.altura] || '';
+  const imgHero = L.imagens.hero?.url, imgMarca = L.imagens.marca?.url;
+
+  const destinoCta = visivel('vendidos') ? '#vendidos' : '#catalogo';
+  const blocoHTML = {
+    hero: () => `<div id="topo" class="hero"${alturaHero || imgHero ? ` style="${alturaHero ? `padding:${alturaHero} 0;` : ''}${imgHero ? `background:linear-gradient(#0008,#0008),url('${esc(imgHero)}') center/cover;` : ''}"` : ''}><div class="wrap"><h1>${esc(c.heroTitulo || cliente.nome)}</h1><p>${esc(c.heroSubtitulo || cliente.nicho)}</p><a href="${destinoCta}">${esc(c.heroCta || 'Ver produtos')}</a></div></div>`,
+    categorias: () => (categorias.length && visivel('catalogo') ? `<section id="categorias"><div class="wrap"><h2>${esc(tituloBloco(L, 'categorias'))}</h2><div class="cats"><button data-filtro="">Todas</button>${categorias.map((x) => `<button data-filtro="${esc(x)}">${esc(x)}</button>`).join('')}</div></div></section>` : ''),
+    vendidos: () => `<section id="vendidos" class="alt"><div class="wrap"><h2>${esc(tituloBloco(L, 'vendidos'))}</h2>${produtos.length ? grade(maisVendidos, 'vendidos') : '<p>Cadastre produtos para exibi-los aqui.</p>'}</div></section>`,
+    sale: () => (promo.length ? `<section id="sale"><div class="wrap"><h2>${esc(tituloBloco(L, 'sale'))}</h2>${grade(promo, 'sale')}</div></section>` : ''),
+    catalogo: () => `<section id="catalogo" class="${promo.length ? 'alt' : ''}"><div class="wrap"><h2>${esc(tituloBloco(L, 'catalogo'))}</h2><div id="catalogoGrade">${grade(produtos, 'catalogo')}</div></div></section>`,
+    marca: () => (c.storytelling ? `<section id="marca"><div class="wrap"><h2>${esc(tituloBloco(L, 'marca'))}</h2>${imgMarca ? `<img class="story-img" src="${esc(imgMarca)}" alt="${esc(cliente.nome)}" loading="lazy">` : ''}<div class="story">${esc(c.storytelling)}</div></div></section>` : '<span id="marca"></span>'),
+    depoimentos: () => (deps.length ? `<section class="alt"><div class="wrap"><h2>${esc(tituloBloco(L, 'depoimentos'))}</h2><div class="dep">${deps.map((d) => `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.nome)}" class="dep-midia" loading="lazy">`) : ''}“${esc(d.texto)}”<cite>— ${esc(d.nome)}</cite></blockquote>`).join('')}</div>
+<!-- ATENÇÃO: depoimentos escritos à mão (sem foto/vídeo anexado) podem ser MODELOS — troque por depoimentos reais antes de publicar. Os que têm foto/vídeo vieram de criativos aprovados no app. --></div></section>` : ''),
+    faq: () => (faq.length ? `<section id="faq" class="alt"><div class="wrap faq"><h2>${esc(tituloBloco(L, 'faq'))}</h2>${faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div></section>` : ''),
+    newsletter: () => `<section class="news"><div class="wrap"><h2>${esc(c.newsletterTitulo || 'Receba novidades')}</h2><p>${esc(c.newsletterTexto || '')}</p>
+<!-- PONTO DE ENCAIXE: ligue este formulário à sua ferramenta de e-mail (Mailchimp, Brevo, etc.). Hoje ele só mostra uma confirmação local. -->
+<form id="news"><input type="email" required placeholder="Seu e-mail" aria-label="E-mail"><button>Quero receber</button></form><p class="nota" id="newsOk"></p></div></section>`,
+  };
 
   return `<!doctype html>
 <html lang="${esc(cliente.marca?.idioma || 'pt-BR')}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -93,6 +116,8 @@ footer{background:#111827;color:#d1d5db;padding:40px 0;font-size:14px}footer h4{
 #drawer.open{transform:none}#drawer header{position:static;padding:16px;display:flex;justify-content:space-between}#itens{flex:1;overflow:auto;padding:0 16px}
 .item{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid #eee;font-size:14px}#rodape{padding:16px;border-top:1px solid #eee}
 .nota{font-size:12px;color:#6b7280;margin-top:6px}
+.grid.cols2{grid-template-columns:repeat(2,1fr)}.grid.cols3{grid-template-columns:repeat(3,1fr)}.grid.cols4{grid-template-columns:repeat(4,1fr)}@media(max-width:640px){.grid.cols3,.grid.cols4{grid-template-columns:repeat(2,1fr)}}
+.story-img{width:100%;max-width:720px;max-height:360px;object-fit:cover;border-radius:14px;margin-bottom:16px}
 .faq{max-width:760px}.faq details{background:#fff;border-radius:12px;padding:14px 18px;margin-bottom:10px;box-shadow:0 1px 4px #0001}.faq summary{cursor:pointer;font-weight:600}.faq p{margin:10px 0 0;line-height:1.6;white-space:pre-line}
 .selo{margin-top:10px;padding:10px;border:1px solid #e5e7eb;border-radius:10px;font-size:12px;color:#374151}.selo svg{width:18px;height:18px;flex:none}
 .selo .l{display:flex;align-items:center;gap:6px}.selo .pags{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;color:#6b7280}
@@ -101,22 +126,10 @@ footer{background:#111827;color:#d1d5db;padding:40px 0;font-size:14px}footer h4{
 #cookies .ok{background:var(--cor);color:#fff}#cookies .nao{background:#374151;color:#fff}.linkcookies{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit}
 </style></head><body>
 <header><div class="wrap"><a class="logo" href="#topo">${esc(cliente.nome)}</a>
-<nav><a href="#categorias">Categorias</a><a href="#vendidos">Mais vendidos</a>${promo.length ? '<a href="#sale">Sale</a>' : ''}<a href="#marca">A marca</a>${faq.length ? '<a href="#faq">Dúvidas</a>' : ''}</nav>
+<nav>${visivel('categorias') ? '<a href="#categorias">Categorias</a>' : ''}${visivel('vendidos') ? '<a href="#vendidos">Mais vendidos</a>' : ''}${promo.length && visivel('sale') ? '<a href="#sale">Sale</a>' : ''}${visivel('marca') ? '<a href="#marca">A marca</a>' : ''}${faq.length && visivel('faq') ? '<a href="#faq">Dúvidas</a>' : ''}</nav>
 <button class="cartbtn" id="abrirCarrinho">Carrinho (<span id="qtd">0</span>)</button></div></header>
 
-<div id="topo" class="hero"><div class="wrap"><h1>${esc(c.heroTitulo || cliente.nome)}</h1><p>${esc(c.heroSubtitulo || cliente.nicho)}</p><a href="#vendidos">${esc(c.heroCta || 'Ver produtos')}</a></div></div>
-
-${categorias.length ? `<section id="categorias"><div class="wrap"><h2>Categorias</h2><div class="cats"><button data-filtro="">Todas</button>${categorias.map((x) => `<button data-filtro="${esc(x)}">${esc(x)}</button>`).join('')}</div></div></section>` : ''}
-<section id="vendidos" class="alt"><div class="wrap"><h2>Mais vendidos</h2>${produtos.length ? grade(maisVendidos) : '<p>Cadastre produtos para exibi-los aqui.</p>'}</div></section>
-${promo.length ? `<section id="sale"><div class="wrap"><h2>Sale</h2>${grade(promo)}</div></section>` : ''}
-<section id="catalogo" class="${promo.length ? 'alt' : ''}"><div class="wrap"><h2>Catálogo completo</h2><div id="catalogoGrade">${grade(produtos)}</div></div></section>
-${c.storytelling ? `<section id="marca"><div class="wrap"><h2>Nossa história</h2><div class="story">${esc(c.storytelling)}</div></div></section>` : '<span id="marca"></span>'}
-${(c.depoimentos || []).length ? `<section class="alt"><div class="wrap"><h2>Quem já usa</h2><div class="dep">${c.depoimentos.map((d) => `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.nome)}" class="dep-midia" loading="lazy">`) : ''}“${esc(d.texto)}”<cite>— ${esc(d.nome)}</cite></blockquote>`).join('')}</div>
-<!-- ATENÇÃO: depoimentos escritos à mão (sem foto/vídeo anexado) podem ser MODELOS — troque por depoimentos reais antes de publicar. Os que têm foto/vídeo vieram de criativos aprovados no app. --></div></section>` : ''}
-${faq.length ? `<section id="faq" class="alt"><div class="wrap faq"><h2>Perguntas frequentes</h2>${faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div></section>` : ''}
-<section class="news"><div class="wrap"><h2>${esc(c.newsletterTitulo || 'Receba novidades')}</h2><p>${esc(c.newsletterTexto || '')}</p>
-<!-- PONTO DE ENCAIXE: ligue este formulário à sua ferramenta de e-mail (Mailchimp, Brevo, etc.). Hoje ele só mostra uma confirmação local. -->
-<form id="news"><input type="email" required placeholder="Seu e-mail" aria-label="E-mail"><button>Quero receber</button></form><p class="nota" id="newsOk"></p></div></section>
+${L.ordem.filter(visivel).map((k) => blocoHTML[k]()).filter(Boolean).join('\n')}
 
 <footer><div class="wrap"><div class="cols">
 <div><h4>${esc(cliente.nome)}</h4><p>${esc(cliente.nicho)}</p></div>
@@ -157,11 +170,11 @@ document.addEventListener('click',e=>{
     const ex=carrinho.find(i=>i.id===p.id&&i.opcoes===opcoes);ex?ex.qtd++:carrinho.push({id:p.id,nome:p.nome,preco:p.preco,opcoes,qtd:1});
     salvar();desenhar();document.getElementById('drawer').classList.add('open');}
   const rm=e.target.closest('[data-rm]');if(rm){carrinho.splice(+rm.dataset.rm,1);salvar();desenhar();}
-  const f=e.target.closest('[data-filtro]');if(f){document.querySelectorAll('#catalogoGrade .card').forEach(c=>c.style.display=!f.dataset.filtro||c.dataset.cat===f.dataset.filtro?'':'none');document.getElementById('catalogo').scrollIntoView({behavior:'smooth'});}
+  const f=e.target.closest('[data-filtro]');if(f){document.querySelectorAll('#catalogoGrade .card').forEach(c=>c.style.display=!f.dataset.filtro||c.dataset.cat===f.dataset.filtro?'':'none');var cg=document.getElementById('catalogo');if(cg)cg.scrollIntoView({behavior:'smooth'});}
 });
 document.getElementById('abrirCarrinho').onclick=()=>document.getElementById('drawer').classList.add('open');
 document.getElementById('fecharCarrinho').onclick=()=>document.getElementById('drawer').classList.remove('open');
-document.getElementById('news').onsubmit=e=>{e.preventDefault();document.getElementById('newsOk').textContent='Obrigado! (ligue este formulário à sua ferramenta de e-mail)';};
+if(document.getElementById('news'))document.getElementById('news').onsubmit=e=>{e.preventDefault();document.getElementById('newsOk').textContent='Obrigado! (ligue este formulário à sua ferramenta de e-mail)';};
 // >>> PONTO DE ENCAIXE: substitua para integrar o checkout de terceiro <<<
 window.checkoutHandler=function(itens){
   alert('O pagamento desta loja ainda não foi ligado (seção 3 do manual de entrega: Mercado Pago, Stripe ou Shopify).\\n\\nItens: '+itens.map(i=>i.nome+' × '+i.qtd).join(', '));

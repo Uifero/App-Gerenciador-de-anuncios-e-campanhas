@@ -4,11 +4,13 @@ import { db, COL } from '../core/storage.js';
 import { gerarConteudoSite, gerarTextosPacote, gerarFaqSite, objecoesDe } from '../core/ia.js';
 import { gerarSiteHTML, faqValida, FORMAS_PAGAMENTO, PAGAMENTOS_PADRAO } from '../lib/sitegen.js';
 import { montarPerguntasSite, progressoSite, PAGAMENTOS_PRETENDIDOS, TOTAL_PERGUNTAS } from './perguntas-site.js';
-import { csvShopify, csvNuvemshop, slug } from '../lib/csv.js';
+import { csvShopify, csvNuvemshop, slug, comTextosDoPacote } from '../lib/csv.js';
 import { criarPdf } from '../lib/pdf.js';
 import { rastreamentoDe, passosRastreamentoPacote, passosExtrasPacote, indicadorPixel } from '../lib/rastreamento.js';
 import { temCustom, temPacote, baseDoCustom, baseDoPacote, aplicarBaseNoPacote, aplicarBaseNoCustom, divergencias, baseParaGerar, AVISO_MODOS } from '../lib/site-modos.js';
 import { criarZip } from '../lib/zip.js';
+import { estadoDoSite, registrarVersao, versoesDoModo } from '../lib/site-blocos.js';
+import { montarAjusteSite } from './ajuste-site.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas } from '../core/ui.js';
 
@@ -45,6 +47,14 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     if (site) { await db.atualizar(COL.sites, site.id, patch); Object.assign(site, patch); }
     else site = await db.criar(COL.sites, { clienteId: cliente.id, status: 'rascunho', versaoManual: 0, ...patch });
   };
+  // Mudança de conteúdo fora do "Ajustar este site" (formulário, geração com IA, sincronizar): se o site já tem versões,
+  // vira versão também (o "Voltar para esta versão" continua fiel); uma mudança proposta em aberto é descartada.
+  const salvarEVersionar = async (patch, resumo, modo = site?.modo === 'custom' ? 'custom' : 'pacote') => {
+    const extra = {};
+    if (site?.rascunhoAjuste?.modo === modo) { extra.rascunhoAjuste = null; toast('A mudança proposta em "Ajustar este site" foi descartada, porque o conteúdo mudou por outro caminho.', 'info'); }
+    if (versoesDoModo(site, modo).length) Object.assign(extra, registrarVersao(site, { modo, estadoAntes: estadoDoSite(site, modo), estadoDepois: estadoDoSite({ ...site, ...patch }, modo), resumo, origem: 'formulario' }));
+    await salvarSite({ ...patch, ...extra });
+  };
 
   // Geração dos textos com IA no modo do site — usada pelo botão do formulário e pelo "Gerar site com essas respostas".
   // Se o OUTRO modo já foi gerado e este ainda não, a base (textos principais, cores, FAQ, depoimentos) vem de lá e é
@@ -57,12 +67,12 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       const r = await gerarConteudoSite({ cliente, produtos, base });
       // Depoimentos puxados de criativos aprovados não se perdem ao gerar de novo.
       const gerado = { ...atual, ...r, depoimentos: [...(r.depoimentos || []), ...(atual.depoimentos || []).filter((d) => d.origem === 'criativo')] };
-      await salvarSite({ ...(base ? aplicarBaseNoCustom(gerado, site.config || {}, base) : { conteudo: gerado }), ...reaproveitou });
+      await salvarEVersionar({ ...(base ? aplicarBaseNoCustom(gerado, site.config || {}, base) : { conteudo: gerado }), ...reaproveitou }, 'Textos gerados de novo pela IA');
       toast(base ? 'Site gerado reaproveitando o texto, as cores e a FAQ do pacote que o cliente já viu. A IA só completou o que faltava.'
         : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. Revise e use "Ver prévia" ou "Baixar pasta do site".`);
     } else {
       const gerado = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base });
-      await salvarSite({ pacote: base ? aplicarBaseNoPacote(gerado, base) : gerado, ...reaproveitou });
+      await salvarEVersionar({ pacote: base ? aplicarBaseNoPacote(gerado, base) : gerado, ...reaproveitou }, 'Pacote gerado de novo pela IA');
       toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado. Revise abaixo.' : 'Banners, briefing do tema e textos gerados. Revise abaixo.');
     }
     recarregar();
@@ -100,8 +110,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const dif = divergencias(site);
   const divergenciaHTML = dif.length ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-divergencia>
       <p><b><i class="fa-solid fa-code-compare mr-1"></i> O texto do formulário "Conteúdo da loja" está diferente do pacote Nuvemshop/Shopify em: ${esc(dif.join(', '))}.</b></p>
-      <p class="mt-1">Isso acontece quando um dos dois é editado depois. Nada é copiado sozinho: se quiser que o pacote (banner principal, página Sobre, perguntas frequentes e paleta) fique igual ao que está no formulário, clique abaixo.</p>
-      <button class="btn-primary btn-sm mt-2" data-sincronizar-modos><i class="fa-solid fa-arrows-rotate"></i> Sincronizar essa edição com o pacote também</button></div>` : '';
+      <p class="mt-1">Isso acontece quando um dos dois é editado depois. Nada é copiado sozinho: escolha qual versão vale (banner principal, história/Sobre, perguntas frequentes e cores).</p>
+      <div class="mt-2 flex flex-wrap gap-2"><button class="${custom ? 'btn-primary' : 'btn-ghost'} btn-sm" data-sincronizar-modos><i class="fa-solid fa-arrows-rotate"></i> Sincronizar essa edição com o pacote também</button>
+        <button class="${custom ? 'btn-ghost' : 'btn-primary'} btn-sm" data-sincronizar-inverso><i class="fa-solid fa-arrows-rotate"></i> Levar o texto do pacote para o site personalizado</button></div></div>` : '';
 
   root.innerHTML = `${cabecalho(custom ? 'Site personalizado' : 'Pacote de plataforma', custom ? 'Um site pronto, com vitrine e carrinho. Caminho: 1. preencher o conteúdo → 2. ver a prévia → 3. baixar a pasta → 4. publicar (passo a passo no fim da página) → 5. ligar o pagamento (manual de entrega).' : 'Arquivos prontos para montar a loja do cliente na Nuvemshop ou na Shopify. Caminho: 1. conteúdo → 2. gerar banners e textos → 3. baixar catálogo e manual → 4. seguir o manual na plataforma.',
     `<button class="btn-ghost btn-sm" data-trocar title="Voltar e escolher outro modo">Trocar modo</button>`)}
@@ -163,6 +174,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <hr class="border-slate-200">
         <p class="caption">O manual de entrega é um PDF com o passo a passo para quem vai publicar/importar${custom ? ' e ligar o pagamento' : ''}. Pode mandar direto para o cliente.</p>
         <button class="btn-primary" data-manual><i class="fa-solid fa-file-pdf"></i> Baixar manual de entrega (PDF)</button></div></div>
+    <div data-ajuste>${custom || site.pacote ? '' : '<div class="card mt-4"><h3 class="font-semibold">Ajustar o conteúdo deste pacote</h3><p class="caption">Disponível depois de gerar o pacote (botão "Gerar banners, briefing do tema e textos com IA", acima).</p></div>'}</div>
     ${custom ? comoPublicarHTML(cliente) : ''}
 
     <div class="card mt-4"><h3 class="mb-1 font-semibold">Prova social a partir de criativos aprovados</h3>
@@ -196,7 +208,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       config: { ...cfg, ...(custom ? { corPrimaria: v.corPrimaria, corFundo: v.corFundo, whatsapp: v.whatsapp, pagamentos: FORMAS_PAGAMENTO.map(([k]) => k).filter((k) => $('#fc', root).elements['pag_' + k]?.checked) } : {}) },
     };
   };
-  on(root, 'submit', '#fc', async (f, ev) => { ev.preventDefault(); await ocupado(f.querySelector('[type=submit]'), async () => { await salvarSite(lerConteudo()); toast('Conteúdo salvo.'); recarregar(); }); });
+  on(root, 'submit', '#fc', async (f, ev) => { ev.preventDefault(); await ocupado(f.querySelector('[type=submit]'), async () => { await salvarEVersionar(lerConteudo(), 'Edição no formulário "Conteúdo da loja"'); toast('Conteúdo salvo.'); recarregar(); }); });
 
   on(root, 'click', '[data-ia]', (b) => gerarComIa(b));
   montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: progressoSite(cliente, site, produtos) < TOTAL_PERGUNTAS && !site.exportadoEm });
@@ -211,7 +223,13 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     toast(`A IA escreveu ${faq.length} pergunta(s). Revise e clique em "Salvar conteúdo".`, 'info');
   }));
 
-  const html = () => gerarSiteHTML({ cliente, produtos, conteudo: (site.conteudo || {}), config: (site.config || {}), url: site.linkPublicado || '' });
+  // Sempre o estado ACEITO (conteúdo + cores + layout dos ajustes); uma mudança proposta em aberto nunca entra no download.
+  const htmlDe = (e) => gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site.linkPublicado || '' });
+  const html = () => htmlDe({ conteudo: site.conteudo, config: site.config, layout: site.layout });
+  if (custom ? (temCustom(site) || produtos.length) : site.pacote) {
+    montarAjusteSite($('[data-ajuste]', root), { cliente, produtos, modo: custom ? 'custom' : 'pacote', get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML })
+      .catch((e) => { console.warn('[ajuste do site]', e); $('[data-ajuste]', root).innerHTML = '<p class="hint text-rose-600">Não consegui abrir "Ajustar este site". Recarregue a página.</p>'; });
+  }
   const marcarExportado = () => salvarSite({ exportadoEm: new Date().toISOString(), status: site.status === 'rascunho' ? 'pronto' : site.status });
   on(root, 'click', '[data-baixar-site]', async () => {
     baixarTexto(`${slug(cliente.nome) || 'loja'}-index.html`, html(), 'text/html;charset=utf-8');
@@ -240,8 +258,12 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     toast('Texto, perguntas frequentes e cor principal trazidos do pacote. Revise e clique em "Salvar conteúdo" se mudar algo.'); recarregar();
   }));
   on(root, 'click', '[data-sincronizar-modos]', (b) => ocupado(b, async () => {
-    await salvarSite({ pacote: aplicarBaseNoPacote(site.pacote, baseDoCustom(site)) });
+    await salvarEVersionar({ pacote: aplicarBaseNoPacote(site.pacote, baseDoCustom(site)) }, 'Recebeu o texto e as cores do site personalizado', 'pacote');
     toast('Pacote atualizado com o texto e as cores do formulário. Baixe os banners e o manual de novo para entregar a versão nova.'); recarregar();
+  }));
+  on(root, 'click', '[data-sincronizar-inverso]', (b) => ocupado(b, async () => {
+    await salvarEVersionar(aplicarBaseNoCustom(site.conteudo || {}, site.config || {}, baseDoPacote(site)), 'Recebeu o texto e as cores do pacote', 'custom');
+    toast('Site personalizado atualizado com o texto e as cores do pacote. Baixe a pasta do site de novo para entregar.'); recarregar();
   }));
   $('[data-aviso-modos]', root)?.addEventListener('toggle', (e) => { if (!e.target.open && !site.avisoModosVisto) salvarSite({ avisoModosVisto: true }); });
   on(root, 'change', '[data-link]', (i) => salvarSite({ linkPublicado: i.value.trim(), ...(i.value.trim() ? { status: 'publicado' } : {}) }).then(() => toast('Link salvo.')));
@@ -249,7 +271,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   on(root, 'change', '[data-plat]', (s) => salvarSite({ plataforma: s.value }).then(recarregar));
 
   on(root, 'click', '[data-csv]', async () => {
-    const csv = site.plataforma === 'shopify' ? csvShopify(produtos, cliente) : csvNuvemshop(produtos, cliente);
+    const lista = comTextosDoPacote(produtos, site.pacote); // descrições/SEO ajustados no pacote, quando houver
+    const csv = site.plataforma === 'shopify' ? csvShopify(lista, cliente) : csvNuvemshop(lista, cliente);
     baixarTexto(`catalogo-${site.plataforma}-${slug(cliente.nome)}.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
     await salvarSite({ exportadoEm: new Date().toISOString() }); toast('CSV gerado. Confira as colunas no passo a passo do manual.'); recarregar();
   });

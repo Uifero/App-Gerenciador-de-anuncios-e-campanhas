@@ -11,6 +11,14 @@ export function combinacoes(variacoes = []) {
 }
 
 const htmlDesc = (p) => (p.descricao ? `<p>${String(p.descricao).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])).replace(/\n/g, '<br>')}</p>` : '');
+/**
+ * Textos do pacote (pacote.descricoesProdutos, ajustáveis em "Ajustar este site") por cima do cadastro do produto:
+ * descrição e SEO vêm do pacote quando existem; nome, preço, variações e fotos vêm sempre da aba Produtos.
+ */
+export function comTextosDoPacote(produtos, pacote) {
+  const mapa = new Map((pacote?.descricoesProdutos || []).map((d) => [String(d.nome || '').toLowerCase(), d]));
+  return produtos.map((p) => { const d = mapa.get(String(p.nome || '').toLowerCase()); return d ? { ...p, descricao: d.descricao || p.descricao, seoTitulo: d.seoTitulo, seoDescricao: d.seoDescricao } : p; });
+}
 const preco = (n) => (n == null || n === '' ? '' : Number(n).toFixed(2));
 
 export function csvShopify(produtos, cliente) {
@@ -59,7 +67,7 @@ export function csvNuvemshop(produtos, cliente) {
       const l = {
         'Identificador URL': handle, Nome: p.nome, Categorias: p.categoria || '', Preço: preco(p.preco), 'Preço promocional': preco(p.precoPromocional),
         Estoque: '', SKU: `${handle}-${i + 1}`, 'Exibir na loja': 'SIM', 'Frete grátis': 'NÃO', Descrição: htmlDesc(p), Tags: p.categoria || '',
-        'Título para SEO': p.nome, 'Descrição para SEO': String(p.descricao || '').slice(0, 160), Marca: cliente.nome, 'Produto Físico': 'SIM',
+        'Título para SEO': p.seoTitulo || p.nome, 'Descrição para SEO': String(p.seoDescricao || p.descricao || '').slice(0, 160), Marca: cliente.nome, 'Produto Físico': 'SIM',
       };
       (combo || []).forEach((par, k) => { l[`Nome da variação ${k + 1}`] = par[0]; l[`Valor da variação ${k + 1}`] = par[1]; });
       linhas.push(campos.map((c) => l[c] ?? ''));

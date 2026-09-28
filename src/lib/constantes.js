@@ -99,6 +99,7 @@ export const TAREFAS_IA = {
   insights: ['Explicação de insights', 'insights', 3000, 'Sonnet'], diagnostico: ['Diagnóstico de campanha', 'campanhas', 5000, 'Sonnet'],
   narracao: ['Roteiro de narração', 'criativos', 2500, 'Haiku'], faq: ['FAQ do site', 'site', 2500, 'Haiku'],
   leitura_site: ['Leitura do site do cliente', 'site', 4000, 'Sonnet'], leitura_web: ['Leitura do site pela busca', 'site', 4000, 'Sonnet'], leitura_prints: ['Leitura de prints do Instagram', 'site', 4000, 'Sonnet'],
+  ajuste_site: ['Ajuste do site (pedido pontual)', 'site', 3000, 'Haiku'], ajuste_site_amplo: ['Ajuste do site (pedido amplo)', 'site', 5000, 'Sonnet'],
   reparo: ['Correção de resposta da IA', 'criativos', 12000, 'Haiku'],
 };
 export const CATEGORIAS_CUSTO = { criativos: 'Criativos', hooks: 'Hooks', mercado: 'Análise de mercado', site: 'Site/Loja', campanhas: 'Campanhas', playbooks: 'Playbooks', insights: 'Insights' };

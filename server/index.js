@@ -62,6 +62,8 @@ export const TAREFAS = {
   leitura_site: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low' },            // interpreta o texto extraído do site do cliente
   leitura_web:  { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // site do cliente que bloqueia leitura direta (busca web)
   leitura_prints: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', imagens: true }, // prints do Instagram do cliente
+  ajuste_site: { modelo: MODELO_LEVE,     max: 3000 },  // "Ajustar este site": pedido pontual (texto, ordem, cor)
+  ajuste_site_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low' }, // "Ajustar este site": pedido amplo (várias seções / reescrever)
   reparo:      { modelo: MODELO_LEVE,     max: 12000 }, // corrige JSON inválido de outra resposta (sem refazer a tarefa)
 };
 

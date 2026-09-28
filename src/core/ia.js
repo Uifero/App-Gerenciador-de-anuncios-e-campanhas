@@ -555,6 +555,92 @@ Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner princi
   return (await gerarJSON({ tarefa: 'pacote', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
+// ---------- "Ajustar este site" (operações estruturadas, nunca HTML) ----------
+const PALAVRAS_AMPLO = /\b(tudo|todo o|todos os|inteir|reescrev|refaz|refazer|do zero|mais moderno|mais profissional|repagin|completo|geral|todas as se)/i;
+/** Pedido pontual (texto, ordem, cor de uma coisa) -> modelo leve; pedido amplo -> modelo mais forte. */
+export const pedidoAmplo = (mensagem) => String(mensagem || '').length > 220 || PALAVRAS_AMPLO.test(String(mensagem || ''));
+
+const OPS_CUSTOM = `Operações permitidas (use exatamente estes formatos):
+- {"op":"mover","bloco":B,"antesDe":B2} ou {"op":"mover","bloco":B,"depoisDe":B2}
+- {"op":"ocultar","bloco":B} / {"op":"mostrar","bloco":B}
+- {"op":"texto","campo":"heroTitulo"|"heroSubtitulo"|"heroCta"|"storytelling"|"newsletterTitulo"|"newsletterTexto","valor":string}
+- {"op":"texto","campo":"titulo.<bloco>","valor":string}  (título da seção; blocos com título: categorias, vendidos, sale, catalogo, marca, depoimentos, faq)
+- {"op":"faq","acao":"editar"|"adicionar"|"remover","indice":n,"p":string,"r":string}
+- {"op":"depoimento","acao":"ocultar"|"mostrar","indice":n}  (NÃO reescreva depoimento: é fala de cliente real)
+- {"op":"paleta","corPrimaria":"#rrggbb","corFundo":"#rrggbb"}  (texto do site é cinza-escuro #1f2937 e os botões têm texto branco: escolha cores com contraste ≥ 4,5 — fundo claro, cor principal escura o bastante)
+- {"op":"variacao","bloco":"hero","opcao":"altura","valor":"curto"|"normal"|"alto"} / {"op":"variacao","bloco":"vendidos"|"sale"|"catalogo","opcao":"colunas","valor":2|3|4}
+- {"op":"imagem","bloco":"hero"|"marca","materialId":ID dos Materiais listados | null para tirar}
+Blocos (B): hero, categorias, vendidos, sale, catalogo, marca, depoimentos, faq, newsletter.`;
+const OPS_PACOTE = `Operações permitidas (só CONTEÚDO; o visual é do tema da plataforma):
+- {"op":"texto","campo":"banner.<i>.titulo"|"banner.<i>.subtitulo"|"banner.<i>.cta"|"sobre"|"tema.estilo"|"tema.tipografia"|"tema.observacoes","valor":string}
+- {"op":"faq","acao":"editar"|"adicionar"|"remover","indice":n,"p":string,"r":string}
+- {"op":"paleta","cores":["#rrggbb", ...]}  (2 a 6 cores sugeridas para o tema)
+- {"op":"mover","secao":NOME,"antesDe":NOME2|"depoisDe":NOME2} / {"op":"ocultar","secao":NOME} / {"op":"mostrar","secao":NOME}  (ordem sugerida das seções da home)
+- {"op":"produto","nome":NOME DO PRODUTO,"campo":"descricao"|"seoTitulo"|"seoDescricao","valor":string}  (vai no CSV de importação)`;
+const NUNCA = `NUNCA pode ser alterado (nem se pedirem): códigos de Pixel/Google Ads/Hotjar/Tawk.to; aviso de cookies e a regra de só carregar rastreadores após o "Aceitar"; carrinho, botão "Finalizar compra"/checkout e selo de compra segura; políticas de trocas, envio e privacidade; cabeçalho, rodapé e WhatsApp. Se pedirem isso, diga claramente que não pode e por quê (tipo "recusa"), sem fingir que fez, e diga ONDE a pessoa muda por conta própria: Pixel/Google Ads/Hotjar/Tawk.to → cadastro do cliente, "Editar > Rastreamento"; políticas → formulário "Conteúdo da loja" > Mais opções (revisar com alguém responsável); aviso de cookies, carrinho/pagamento e selo → não mudam (protegem o cliente e o pagamento); formas de pagamento do selo → "Conteúdo da loja" > Mais opções. Nunca mande "contatar um desenvolvedor".`;
+
+/**
+ * Chat "Ajustar este site". estado = o que a pessoa vê agora (lib/site-blocos.js estadoDoSite, ou o rascunho em aberto).
+ * Devolve { tipo: 'explicacao'|'proposta'|'recusa', resposta, operacoes: [], naoFeito: [string], tarefa }.
+ */
+export async function ajustarSite({ cliente, modo, estado, mensagem, conversa = [], materiais = [], produtos = [], resumoBlocos = '' }) {
+  const custom = modo !== 'pacote';
+  const system = custom
+    ? 'Você ajusta um site de loja já pronto, montado em BLOCOS fixos. Você NÃO escreve HTML: responde só com operações do formato permitido. Fale com uma pessoa leiga, em frases curtas.'
+    : 'Você ajusta o CONTEÚDO de um pacote de loja para Nuvemshop/Shopify (textos, cores sugeridas, ordem sugerida das seções, descrições do CSV). Você NÃO mexe no visual: o layout é do tema da plataforma. Fale com uma pessoa leiga.';
+  const historico = conversa.slice(-10).map((t) => `${t.role === 'user' ? 'PESSOA' : 'VOCÊ'}: ${t.content}`).join('\n') || '(início da conversa)';
+  const tarefa = pedidoAmplo(mensagem) ? 'ajuste_site_amplo' : 'ajuste_site';
+  const dadosAtuais = custom
+    ? `${resumoBlocos}
+Textos: ${JSON.stringify({ heroTitulo: estado.conteudo?.heroTitulo, heroSubtitulo: estado.conteudo?.heroSubtitulo, heroCta: estado.conteudo?.heroCta, storytelling: String(estado.conteudo?.storytelling || '').slice(0, 900), newsletterTitulo: estado.conteudo?.newsletterTitulo, newsletterTexto: estado.conteudo?.newsletterTexto })}
+FAQ (índice: pergunta): ${(estado.conteudo?.faq || []).map((f, i) => `${i}: ${f.p}`).join(' | ') || '(vazia)'}
+Depoimentos (índice: nome): ${(estado.conteudo?.depoimentos || []).map((d, i) => `${i}: ${d.nome} — "${String(d.texto).slice(0, 60)}"`).join(' | ') || '(nenhum)'}
+Cores: principal ${estado.config?.corPrimaria || '#4f46e5'}, fundo ${estado.config?.corFundo || '#ffffff'}
+Materiais do cliente (imagens): ${materiais.map((m) => `${m.id}: ${m.nome || 'imagem'}`).join(' | ') || '(nenhum)'}`
+    : `Banners: ${(estado.pacote?.banners || []).map((b, i) => `${i}: ${b.uso} — "${b.titulo}" / "${b.subtitulo}" [${b.cta}]`).join(' | ') || '(nenhum)'}
+Seções sugeridas da home (em ordem): ${(estado.pacote?.briefingTema?.secoesHome || []).join(' > ') || '(nenhuma)'}${(estado.pacote?.secoesOcultas || []).length ? ` · retiradas: ${estado.pacote.secoesOcultas.join(', ')}` : ''}
+Paleta sugerida: ${(estado.pacote?.briefingTema?.paletaSugerida || []).join(', ')}
+Página Sobre: "${String(estado.pacote?.textosPagina?.sobre || '').slice(0, 700)}"
+FAQ (índice: pergunta): ${(estado.pacote?.textosPagina?.faq || []).map((f, i) => `${i}: ${f.p}`).join(' | ') || '(vazia)'}
+Produtos com descrição no pacote: ${(estado.pacote?.descricoesProdutos || []).map((d) => d.nome).join(', ') || '(nenhum)'} (cadastrados: ${produtos.map((p) => p.nome).join(', ') || 'nenhum'})`;
+  const pedido = `ESTADO ATUAL:
+${dadosAtuais}
+
+${custom ? OPS_CUSTOM : OPS_PACOTE}
+
+${NUNCA}
+
+Pedido fora do modelo (ex.: carrossel de vídeos, outra fonte, animação, página nova, formulário novo${custom ? '' : ', mudar layout/colunas/tamanho'}): responda em linguagem simples que isso não é possível ${custom ? 'neste site' : 'pelo pacote (é no editor de temas da plataforma: Nuvemshop em Design > Personalizar; Shopify em Loja virtual > Temas > Personalizar)'} e sugira a alternativa mais próxima que É possível (sem aplicar sozinho, a não ser que ela seja claramente o que a pessoa quer).
+Se só uma PARTE do pedido for possível: faça essa parte e liste em "naoFeito" o que não foi feito e por quê. Nunca apresente uma mudança parcial como se fosse completa.
+
+CONVERSA ATÉ AGORA:
+${historico}
+
+NOVO PEDIDO: ${mensagem}
+
+Decida o tipo:
+- "explicacao": é pergunta, nada muda (operacoes: []).
+- "proposta": há operações a aplicar. Em "resposta", 1-2 frases dizendo o que vai mudar.
+- "recusa": nada do pedido é possível (protegido ou fora do modelo). "resposta" explica e sugere alternativa. operacoes: [].
+Textos novos no idioma e tom da marca, sem inventar fatos (preço, prazo, garantia) que não estejam no estado atual. ${idiomaLinha(cliente)}
+Saída JSON: {"tipo": "explicacao"|"proposta"|"recusa", "resposta": string, "operacoes": [ ... ], "naoFeito": [string]}
+${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa, cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
+  return { ...normalizarAjusteSite(dados), tarefa };
+}
+
+/** Garante a forma da resposta; "proposta" sem operação vira "explicacao" (nada muda). */
+export function normalizarAjusteSite(d = {}) {
+  const resposta = String(pegar(d, 'resposta', 'mensagem', 'explicacao') || '').trim() || 'Sem resposta em texto.';
+  const operacoes = (Array.isArray(d.operacoes) ? d.operacoes : Array.isArray(d.operations) ? d.operations : []).filter((o) => o && typeof o === 'object');
+  const naoFeito = (Array.isArray(d.naoFeito) ? d.naoFeito : []).map((x) => String(x).trim()).filter(Boolean);
+  let tipo = String(d.tipo || '').toLowerCase();
+  if (tipo.startsWith('recus')) tipo = 'recusa';
+  else if (tipo.startsWith('propo') && operacoes.length) tipo = 'proposta';
+  else tipo = operacoes.length ? 'proposta' : 'explicacao';
+  return { tipo, resposta, operacoes: tipo === 'proposta' ? operacoes : [], naoFeito };
+}
+
 // ---------- playbooks ----------
 export async function gerarPlaybook({ tipoProduto, idioma = 'pt-BR' }) {
   const cliente = { marca: { idioma, termosProibidos: '' } };
