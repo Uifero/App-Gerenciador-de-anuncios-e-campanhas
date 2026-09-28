@@ -107,7 +107,7 @@ Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de c
   const etiqueta = (t) => (t.tipo === 'proposta' ? tag('propôs uma mudança', 'tag-ok') : tag('só explicou, nada mudou', 'tag-info'));
   const itemChat = (t) => (t.role === 'user'
     ? `<p class="text-slate-600"><b>Você:</b> ${esc(t.content)}</p>`
-    : `<div class="rounded-lg bg-slate-50 p-2"><p class="mb-1 flex flex-wrap gap-1">${etiqueta(t)}${t.tipo === 'recusa' ? tag('não é possível neste site', 'tag-warn') : ''}</p>
+    : `<div class="rounded-lg bg-slate-50 p-2"><p class="mb-1 flex flex-wrap gap-1">${etiqueta(t)}${t.tipo === 'recusa' ? tag(custom ? 'não é possível neste site' : 'não é possível pelo pacote', 'tag-warn') : ''}</p>
         <p class="whitespace-pre-wrap text-slate-800"><b>IA:</b> ${esc(t.content)}</p>
         ${t.mudancas?.length ? `<ul class="mt-1 list-disc pl-5 text-xs text-slate-700">${t.mudancas.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
         ${t.recusadas?.length ? `<p class="mt-1 text-xs text-amber-800"><b>O app não aplicou ${t.recusadas.length} parte(s):</b> ${t.recusadas.map(esc).join(' · ')}</p>` : ''}
