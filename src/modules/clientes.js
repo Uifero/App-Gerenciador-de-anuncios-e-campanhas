@@ -70,6 +70,8 @@ export function montarDadosCliente(v, escopo) {
     marca: {
       tomDeVoz: v.tomDeVoz || '', linguagemDor: v.linguagemDor || '', objecoes: v.objecoes || '', provasSociais: v.provasSociais || '',
       usp: v.usp || '', idioma: v.idioma || 'pt-BR', termosProibidos: v.termosProibidos || '', estetica: v.estetica || '',
+      // Questionário único (lib/questionario.js): o que vende e para quem, quem mais compra, oferta ativa, link das fotos e do logo.
+      negocio: v.negocio || '', publicoCompra: v.publicoCompra || '', ofertaAtiva: v.ofertaAtiva || '', materiaisOriginais: v.materiaisOriginais || '', logo: v.logo || '',
     },
   };
 }
@@ -178,16 +180,21 @@ export async function viewForm(el, id, { baseId = null } = {}) {
     <section data-passo="1" class="hidden space-y-4">
       <p class="caption">Isso é o que faz a IA soar como a marca. Quanto mais real, melhor.</p>
       <div><label class="label">Tom de voz ${etiquetaAuto(c, 'tomDeVoz')}</label><input class="input" name="tomDeVoz" value="${esc(m.tomDeVoz)}" placeholder="Ex.: próximo, bem-humorado, sem formalidade"></div>
-      <div><label class="label">Como o público descreve a própria dor</label><textarea class="input" rows="2" name="linguagemDor" placeholder="Nas palavras deles: 'minha roupa nunca serve direito'">${esc(m.linguagemDor)}</textarea></div>
+      <div><label class="label">O que vende e para quem ${etiquetaAuto(c, 'negocio')}</label><input class="input" name="negocio" value="${esc(m.negocio)}" placeholder="Ex.: roupas de academia para mulheres de 25 a 45 anos"></div>
+      <div><label class="label">Como o público descreve a própria dor ${etiquetaAuto(c, 'linguagemDor')}</label><textarea class="input" rows="2" name="linguagemDor" placeholder="Nas palavras deles: 'minha roupa nunca serve direito'">${esc(m.linguagemDor)}</textarea></div>
       <div><label class="label">Diferencial (USP) ${etiquetaAuto(c, 'usp')}</label><input class="input" name="usp" value="${esc(m.usp)}"></div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (objeções, provas, termos proibidos, site de referência)</summary>
         <div class="mt-3 space-y-4">
-          <div><label class="label">Objeções comuns</label><textarea class="input" rows="2" name="objecoes">${esc(m.objecoes)}</textarea></div>
+          <div><label class="label">Objeções comuns ${etiquetaAuto(c, 'objecoes')}</label><textarea class="input" rows="2" name="objecoes">${esc(m.objecoes)}</textarea></div>
           <div><label class="label">Provas sociais disponíveis (reais) ${etiquetaAuto(c, 'provasSociais')}</label><textarea class="input" rows="2" name="provasSociais">${esc(m.provasSociais)}</textarea></div>
           <div><label class="label">Estética / paleta de cor ${etiquetaAuto(c, 'estetica')}</label><textarea class="input" rows="2" name="estetica" placeholder="Ex.: tons terrosos, fundo claro, luz natural">${esc(m.estetica)}</textarea></div>
-          <div><label class="label">Termos proibidos/restritos do nicho</label><textarea class="input" rows="2" name="termosProibidos" placeholder="Separe por vírgula. Ex.: cura, garantido, emagreça">${esc(m.termosProibidos)}</textarea>
+          <div><label class="label">Termos proibidos/restritos do nicho ${etiquetaAuto(c, 'termosProibidos')}</label><textarea class="input" rows="2" name="termosProibidos" placeholder="Separe por vírgula. Ex.: cura, garantido, emagreça">${esc(m.termosProibidos)}</textarea>
             <p class="hint">A IA evita esses termos e o app avisa se algum aparecer no texto.</p></div>
-          <div><label class="label">Site de referência (opcional)</label><input class="input" name="siteReferencia" value="${esc(fonte?.siteReferencia)}" placeholder="https://…"></div>
+          <div><label class="label">Site de referência (opcional) ${etiquetaAuto(c, 'siteReferencia')}</label><input class="input" name="siteReferencia" value="${esc(fonte?.siteReferencia)}" placeholder="https://…"></div>
+          <div><label class="label">Quem mais compra hoje ${etiquetaAuto(c, 'publicoCompra')}</label><input class="input" name="publicoCompra" value="${esc(m.publicoCompra)}" placeholder="Ex.: mulheres de 28 a 40, de BH"></div>
+          <div><label class="label">Promoção ou oferta ativa ${etiquetaAuto(c, 'ofertaAtiva')}</label><input class="input" name="ofertaAtiva" value="${esc(m.ofertaAtiva)}" placeholder="Ex.: frete grátis acima de R$ 199"></div>
+          <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Link das fotos e vídeos originais ${etiquetaAuto(c, 'materiaisOriginais')}</label><input class="input" name="materiaisOriginais" value="${esc(m.materiaisOriginais)}" placeholder="Google Drive ou WeTransfer"></div>
+            <div><label class="label">Logo (PNG) ${etiquetaAuto(c, 'logo')}</label><input class="input" name="logo" value="${esc(m.logo)}" placeholder="Link ou observação"></div></div>
         </div></details>
     </section>
 
@@ -251,8 +258,12 @@ export async function viewForm(el, id, { baseId = null } = {}) {
         const dados = montarDadosCliente(v, escopo);
         if (c.autoPreenchido) {
           dados.autoPreenchido = marcasQueContinuam(c.autoPreenchido, c.marca, dados.marca); // editou = confirmou
+          // Etiquetas de campos fora do perfil de marca (site de referência, anúncios, pixel, pagamento, modo do site):
+          // continuam, a não ser que o site de referência tenha sido editado aqui.
+          for (const [k, val] of Object.entries(c.autoPreenchido)) if (!(k in (c.marca || {})) && !(k === 'siteReferencia' && (c.siteReferencia || '') !== (dados.siteReferencia || ''))) dados.autoPreenchido[k] = val;
           for (const k of Object.keys(dados.autoPreenchido)) if (v['confirmar_' + k]) delete dados.autoPreenchido[k]; // marcou "Está certo"
         }
+        dados.marca = { ...(c.marca || {}), ...dados.marca }; // campos do perfil que não aparecem no formulário (ex.: jaAnuncia) não se perdem
         await db.atualizar(COL.clientes, c.id, dados); toast('Cliente atualizado.'); location.hash = `#/c/${c.id}`; return;
       }
       const novo = await criarCliente(v, escopo, {
@@ -301,6 +312,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       n.criativos && `${n.criativos} criativo(s)`, n.hooks && `${n.hooks} hook(s)`, n.referencias && `${n.referencias} referência(s)`,
       n.campanhas && `${n.campanhas} campanha(s)`, n.resultados && `${n.resultados} resultado(s)`, n.produtos && `${n.produtos} produto(s)`,
       n.sites && `${n.sites} site(s)`, n.aprovacoes && `${n.aprovacoes} link(s) de aprovação`, n.respostas && `${n.respostas} resposta(s) de cliente`, n.diagnosticos && `${n.diagnosticos} diagnóstico(s)`, n.materiais && `${n.materiais} foto(s) salva(s) em Materiais`,
+      c.respostasCliente?.length && `${c.respostasCliente.length} resposta(s) do cliente ao questionário guardada(s)`,
     ].filter(Boolean);
     const msg = partes.length
       ? `Apagar "${c.nome}" e tudo o que está ligado a ele — ${partes.join(', ')}? Esta ação não pode ser desfeita. Se quiser guardar esses dados, exporte um backup antes.`

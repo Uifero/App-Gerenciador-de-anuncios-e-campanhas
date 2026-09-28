@@ -126,11 +126,21 @@ export function lerForm(form) {
   return o;
 }
 
+/**
+ * Copia para a área de transferência. A API moderna às vezes fica esperando para sempre (aba sem foco, pedido de
+ * permissão ignorado): depois de 1,5 s cai no método antigo. Devolve true se copiou.
+ */
 export async function copiar(texto) {
-  try { await navigator.clipboard.writeText(texto); toast('Copiado!'); }
-  catch {
-    const t = document.createElement('textarea'); t.value = texto; document.body.appendChild(t);
-    t.select(); document.execCommand('copy'); t.remove(); toast('Copiado!');
+  try {
+    await Promise.race([navigator.clipboard.writeText(texto), new Promise((_, rej) => setTimeout(() => rej(new Error('tempo')), 1500))]);
+    toast('Copiado!'); return true;
+  } catch {
+    const t = document.createElement('textarea'); t.value = texto; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(t); t.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch { ok = false; }
+    t.remove();
+    if (ok) toast('Copiado!'); else toast('O navegador não deixou copiar. Selecione o texto em "Ver o texto" e copie com Ctrl+C.', 'erro');
+    return ok;
   }
 }
 

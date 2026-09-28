@@ -21,12 +21,12 @@ async function postServidor(caminho, corpo) {
   return r;
 }
 
-/** HTML da pergunta 0 (fica antes da pergunta "a"). */
-export function perguntaZeroHtml(cliente) {
+/** HTML da pergunta "site ou Instagram" (nº 11 do questionário único; antes era a pergunta 0). */
+export function perguntaZeroHtml(cliente, numero = 11) {
   const ls = cliente.leituraSite; const li = cliente.leituraInstagram;
   return `<li class="rounded-lg border border-indigo-200 bg-indigo-50/30 p-3" data-pergunta="presenca">
-    <div class="flex items-start justify-between gap-2"><p class="text-sm font-semibold">0) O cliente já tem site ou Instagram?</p><span data-ok="presenca"></span></div>
-    <p class="hint mb-2">Comece por aqui: o app lê o que já existe e preenche sozinho tom de voz, diferencial, provas sociais, estética e produtos — cada campo fica marcado para você confirmar ou editar. Só material do <b>próprio cliente</b>, nunca de concorrente.</p>
+    <div class="flex items-start justify-between gap-2"><p class="text-sm font-semibold">${numero}. O cliente já tem site ou Instagram?</p><span data-ok="presenca"></span></div>
+    <p class="hint mb-2">Vale fazer logo no começo: o app lê o que já existe e preenche sozinho tom de voz, diferencial, provas sociais, estética e produtos — cada campo fica marcado para você confirmar ou editar. Só material do <b>próprio cliente</b>, nunca de concorrente.</p>
 
     <div class="rounded-lg border border-slate-200 bg-white p-2">
       <p class="text-sm font-medium"><i class="fa-solid fa-globe text-indigo-500"></i> Site</p>

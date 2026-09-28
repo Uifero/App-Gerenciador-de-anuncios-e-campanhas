@@ -127,4 +127,5 @@ export function marcasQueContinuam(auto = {}, marcaAntes = {}, marcaDepois = {})
 }
 
 /** Texto da etiqueta discreta ao lado do campo. */
-export const textoMarca = (m) => `preenchido sozinho a partir ${m?.origem === 'instagram' ? 'dos prints do Instagram' : 'do site atual'} do cliente: confira, e confirme ou edite`;
+export const textoMarca = (m) => (m?.origem === 'resposta' ? 'preenchido automaticamente da resposta do cliente, confirme ou edite'
+  : `preenchido sozinho a partir ${m?.origem === 'instagram' ? 'dos prints do Instagram' : 'do site atual'} do cliente: confira, e confirme ou edite`);

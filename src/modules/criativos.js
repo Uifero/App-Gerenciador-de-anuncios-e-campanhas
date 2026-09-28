@@ -5,6 +5,7 @@ import { obterConfig } from './configuracoes.js';
 import { abrirEnvio, sincronizarAprovacoes, tagAprovacao, statusAposTrocarArquivo, legendaReaprovacao } from './aprovacao.js';
 import { perguntarBuscaMercado } from './busca-mercado.js';
 import { abrirEstudio } from './estudio.js';
+import { montarQuestionarioNaAba } from './perguntas-site.js';
 import { apagarCriativoEmCascata } from '../lib/cascata.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
 import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '../lib/previa.js';
@@ -64,7 +65,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     `<select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
      <button class="btn-ghost" data-enviar title="Gera um link para o cliente final ver as peças e aprovar ou pedir ajuste, sem login"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação</button>
      <button class="btn-primary" data-novo title="Gerar ou escrever um criativo novo"><i class="fa-solid fa-plus"></i> Novo criativo</button>`)}
-    <div id="painel"></div><div id="lista">${lista()}</div>`;
+    <div class="mb-4" data-questionario></div><div id="painel"></div><div id="lista">${lista()}</div>`;
+  // Questionário único do cliente (o mesmo da aba Site/Loja): as respostas também alimentam os criativos.
+  montarQuestionarioNaAba($('[data-questionario]', root), cliente, recarregar).catch((e) => console.warn('[questionário]', e));
 
   const atualizar = async () => {
     criativos.splice(0, criativos.length, ...(await db.listar(COL.criativos, { clienteId: cliente.id })));

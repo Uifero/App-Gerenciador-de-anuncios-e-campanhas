@@ -67,9 +67,9 @@ describe('Perguntas para montar o site', () => {
     expect(progressoSite({ marca: {} }, null, [])).toBe(0);
     const cli = { siteReferencia: 'https://x.com', marca: { tomDeVoz: 'premium', usp: 'u', objecoes: 'o', provasSociais: 'p' }, rastreamento: { metaPixelId: '123456789' } };
     const site = { modo: 'custom', pagamentoPreferido: 'stripe' };
-    expect(progressoSite(cli, site, [{ id: 'p' }])).toBe(9); // falta só a pergunta 0
+    expect(progressoSite(cli, site, [{ id: 'p' }])).toBe(9); // as 9 perguntas antigas respondidas (de 18)
     cli.leituraSite = { url: 'https://loja.com.br/' };
-    expect(Object.values(respostasSite(cli, site, [{ id: 'p' }])).every(Boolean)).toBe(true);
+    expect(respostasSite(cli, site, [{ id: 'p' }]).presenca).toBe(true); // questionário único: 18 perguntas, as 10 antigas continuam contando
     expect(progressoSite(cli, site, [{ id: 'p' }])).toBe(10);
   });
   it('"ainda não tem pixel" conta como respondida; o formato vem do modo/plataforma', () => {
