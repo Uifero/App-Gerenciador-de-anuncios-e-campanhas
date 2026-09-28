@@ -40,9 +40,9 @@ export const MODELO_DESCRICAO = {
 export const FORMATOS = [['video_curto', 'Vídeo curto (Reels/TikTok)'], ['imagem', 'Imagem única'], ['carrossel', 'Carrossel'], ['texto', 'Texto/Legenda']];
 
 export const STATUS_CRIATIVO = [
-  ['rascunho', 'Rascunho'], ['pronto_aprovacao', 'Aguardando cliente'], ['aprovado', 'Aprovado'], ['em_uso', 'Em uso'], ['pausado', 'Pausado'], ['encerrado', 'Encerrado'],
+  ['rascunho', 'Rascunho'], ['pronto_aprovacao', 'Aguardando cliente'], ['reaprovacao', 'Aguardando nova aprovação'],['aprovado', 'Aprovado'], ['em_uso', 'Em uso'], ['pausado', 'Pausado'], ['encerrado', 'Encerrado'],
 ];
-export const STATUS_COR = { rascunho: '', pronto_aprovacao: 'tag-warn', aprovado: 'tag-info', em_uso: 'tag-ok', pausado: 'tag-warn', encerrado: 'tag-bad' };
+export const STATUS_COR = { rascunho: '', pronto_aprovacao: 'tag-warn', reaprovacao: 'tag-warn',aprovado: 'tag-info', em_uso: 'tag-ok', pausado: 'tag-warn', encerrado: 'tag-bad' };
 
 /** Perguntas do checklist de qualidade antes de aprovar um criativo. */
 /** Modelo de roteiro UGC/unboxing: 6 cenas de 5 s (30 s no total), na ordem em que costumam prender e converter. */

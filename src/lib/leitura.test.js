@@ -83,7 +83,7 @@ describe('aplicarLeitura', () => {
   it('marcasQueContinuam: editar o campo tira a marca', () => {
     const auto = { tomDeVoz: meta, usp: meta };
     expect(marcasQueContinuam(auto, { tomDeVoz: 'a', usp: 'b' }, { tomDeVoz: 'a', usp: 'outro' })).toEqual({ tomDeVoz: meta });
-    expect(textoMarca(meta)).toBe('preenchido automaticamente do site, confirme ou edite');
+    expect(textoMarca(meta)).toBe('preenchido sozinho a partir do site atual do cliente: confira, e confirme ou edite');
   });
 });
 

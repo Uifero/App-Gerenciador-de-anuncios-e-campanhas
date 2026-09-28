@@ -315,7 +315,7 @@ export function abrirEstudio(criativo, cliente) {
     desenharPeca(c.getContext('2d'), w, h, { ...cfgPeca(), ...extra });
     return canvasParaPng(c);
   };
-  on(raiz, 'click', '[data-baixar-foto]', (b) => ocupado(b, async () => { baixar(await pngDe(est.formato), `${nomeArquivo(criativo.nome)}-${est.formato}.png`); toast('Foto baixada.'); }));
+  on(raiz, 'click', '[data-baixar-foto]', (b) => ocupado(b, async () => { baixar(await pngDe(est.formato), `${nomeArquivo(criativo.nome)}-${est.formato}.png`); toast('Foto baixada (pasta Downloads). Próximo passo: suba no Gerenciador de Anúncios, ou anexe como peça final no criativo (Mais opções > Peça final).'); }));
   on(raiz, 'click', '[data-baixar-todas]', (b) => ocupado(b, async () => {
     for (const [f] of FORMATOS_IMAGEM) { baixar(await pngDe(f), `${nomeArquivo(criativo.nome)}-${f}.png`); await new Promise((r) => setTimeout(r, 400)); }
     toast('3 fotos baixadas. Se o navegador pedir, permita downloads múltiplos.');
@@ -505,7 +505,7 @@ export function abrirEstudio(criativo, cliente) {
           <div class="mt-2 flex flex-wrap items-center gap-2"><button class="btn-primary btn-sm" data-baixar-video><i class="fa-solid fa-download"></i> Baixar ${esc(r.ext.toUpperCase())} (${r.duracao.toFixed(0)} s)</button></div>
           ${r.ext === 'webm' ? '<p class="mt-2 text-sm text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> Este navegador só gravou em WebM. O Meta Ads e o TikTok pedem MP4: atualize o Chrome/Edge ou converta o arquivo antes de subir.</p>' : ''}`;
         est.ultimo = { blob: r.blob, nome };
-        toast('Vídeo pronto. Confira a prévia e baixe.');
+        toast('Vídeo pronto. Confira a prévia logo abaixo e clique em baixar; para o cliente aprovar, anexe como peça final no criativo.');
       } finally { prog.classList.add('hidden'); cancelar.classList.add('hidden'); est.ctrl = null; }
     });
   });

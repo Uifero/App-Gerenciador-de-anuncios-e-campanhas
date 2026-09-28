@@ -25,7 +25,7 @@ export function montarBroll(raiz, { cliente, criativo, cenas, formatoVideo, aoAn
     <div class="mt-2 flex flex-wrap items-center gap-1 text-xs" data-broll-sugestoes></div>
     <div class="mt-2 flex flex-wrap items-end gap-2">
       <label class="text-xs text-slate-500">Ligar o resultado à cena<select class="input mt-0.5 !w-60" data-broll-cena></select></label>
-      <button class="btn-primary btn-sm" data-broll-buscar><i class="fa-solid fa-magnifying-glass"></i> Buscar</button></div>
+      <button class="btn-primary btn-sm" data-broll-buscar><i class="fa-solid fa-magnifying-glass"></i> Buscar vídeos/fotos grátis</button></div>
     <p class="hint mt-1">Clique num resultado para colocá-lo em "1. Materiais"${' '}(e na cena escolhida acima). A busca segue o formato do vídeo (vertical, quadrado ou horizontal).</p>
     <p class="hint text-amber-700" data-broll-avisos></p>
     <div data-broll-grade class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4"></div>

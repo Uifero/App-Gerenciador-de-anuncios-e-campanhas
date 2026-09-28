@@ -10,6 +10,7 @@ import {
 import { db, COL, removerArquivo } from '../core/storage.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
 import { previaEmSegundoPlano } from '../lib/previa.js';
+import { statusAposTrocarArquivo } from './aprovacao.js';
 import { $, $$, esc, on, toast, ocupado, opcoes, confirmar, campoArquivo } from '../core/ui.js';
 
 const AVISO_LENTIDAO = 'Isso pode demorar dependendo do seu computador (roda tudo aqui, sem servidor). Não feche esta aba enquanto processa.';
@@ -283,10 +284,10 @@ export function montarEditorVideo(raiz, { criativo, cliente, obterNarracao = () 
       const arquivo = new File([est.atual], nomeArquivo, { type: 'video/mp4' });
       const r = await enviarArquivoOuAvisar(caminho, arquivo);
       if (criativo.arquivoPath) await removerArquivo(criativo.arquivoPath);
-      const patch = { arquivoUrl: r.url, arquivoPath: r.path, arquivoNome: nomeArquivo };
+      const patch = { arquivoUrl: r.url, arquivoPath: r.path, arquivoNome: nomeArquivo, ...statusAposTrocarArquivo(criativo) };
       await db.atualizar(COL.criativos, criativo.id, patch);
       Object.assign(criativo, patch);
-      toast('Vídeo editado salvo como a peça final do criativo.');
+      toast(patch.status === 'reaprovacao' ? 'Vídeo editado salvo como a peça final. Como o cliente ainda não viu esta versão, o criativo ficou "Aguardando nova aprovação".' : 'Vídeo editado salvo como a peça final do criativo.');
       previaEmSegundoPlano(cliente, criativo, arquivo); // versão 480p para o link de aprovação, nos bastidores
     });
   });

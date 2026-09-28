@@ -83,7 +83,7 @@ export function checklistLancamento({ cliente, criativos = [], campanhas = [], s
   if (escopo.site) {
     const pronto = !!site && (!!site.exportadoEm || ['pronto', 'publicado'].includes(site.status));
     etapas.push({ id: 'site', nome: 'Site / Loja', aba: 'site', feito: pronto, detalhe: pronto ? 'exportado/pronto' : 'ainda não exportado' });
-    etapas.push({ id: 'handoff', nome: 'Handoff (manual em PDF)', aba: 'site', feito: (site?.versaoManual || 0) > 0, detalhe: site?.versaoManual ? `manual v${site.versaoManual} gerado` : 'manual ainda não gerado' });
+    etapas.push({ id: 'handoff', nome: 'Manual de entrega (PDF)', aba: 'site', feito: (site?.versaoManual || 0) > 0, detalhe: site?.versaoManual ? `manual v${site.versaoManual} gerado` : 'manual ainda não gerado' });
   }
   const feitas = etapas.filter((e) => e.feito).length;
   return { etapas, feitas, total: etapas.length, percentual: Math.round((feitas / etapas.length) * 100) };

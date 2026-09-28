@@ -40,6 +40,7 @@
   --color-rose-50: #3b0f1c; --color-rose-100: #881337; --color-rose-300: #9f1239; --color-rose-600: #fb7185; --color-rose-700: #fda4af;
   --color-indigo-100: #312e81; --color-indigo-700: #c7d2fe; --color-indigo-800: #c7d2fe;
   --color-violet-50: #2e1065; --color-violet-200: #5b21b6; --color-violet-800: #ddd6fe;
+  --color-sky-50: #0b2536; --color-sky-200: #0c4a6e; /* avisos informativos (ex.: "duas versões da loja" em Site/Loja) */
 }
 /* Superfícies "brancas": classes de componente e a utilidade bg-white (usada em header, modais e busca). */
 .dark .card, .dark .input, .dark .btn-ghost, .dark .btn-danger, .dark .bg-white { background-color: #111a2e; }

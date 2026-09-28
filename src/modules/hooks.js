@@ -80,7 +80,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     await ocupado(f.querySelector('button'), async () => {
       const hooks = await gerarHooks({ cliente, tema: v.tema, categoria: v.categoria });
       const res = $('#res', f); res._h = hooks;
-      res.innerHTML = `<div class="mt-3 space-y-2">${iaNota(`A IA criou ${hooks.length} hooks nativos/orgânicos para ${cliente.nome}. Salve os que servirem.`)}
+      res.innerHTML = `<div class="mt-3 space-y-2">${iaNota(`A IA criou ${hooks.length} hooks nativos/orgânicos para ${cliente.nome}. Salve os que servirem: eles vão para a lista abaixo. Use o hook como primeira frase de um criativo (aba Criativos) e, depois de ver o resultado do anúncio, dê uma nota aqui para saber quais reaproveitar.`)}
         ${hooks.map((h, i) => `<div class="flex items-center justify-between gap-2 rounded-lg border border-slate-200 p-2"><span class="text-sm">“${esc(h.texto)}” ${tag(nomeCat(h.categoria), 'tag-info')}</span>
         <button type="button" class="btn-primary btn-sm shrink-0" data-salvar-h="${i}">Salvar na lista</button></div>`).join('')}</div>`;
     });

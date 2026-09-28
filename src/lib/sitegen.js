@@ -1,7 +1,7 @@
 // Gerador do site "custom": um único index.html autocontido (CSS + JS inline), com carrinho client-side.
 // NÃO processa pagamento: o botão de compra chama window.checkoutHandler(itens), ponto de encaixe para checkout de terceiro.
 import { esc } from '../core/ui.js';
-import { rastreamentoDe, codigoHead, codigoCheckout, CHAVE_CONSENTIMENTO } from './rastreamento.js';
+import { rastreamentoDe, codigoHead, codigoCheckout, CHAVE_CONSENTIMENTO, textoAvisoCookies } from './rastreamento.js';
 
 /** Formas de pagamento que o selo "compra segura" pode mostrar (ícones genéricos desenhados aqui, sem logo de bandeira). */
 export const FORMAS_PAGAMENTO = [['cartao', 'Cartão de crédito'], ['pix', 'Pix'], ['boleto', 'Boleto']];
@@ -33,7 +33,7 @@ const brl = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', curren
 
 export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {}, url = '' }) {
   const cor = cfg.corPrimaria || '#4f46e5';
-  const rastro = rastreamentoDe(cliente); // Pixel do Meta / tag do Google Ads do cadastro (vazio = nenhum código)
+  const rastro = rastreamentoDe(cliente); // Pixel do Meta / Google Ads / Hotjar / Tawk.to do cadastro (vazio = nenhum código)
   const pixel = codigoHead(rastro);
   const head = pixel ? `${pixel}\n` : '';
   const fundo = cfg.corFundo || '#ffffff';
@@ -126,7 +126,7 @@ ${faq.length ? `<section id="faq" class="alt"><div class="wrap faq"><h2>Pergunta
 <p style="margin-top:24px">© ${new Date().getFullYear()} ${esc(cliente.nome)}. Todos os direitos reservados. · <button class="linkcookies" id="prefCookies">Preferências de cookies</button></p></div></footer>
 
 <!-- Aviso de cookies (LGPD): aparece na 1ª visita; a escolha fica no navegador do visitante (localStorage). -->
-<div id="cookies" role="dialog" aria-live="polite" aria-label="Aviso de cookies"><p>Usamos cookies e tecnologias parecidas para o carrinho funcionar${rastro.metaPixelId || rastro.googleAdsId ? ' e, se você aceitar, para medir anúncios (Meta/Google)' : ''}. Você pode mudar a escolha em "Preferências de cookies", no rodapé.</p>
+<div id="cookies" role="dialog" aria-live="polite" aria-label="Aviso de cookies"><p>${esc(textoAvisoCookies(rastro))}</p>
 <button class="nao" id="cookiesNao">Rejeitar</button><button class="ok" id="cookiesOk">Aceitar</button></div>
 
 ${zap ? `<a class="zap" href="https://wa.me/${zap}" target="_blank" rel="noopener">WhatsApp</a>` : '<!-- WhatsApp flutuante: informe o número em "Configurar loja" para exibir o botão. -->'}
@@ -164,7 +164,7 @@ document.getElementById('fecharCarrinho').onclick=()=>document.getElementById('d
 document.getElementById('news').onsubmit=e=>{e.preventDefault();document.getElementById('newsOk').textContent='Obrigado! (ligue este formulário à sua ferramenta de e-mail)';};
 // >>> PONTO DE ENCAIXE: substitua para integrar o checkout de terceiro <<<
 window.checkoutHandler=function(itens){
-  alert('Checkout ainda não conectado. Veja o manual de handoff para ligar Shopify Buy Button, Mercado Pago ou Stripe.\\n\\nItens: '+itens.map(i=>i.nome+' × '+i.qtd).join(', '));
+  alert('O pagamento desta loja ainda não foi ligado (seção 3 do manual de entrega: Mercado Pago, Stripe ou Shopify).\\n\\nItens: '+itens.map(i=>i.nome+' × '+i.qtd).join(', '));
 };
 ${codigoCheckout(rastro)}
 // Consentimento de cookies: sem escolha guardada, mostra o banner; "Aceitar" carrega o Pixel/tag (se houver).

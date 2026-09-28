@@ -6,7 +6,9 @@ import { gerarSiteHTML, faqValida, FORMAS_PAGAMENTO, PAGAMENTOS_PADRAO } from '.
 import { montarPerguntasSite, progressoSite, PAGAMENTOS_PRETENDIDOS, TOTAL_PERGUNTAS } from './perguntas-site.js';
 import { csvShopify, csvNuvemshop, slug } from '../lib/csv.js';
 import { criarPdf } from '../lib/pdf.js';
-import { rastreamentoDe, passosRastreamentoPacote, indicadorPixel } from '../lib/rastreamento.js';
+import { rastreamentoDe, passosRastreamentoPacote, passosExtrasPacote, indicadorPixel } from '../lib/rastreamento.js';
+import { temCustom, temPacote, baseDoCustom, baseDoPacote, aplicarBaseNoPacote, aplicarBaseNoCustom, divergencias, baseParaGerar, AVISO_MODOS } from '../lib/site-modos.js';
+import { criarZip } from '../lib/zip.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas } from '../core/ui.js';
 
@@ -45,16 +47,23 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   };
 
   // Geração dos textos com IA no modo do site — usada pelo botão do formulário e pelo "Gerar site com essas respostas".
+  // Se o OUTRO modo já foi gerado e este ainda não, a base (textos principais, cores, FAQ, depoimentos) vem de lá e é
+  // reaplicada por cima do que a IA escrever (lib/site-modos.js): o cliente continua vendo o que já aprovou.
   const gerarComIa = (b) => ocupado(b, async () => {
+    const base = baseParaGerar(site, site.modo === 'custom' ? 'custom' : 'pacote');
+    const reaproveitou = base ? { avisoModosVisto: false, baseReaproveitadaEm: new Date().toISOString() } : {};
     if (site.modo === 'custom') {
       const atual = site.conteudo || {};
-      const r = await gerarConteudoSite({ cliente, produtos });
+      const r = await gerarConteudoSite({ cliente, produtos, base });
       // Depoimentos puxados de criativos aprovados não se perdem ao gerar de novo.
-      await salvarSite({ conteudo: { ...atual, ...r, depoimentos: [...(r.depoimentos || []), ...(atual.depoimentos || []).filter((d) => d.origem === 'criativo')] } });
-      toast(`Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. Revise e use "Pré-visualizar" ou "Baixar site".`);
+      const gerado = { ...atual, ...r, depoimentos: [...(r.depoimentos || []), ...(atual.depoimentos || []).filter((d) => d.origem === 'criativo')] };
+      await salvarSite({ ...(base ? aplicarBaseNoCustom(gerado, site.config || {}, base) : { conteudo: gerado }), ...reaproveitou });
+      toast(base ? 'Site gerado reaproveitando o texto, as cores e a FAQ do pacote que o cliente já viu. A IA só completou o que faltava.'
+        : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. Revise e use "Ver prévia" ou "Baixar pasta do site".`);
     } else {
-      const pacote = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma) });
-      await salvarSite({ pacote }); toast('Banners, briefing do tema e textos gerados. Revise abaixo.');
+      const gerado = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base });
+      await salvarSite({ pacote: base ? aplicarBaseNoPacote(gerado, base) : gerado, ...reaproveitou });
+      toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado. Revise abaixo.' : 'Banners, briefing do tema e textos gerados. Revise abaixo.');
     }
     recarregar();
   });
@@ -65,9 +74,10 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     root.innerHTML = `${cabecalho('Site / Loja', 'Escolha como a loja deste cliente será entregue. Você pode trocar depois.')}
     <div class="grid gap-4 md:grid-cols-2">
       <button class="card text-left transition hover:border-indigo-400 hover:shadow-md" data-modo="custom"><div class="mb-2 text-2xl text-indigo-500"><i class="fa-solid fa-code"></i></div>
-        <h3 class="font-semibold">Site personalizado</h3><p class="caption">Gera um site HTML pronto, com catálogo, carrinho, banner, depoimentos e WhatsApp. Você hospeda e liga o checkout de terceiros.</p></button>
+        <h3 class="font-semibold">Site personalizado</h3><p class="caption">Gera um site pronto, com catálogo, carrinho, banner, depoimentos e WhatsApp, para publicar numa hospedagem gratuita própria do cliente (o app explica o passo a passo). O pagamento é ligado a um serviço externo.</p></button>
       <button class="card text-left transition hover:border-indigo-400 hover:shadow-md" data-modo="pacote_plataforma"><div class="mb-2 text-2xl text-indigo-500"><i class="fa-solid fa-box-open"></i></div>
         <h3 class="font-semibold">Pacote para Nuvemshop/Shopify</h3><p class="caption">Gera o catálogo em CSV, banners e textos prontos e o briefing do tema para importar na plataforma.</p></button></div>
+    ${temCustom(site) || temPacote(site) ? `<p class="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-2 text-sm"><i class="fa-solid fa-circle-info mr-1"></i> Este cliente já tem ${temCustom(site) && temPacote(site) ? 'as duas versões' : temCustom(site) ? 'o site personalizado' : 'o pacote de plataforma'}. Nada se perde ao trocar: o texto, as cores e a FAQ que já existem são reaproveitados na outra versão.</p>` : ''}
     <p class="caption mt-4">Ainda não sabe? Converse com o cliente usando as perguntas abaixo — a pergunta (i) escolhe o modo por você.</p>
     <div class="mt-2" data-perguntas></div>`;
     montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: true });
@@ -79,19 +89,36 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const c = site.conteudo || {};
   const cfg = site.config || {};
   const custom = site.modo === 'custom';
+  const rastro = rastreamentoDe(cliente);
 
-  root.innerHTML = `${cabecalho(custom ? 'Site personalizado' : 'Pacote de plataforma', custom ? 'Site HTML exportável com carrinho no navegador e ponto de encaixe para checkout de terceiros.' : 'Arquivos prontos para importar em Nuvemshop ou Shopify.',
+  // Consistência entre os dois modos (lib/site-modos.js): aviso fixo e reabrível + oferta de sincronizar edições.
+  const doisModos = temCustom(site) && temPacote(site);
+  const avisoModosHTML = doisModos || site.baseReaproveitadaEm ? `<details class="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm" data-aviso-modos ${site.avisoModosVisto ? '' : 'open'}>
+      <summary class="cursor-pointer font-medium"><i class="fa-solid fa-circle-info mr-1"></i> Este cliente tem as duas versões da loja: por que o visual pode não ficar idêntico</summary>
+      <p class="mt-2">${AVISO_MODOS}</p>
+      <p class="mt-1 hint">Em outras palavras: o título, a história, as perguntas frequentes, as cores e as fotos dos produtos são os mesmos nas duas versões. O que muda é o "molde" de cada plataforma (fonte, espaçamentos, posição dos blocos). Mostre ao cliente a versão final antes de publicar. Clique no título acima para fechar ou reabrir este aviso.</p></details>` : '';
+  const dif = divergencias(site);
+  const divergenciaHTML = dif.length ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-divergencia>
+      <p><b><i class="fa-solid fa-code-compare mr-1"></i> O texto do formulário "Conteúdo da loja" está diferente do pacote Nuvemshop/Shopify em: ${esc(dif.join(', '))}.</b></p>
+      <p class="mt-1">Isso acontece quando um dos dois é editado depois. Nada é copiado sozinho: se quiser que o pacote (banner principal, página Sobre, perguntas frequentes e paleta) fique igual ao que está no formulário, clique abaixo.</p>
+      <button class="btn-primary btn-sm mt-2" data-sincronizar-modos><i class="fa-solid fa-arrows-rotate"></i> Sincronizar essa edição com o pacote também</button></div>` : '';
+
+  root.innerHTML = `${cabecalho(custom ? 'Site personalizado' : 'Pacote de plataforma', custom ? 'Um site pronto, com vitrine e carrinho. Caminho: 1. preencher o conteúdo → 2. ver a prévia → 3. baixar a pasta → 4. publicar (passo a passo no fim da página) → 5. ligar o pagamento (manual de entrega).' : 'Arquivos prontos para montar a loja do cliente na Nuvemshop ou na Shopify. Caminho: 1. conteúdo → 2. gerar banners e textos → 3. baixar catálogo e manual → 4. seguir o manual na plataforma.',
     `<button class="btn-ghost btn-sm" data-trocar title="Voltar e escolher outro modo">Trocar modo</button>`)}
     ${semProdutos ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">Você ainda não cadastrou produtos. <a class="font-semibold underline" href="#/c/${cliente.id}/produtos">Cadastrar agora</a> — o site e o CSV usam essa lista.</div>` : ''}
     <div class="mb-4 flex flex-wrap gap-1">${tag(STATUS_SITE.find(([k]) => k === site.status)?.[1] || site.status, site.status === 'rascunho' ? '' : 'tag-ok')}${tag(produtos.length + ' produto(s)')}
       ${site.plataforma ? tag(nomePlat(site.plataforma), 'tag-info') : ''}${site.versaoManual ? tag('manual v' + site.versaoManual) : ''}${site.exportadoEm ? tag('exportado em ' + dataBR(site.exportadoEm)) : ''}
       ${cliente.siteReferencia ? `<a class="tag tag-info" href="${esc(cliente.siteReferencia)}" target="_blank" rel="noopener">site de referência</a>` : ''}</div>
-    <div class="-mt-2 mb-4">${indicadorPixel(cliente)}<span class="hint ml-2">${custom ? 'Com o ID preenchido, o código entra sozinho no site gerado (só carrega depois que o visitante aceita os cookies).' : 'Com o ID preenchido, o manual traz o passo para colar na loja.'}</span></div>
+    <div class="-mt-2 mb-4">${indicadorPixel(cliente)} ${tag(rastro.hotjarId ? 'Hotjar configurado' : 'Hotjar: não usado', rastro.hotjarId ? 'tag-ok' : '')} ${tag(rastro.tawkPropertyId ? 'Chat Tawk.to configurado' : 'Chat ao vivo: não usado', rastro.tawkPropertyId ? 'tag-ok' : '')}
+      <p class="hint mt-1">${custom ? 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) entram sozinhos no site gerado e só carregam depois que o visitante aceita os cookies.' : 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) vão para o manual, com o passo a passo para colar na loja.'}</p></div>
+    ${avisoModosHTML}${divergenciaHTML}
     <div class="mb-4" data-perguntas></div>
 
     <div class="grid gap-4 lg:grid-cols-2">
       <form id="fc" class="card space-y-3"><h3 class="font-semibold">1. Conteúdo da loja</h3>
-        <p class="caption">Preencha à mão e clique em "Salvar conteúdo", ou use "Gerar textos com IA": ela escreve banner, história da marca, depoimentos-modelo, políticas${custom ? ' e a FAQ (a partir das objeções do perfil)' : ''}, e <b>substitui</b> o que estiver nos campos. ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : ''}</p>
+        <p class="caption">Preencha à mão e clique em "Salvar conteúdo", ou use "Gerar textos com IA": ela escreve banner, história da marca, depoimentos-modelo, políticas${custom ? ' e a FAQ (a partir das objeções do perfil)' : ''}, e <b>substitui</b> o que estiver nos campos. ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : 'No pacote, estes textos são a base dos banners e da página Sobre.'}</p>
+        ${custom && !temCustom(site) && temPacote(site) ? `<div class="rounded-lg border border-sky-200 bg-sky-50 p-2 text-sm">Este cliente já tem o pacote Nuvemshop/Shopify pronto. Para o site sair igual ao que ele já viu, traga os textos e as cores de lá (sem IA), ou use "Gerar textos com IA", que também mantém esses textos e só completa o resto.
+          <button type="button" class="btn-ghost btn-sm mt-1" data-trazer-pacote><i class="fa-solid fa-file-import"></i> Trazer texto e cores do pacote (sem IA)</button></div>` : ''}
         <div><label class="label">Título do banner (hero)</label><input class="input" name="heroTitulo" value="${esc(c.heroTitulo)}"></div>
         <div><label class="label">Subtítulo</label><input class="input" name="heroSubtitulo" value="${esc(c.heroSubtitulo)}"></div>
         <div><label class="label">Texto do botão do banner</label><input class="input" name="heroCta" value="${esc(c.heroCta)}"></div>
@@ -119,20 +146,24 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
       <div class="card space-y-3"><h3 class="font-semibold">2. Exportar e entregar</h3>
         ${custom ? `
-          <p class="caption">Baixe o site (um único arquivo <code>index.html</code>). Abra no navegador para conferir e depois publique em qualquer hospedagem estática.</p>
-          <button class="btn-primary" data-baixar-site ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-download"></i> Baixar site (index.html)</button>
-          <button class="btn-ghost" data-preview ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-eye"></i> Pré-visualizar em nova aba</button>`
+          <p class="caption">O site é gerado como uma pasta pronta para publicar (com o arquivo <code>index.html</code> dentro). Este app <b>não publica</b> o site em lugar nenhum: veja abaixo, em "Como publicar este site", onde colocar.</p>
+          <button class="btn-ghost" data-preview ${semProdutos ? 'disabled' : ''} title="Abre o site numa aba separada, isolada do painel, só para conferir"><i class="fa-solid fa-eye"></i> Ver prévia do site em nova aba</button>
+          <button class="btn-primary" data-baixar-zip ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-file-zipper"></i> Baixar pasta do site pronta para publicar (.zip)</button>
+          <button class="btn-ghost btn-sm" data-baixar-site ${semProdutos ? 'disabled' : ''} title="O mesmo site, só o arquivo solto (para quem já sabe onde colocar)"><i class="fa-solid fa-download"></i> Baixar só o arquivo index.html</button>`
         : `
           <div><label class="label">Plataforma</label><select class="input" data-plat>${opcoes(PLATAFORMAS, site.plataforma)}</select></div>
-          <button class="btn-primary" data-csv ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-file-csv"></i> Baixar catálogo (CSV)</button>
-          <button class="btn-ia" data-pacote ${semProdutos ? 'disabled' : ''} title="A IA gera banners, briefing do tema e textos de página"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar banners e briefing do tema</button>
-          ${site.pacote ? `<button class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Baixar banners e briefing (.txt)</button>` : ''}`}
-        <div><label class="label">Link publicado (opcional)</label><input class="input" name="link" data-link value="${esc(site.linkPublicado)}" placeholder="https://…">
-          <p class="hint">Assim que preenchido, a aba Campanhas passa a sugerir este link como destino da campanha automaticamente.</p></div>
+          <p class="caption">Três entregas: o catálogo (planilha que a plataforma importa), os textos/banners e o manual. A loja fica hospedada na própria ${esc(nomePlat(site.plataforma))}, na conta do cliente.</p>
+          <button class="btn-primary" data-csv ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-file-csv"></i> Baixar catálogo de produtos para importar (CSV)</button>
+          <button class="btn-ia" data-pacote ${semProdutos ? 'disabled' : ''} title="A IA escreve banners, briefing do tema e textos de página"><i class="fa-solid fa-wand-magic-sparkles"></i> ${site.pacote ? 'Gerar de novo banners, briefing e textos' : 'Gerar banners, briefing do tema e textos com IA'}</button>
+          ${temCustom(site) && !temPacote(site) ? '<p class="hint">Como o site personalizado já existe, o título, a história, a FAQ e as cores dele serão mantidos; a IA só completa o resto (briefing do tema e descrições).</p>' : ''}
+          ${site.pacote ? `<button class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Baixar banners e briefing em texto (.txt)</button>` : ''}`}
+        <div><label class="label">Endereço do site já publicado (opcional)</label><input class="input" name="link" data-link value="${esc(site.linkPublicado)}" placeholder="https://…">
+          <p class="hint">Depois de publicar, cole aqui o endereço. A aba Campanhas passa a sugerir este link como destino dos anúncios${custom ? ', e o site baixado de novo já sai com a prévia certa para o WhatsApp' : ''}.</p></div>
         <div><label class="label">Status</label><select class="input" data-status>${opcoes(STATUS_SITE, site.status)}</select></div>
         <hr class="border-slate-200">
-        <p class="caption">O manual de handoff é o passo a passo para quem vai publicar/importar${custom ? ' e ligar o checkout' : ''}.</p>
-        <button class="btn-primary" data-manual><i class="fa-solid fa-file-pdf"></i> Gerar manual de handoff (PDF)</button></div></div>
+        <p class="caption">O manual de entrega é um PDF com o passo a passo para quem vai publicar/importar${custom ? ' e ligar o pagamento' : ''}. Pode mandar direto para o cliente.</p>
+        <button class="btn-primary" data-manual><i class="fa-solid fa-file-pdf"></i> Baixar manual de entrega (PDF)</button></div></div>
+    ${custom ? comoPublicarHTML(cliente) : ''}
 
     <div class="card mt-4"><h3 class="mb-1 font-semibold">Prova social a partir de criativos aprovados</h3>
       <p class="caption mb-3">Em vez de montar depoimentos do zero: marque "usar como prova social" no detalhe de um criativo aprovado (aba Criativos) e traga aqui, com o vídeo/imagem anexado quando houver.</p>
@@ -142,7 +173,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ${(c.depoimentos || []).some((d) => d.origem === 'criativo') ? `<div class="mt-3 grid gap-2 sm:grid-cols-2">${(c.depoimentos || []).filter((d) => d.origem === 'criativo').map((d) => `
         <div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><b>${esc(d.nome)}</b>${d.midiaUrl ? ` ${tag('com mídia', 'tag-ok')}` : ''}<p class="line-clamp-2 text-slate-600">“${esc(d.texto)}”</p></div>`).join('')}</div>` : ''}
     </div>
-    ${site.pacote ? `<div class="card mt-4"><h3 class="mb-2 font-semibold">Banners e briefing do tema</h3>${iaNota('Criado pela IA para a plataforma escolhida. Use os textos nos banners e o briefing para configurar o tema.')}
+    ${site.pacote ? `<div class="card mt-4"><h3 class="mb-2 font-semibold">Banners e briefing do tema${custom ? ' <span class="text-sm font-normal text-slate-500">(do pacote Nuvemshop/Shopify, não aparece neste site)</span>' : ''}</h3>${iaNota(custom ? 'Guardado da versão pacote deste cliente, só para consulta. O site personalizado usa o formulário "Conteúdo da loja" acima.' : 'Criado pela IA para a plataforma escolhida. Próximo passo: use os textos nos banners da loja e o briefing para escolher e ajustar o tema (o manual de entrega explica onde).')}
       ${pacoteHTML(site.pacote)}</div>` : ''}`;
 
   on(root, 'click', '[data-trocar]', async () => { await salvarSite({ modo: null }); recarregar(); });
@@ -181,11 +212,38 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   }));
 
   const html = () => gerarSiteHTML({ cliente, produtos, conteudo: (site.conteudo || {}), config: (site.config || {}), url: site.linkPublicado || '' });
+  const marcarExportado = () => salvarSite({ exportadoEm: new Date().toISOString(), status: site.status === 'rascunho' ? 'pronto' : site.status });
   on(root, 'click', '[data-baixar-site]', async () => {
     baixarTexto(`${slug(cliente.nome) || 'loja'}-index.html`, html(), 'text/html;charset=utf-8');
-    await salvarSite({ exportadoEm: new Date().toISOString(), status: site.status === 'rascunho' ? 'pronto' : site.status }); recarregar();
+    await marcarExportado(); recarregar();
   });
-  on(root, 'click', '[data-preview]', () => { const w = window.open('', '_blank'); if (w) { w.document.open(); w.document.write(html()); w.document.close(); } else toast('O navegador bloqueou a janela. Libere pop-ups.', 'erro'); });
+  on(root, 'click', '[data-baixar-zip]', async () => {
+    const pasta = pastaDoSite(cliente);
+    baixarTexto(`${pasta}.zip`, criarZip([{ nome: `${pasta}/index.html`, conteudo: html() }]), 'application/zip');
+    await marcarExportado();
+    toast('Pasta do site baixada. Próximo passo: "Como publicar este site", logo abaixo.', 'info');
+    recarregar();
+  });
+  // Prévia isolada: o site roda num iframe sandbox (origem própria, sem acesso aos dados/login do painel). Antes ele
+  // era escrito direto numa aba com a MESMA origem do painel — scripts do cliente (Pixel, Hotjar, Tawk.to) rodariam
+  // com acesso ao armazenamento do painel. No iframe o carrinho e o aviso de cookies funcionam, só não guardam a escolha.
+  on(root, 'click', '[data-preview]', () => {
+    const w = window.open('', '_blank');
+    if (!w) return toast('O navegador bloqueou a nova aba. Libere pop-ups para este endereço e tente de novo.', 'erro');
+    w.document.open();
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Prévia — ${esc(cliente.nome)}</title><style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%}</style>
+<iframe sandbox="allow-scripts allow-popups allow-forms allow-modals" srcdoc="${esc(html())}"></iframe>`);
+    w.document.close();
+  });
+  on(root, 'click', '[data-trazer-pacote]', async (b) => ocupado(b, async () => {
+    await salvarSite({ ...aplicarBaseNoCustom(site.conteudo || {}, site.config || {}, baseDoPacote(site)), avisoModosVisto: false, baseReaproveitadaEm: new Date().toISOString() });
+    toast('Texto, perguntas frequentes e cor principal trazidos do pacote. Revise e clique em "Salvar conteúdo" se mudar algo.'); recarregar();
+  }));
+  on(root, 'click', '[data-sincronizar-modos]', (b) => ocupado(b, async () => {
+    await salvarSite({ pacote: aplicarBaseNoPacote(site.pacote, baseDoCustom(site)) });
+    toast('Pacote atualizado com o texto e as cores do formulário. Baixe os banners e o manual de novo para entregar a versão nova.'); recarregar();
+  }));
+  $('[data-aviso-modos]', root)?.addEventListener('toggle', (e) => { if (!e.target.open && !site.avisoModosVisto) salvarSite({ avisoModosVisto: true }); });
   on(root, 'change', '[data-link]', (i) => salvarSite({ linkPublicado: i.value.trim(), ...(i.value.trim() ? { status: 'publicado' } : {}) }).then(() => toast('Link salvo.')));
   on(root, 'change', '[data-status]', (s) => salvarSite({ status: s.value }).then(recarregar));
   on(root, 'change', '[data-plat]', (s) => salvarSite({ plataforma: s.value }).then(recarregar));
@@ -195,17 +253,39 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     baixarTexto(`catalogo-${site.plataforma}-${slug(cliente.nome)}.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
     await salvarSite({ exportadoEm: new Date().toISOString() }); toast('CSV gerado. Confira as colunas no passo a passo do manual.'); recarregar();
   });
-  on(root, 'click', '[data-pacote]', async (b) => {
-    await ocupado(b, async () => { const pacote = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma) }); await salvarSite({ pacote }); toast('Banners e briefing gerados.'); recarregar(); });
-  });
+  on(root, 'click', '[data-pacote]', (b) => gerarComIa(b));
   on(root, 'click', '[data-baixar-pacote]', () => baixarTexto(`pacote-${slug(cliente.nome)}.txt`, pacoteTexto(site.pacote), 'text/plain;charset=utf-8'));
 
   on(root, 'click', '[data-manual]', async () => {
     const versao = (site.versaoManual || 0) + 1;
-    (await (custom ? manualCustom : manualPacote)({ cliente, site, produtos, versao })).salvar(`manual-handoff-${slug(cliente.nome)}-v${versao}.pdf`);
+    (await (custom ? manualCustom : manualPacote)({ cliente, site, produtos, versao })).salvar(`manual-entrega-${slug(cliente.nome)}-v${versao}.pdf`);
     await salvarSite({ versaoManual: versao }); toast(`Manual v${versao} gerado.`); recarregar();
   });
 });
+
+/** Nome da pasta do site dentro do .zip (e do .zip em si). */
+const pastaDoSite = (cliente) => `site-${slug(cliente.nome) || 'loja'}`;
+
+/**
+ * "Como publicar este site" (modo custom). Política: o site do CLIENTE nunca roda no servidor/VM nem no projeto
+ * Firebase do painel — cada cliente numa hospedagem própria e separada (isola problema técnico e pico de tráfego de
+ * um cliente do painel de trabalho, e deixa claro de quem é o site). Este app só gera o arquivo; não publica.
+ */
+function comoPublicarHTML(cliente) {
+  return `<div class="card mt-4" data-como-publicar><h3 class="mb-1 font-semibold"><i class="fa-solid fa-globe mr-1 text-indigo-500"></i> Como publicar este site</h3>
+    <p class="caption mb-3">Publicar = colocar o site na internet com um endereço (ex.: <code>loja-da-ana.netlify.app</code>). Este app não faz isso sozinho: você envia a pasta baixada para uma hospedagem gratuita. Leva uns 5 minutos na primeira vez.</p>
+    <ol class="list-decimal space-y-1 pl-5 text-sm">
+      <li>Clique em <b>"Baixar pasta do site pronta para publicar (.zip)"</b>, acima.</li>
+      <li>No computador, abra a pasta Downloads, clique com o botão direito no arquivo <code>${esc(pastaDoSite(cliente))}.zip</code> e escolha <b>"Extrair tudo"</b> (no Mac, dois cliques). Aparece a pasta <code>${esc(pastaDoSite(cliente))}</code>, com o site dentro.</li>
+      <li>Entre em <a class="text-indigo-600 underline" href="https://app.netlify.com/drop" target="_blank" rel="noopener">app.netlify.com/drop</a> e crie uma conta grátis (sem conta, o site sai do ar depois de pouco tempo). O ideal é uma conta <b>no e-mail do cliente</b>, ou uma conta sua separada só para ele.</li>
+      <li><b>Arraste a pasta</b> (não o .zip) para o quadro da página. Em poucos segundos aparece o endereço do site.</li>
+      <li>Abra o endereço para conferir e cole ele no campo <b>"Endereço do site já publicado"</b>, acima.</li>
+      <li>Opcional: para usar um domínio próprio (ex.: <code>lojadaana.com.br</code>), siga "Domain management" no Netlify.</li></ol>
+    <p class="hint mt-2">Para atualizar depois: baixe a pasta de novo e, no Netlify, abra o mesmo site > aba "Deploys" e arraste a pasta nova. Funciona igual em outras hospedagens gratuitas (Cloudflare Pages, Vercel).</p>
+    <div class="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-politica-hospedagem>
+      <p><b><i class="fa-solid fa-shield-halved mr-1"></i> Regra: cada cliente numa hospedagem própria, nunca no servidor deste painel.</b></p>
+      <p class="mt-1">Não publique o site do cliente no mesmo servidor (VM) nem no mesmo projeto Firebase deste painel. Assim, se o site de um cliente tiver um problema ou muitas visitas de uma vez, o painel de trabalho não é afetado, e fica claro que o site é do cliente. Depois de entregue, manter o site no ar é responsabilidade de quem é dono da hospedagem, a não ser que você tenha combinado outra coisa com o cliente (o manual de entrega explica isso a ele).</p></div></div>`;
+}
 
 function pacoteHTML(p) {
   const banners = (p.banners || []).map((b) => `<li><b>${esc(b.titulo)}</b> — ${esc(b.subtitulo)} <span class="tag">${esc(b.cta)}</span> <span class="hint">${esc(b.uso)}</span></li>`).join('');
@@ -220,21 +300,28 @@ function pacoteTexto(p) {
   return ['BANNERS', ...(p.banners || []).map((b) => `- ${b.titulo} | ${b.subtitulo} | CTA: ${b.cta} | ${b.uso}`), '', 'BRIEFING DO TEMA',
     `Estilo: ${t.estilo}`, `Tipografia: ${t.tipografia}`, `Paleta: ${(t.paletaSugerida || []).join(', ')}`, `Seções: ${(t.secoesHome || []).join(' > ')}`, `Obs.: ${t.observacoes}`, '',
     'SOBRE', p.textosPagina?.sobre || '', '', 'FAQ', ...(p.textosPagina?.faq || []).map((f) => `P: ${f.p}\nR: ${f.r}`), '', 'DESCRIÇÕES DE PRODUTO',
-    ...(p.descricoesProdutos || []).map((d) => `${d.nome}\n${d.descricao}\nSEO: ${d.seoTitulo} — ${d.seoDescricao}`)].join('\n');
+    ...(p.descricoesProdutos || []).map((d) => `${d.nome}\n${d.descricao}\nSEO: ${d.seoTitulo} — ${d.seoDescricao}`),
+    ...(p.depoimentos?.length ? ['', 'DEPOIMENTOS (os mesmos do site personalizado)', ...p.depoimentos.map((d) => `"${d.texto}" — ${d.nome}${d.midiaUrl ? ` (mídia: ${d.midiaUrl})` : ''}`)] : [])].join('\n');
 }
 
-// ---------- manuais de handoff (PDF) ----------
+// ---------- manuais de entrega (PDF) ----------
 async function manualCustom({ cliente, site, produtos, versao }) {
-  const pdf = await criarPdf(`Manual de handoff — ${cliente.nome}`, `Site personalizado · versão ${versao} · gerado em ${new Date().toLocaleDateString('pt-BR')} · ${produtos.length} produto(s)`);
+  const pdf = await criarPdf(`Manual de entrega — ${cliente.nome}`, `Site personalizado · versão ${versao} · gerado em ${new Date().toLocaleDateString('pt-BR')} · ${produtos.length} produto(s)`);
+  pdf.secao('Resumo para o dono da loja')
+    .lista(['Seu site está pronto: é uma pasta com todos os produtos, fotos, textos e o carrinho de compras.', 'Antes de vender, faltam 2 coisas: colocar o site no ar (seção 2, dá para fazer sozinho em uns 5 minutos) e ligar a forma de pagamento (seção 3, é a parte técnica: pode encaminhar este manual para quem vai fazer).', 'O site fica numa hospedagem em seu nome, separada de tudo da agência. Quem é dono dessa conta cuida para ele continuar no ar.'])
+    .texto('As seções marcadas como (parte técnica) são para quem vai fazer a instalação; você não precisa entendê-las.');
   pdf.secao('1. O que você recebeu')
-    .texto('Um arquivo index.html autocontido (HTML, CSS e JavaScript no mesmo arquivo) com: banner principal, categorias, mais vendidos, sale, catálogo, história da marca, depoimentos, perguntas frequentes (quando há), newsletter, rodapé com políticas, botão flutuante de WhatsApp, carrinho que funciona no navegador do visitante, selo de compra segura perto do "Finalizar compra" e aviso de cookies (LGPD).')
-    .texto('Prévia de compartilhamento: o <head> já traz título, descrição e as tags Open Graph (og:title, og:description e og:image com a 1ª foto de produto hospedada online). É isso que aparece quando o link é enviado no WhatsApp/redes. Informe o link publicado na aba Site/Loja e baixe de novo para incluir og:url.')
-    .texto('IMPORTANTE: o site NÃO processa pagamentos. O botão "Finalizar compra" chama a função window.checkoutHandler(itens), no fim do arquivo. É o ponto de encaixe onde você liga um checkout de terceiro (seção 3).');
+    .texto(`Uma pasta chamada ${pastaDoSite(cliente)} (entregue compactada em .zip) com o site inteiro num único arquivo, index.html (HTML, CSS e JavaScript no mesmo arquivo), com: banner principal, categorias, mais vendidos, sale, catálogo, história da marca, depoimentos, perguntas frequentes (quando há), newsletter, rodapé com políticas, botão flutuante de WhatsApp, carrinho que funciona no navegador do visitante, selo de compra segura perto do "Finalizar compra" e aviso de cookies (LGPD).`)
+    .texto('Quando alguém compartilhar o link do site no WhatsApp ou nas redes, aparecem o nome da loja, uma descrição e a foto do 1º produto (tecnicamente: tags Open Graph no <head>; o endereço final entra quando quem gerou o site informa o link publicado e gera de novo).')
+    .texto('IMPORTANTE: sozinho, o site ainda NÃO recebe pagamentos. O botão "Finalizar compra" precisa ser ligado a um serviço de pagamento (Mercado Pago, Stripe ou Shopify), explicado na seção 3. Para quem vai instalar: o ponto de encaixe é a função window.checkoutHandler(itens), no fim do arquivo.');
   pdf.secao('2. Como publicar o site')
-    .lista(['Abra o index.html no navegador e confira textos, preços, fotos e cores.', 'Troque os depoimentos-modelo por depoimentos reais e revise as políticas com um profissional (texto-base, sem valor jurídico).',
-      'Publique em uma hospedagem estática (Netlify, Vercel, Cloudflare Pages, Firebase Hosting, GitHub Pages): crie o projeto e envie o arquivo index.html.', 'Aponte o domínio próprio do cliente para a hospedagem, seguindo as instruções do provedor.',
-      'Informe o link publicado na aba Site/Loja do app para registrar a entrega.'], true);
-  pdf.secao('3. Ligando o checkout (escolha UMA opção)')
+    .lista(['Extraia o .zip (botão direito > "Extrair tudo") e abra o index.html da pasta no navegador para conferir textos, preços, fotos e cores.', 'Troque os depoimentos-modelo por depoimentos reais e revise as políticas com um profissional (texto-base, sem valor jurídico).',
+      'Crie uma conta grátis em app.netlify.com/drop (de preferência no e-mail do dono da loja) e arraste a PASTA (não o .zip) para o quadro da página. Em segundos aparece o endereço do site. Outras hospedagens gratuitas funcionam igual (Cloudflare Pages, Vercel).', 'Para usar um domínio próprio (ex.: lojadaana.com.br), siga as instruções de "domínio" da hospedagem.',
+      'Para atualizar o site depois: gere a pasta de novo e envie para o MESMO site na hospedagem (no Netlify: aba "Deploys", arrastar a pasta nova).'], true)
+    .texto('Hospedagem e responsabilidade', { negrito: true })
+    .lista(['Cada site de cliente tem a sua própria hospedagem, separada. Ele nunca é publicado no servidor nem no projeto do painel de trabalho da agência: assim um problema técnico ou um pico de visitas neste site não afeta nenhum outro sistema, e fica claro que o site pertence ao cliente.',
+      'Depois de entregue, manter o site no ar (hospedagem, domínio, renovações) é responsabilidade de quem é dono da conta de hospedagem. A agência não é responsável por manter o site no ar, a não ser que isso tenha sido combinado explicitamente com o cliente.']);
+  pdf.secao('3. Ligando o pagamento (parte técnica, escolha UMA opção)')
     .texto('Em todos os casos, o pagamento acontece na página segura do provedor. Nunca coloque chaves secretas dentro do index.html — ele é público.', { negrito: true });
   const pref = site.pagamentoPreferido;
   if (pref && pref !== 'nao_sei') pdf.texto(`Forma de pagamento pretendida pelo cliente: ${(PAGAMENTOS_PRETENDIDOS.find(([k]) => k === pref) || [, pref])[1]}${pref === 'nativa' ? ' — no site personalizado não há checkout nativo; considere o modo pacote (Nuvemshop/Shopify) ou uma das opções abaixo.' : ' — essa opção vem primeiro abaixo.'}`);
@@ -250,7 +337,7 @@ async function manualCustom({ cliente, site, produtos, versao }) {
   // A opção que o cliente pretende usar (pergunta "h") sai primeiro; as demais seguem na ordem de sempre.
   [...checkouts.filter(([k]) => k === pref), ...checkouts.filter(([k]) => k !== pref)].forEach(([, escrever]) => escrever());
   const r = rastreamentoDe(cliente);
-  pdf.secao('4. Pixel e rastreamento de conversão');
+  pdf.secao('4. Pixel, Hotjar e chat ao vivo (parte técnica)');
   if (r.metaPixelId || r.googleAdsId) {
     pdf.lista([
       ...(r.metaPixelId ? [`Pixel do Meta ${r.metaPixelId}: já instalado no <head> do index.html, com PageView em cada visita e InitiateCheckout no botão "Finalizar compra".`] : []),
@@ -260,15 +347,23 @@ async function manualCustom({ cliente, site, produtos, versao }) {
       'Depois de publicar, confira no Gerenciador de Eventos do Meta (aba "Testar eventos") e no Google Ads (Conversões) se as visitas estão chegando.',
     ]);
   } else pdf.texto('Nenhum ID de Pixel/Google Ads cadastrado: o site foi gerado sem código de rastreamento. Para medir conversões, preencha em Editar cliente > Rastreamento e gere o site de novo.');
+  if (r.hotjarId || r.tawkPropertyId) {
+    pdf.texto('Hotjar e chat ao vivo', { negrito: true }).lista([
+      ...(r.hotjarId ? [`Hotjar (site ${r.hotjarId}): já instalado. Mostra como as pessoas navegam e onde desistem (mapas de clique e gravações). Veja em hotjar.com, na conta dona desse ID.`] : []),
+      ...(r.tawkPropertyId ? ['Tawk.to: o chat ao vivo já aparece no canto do site. As mensagens chegam no painel/app do Tawk.to (tawk.to), na conta dona desse chat: instale o app no celular para responder na hora.'] : []),
+      'Assim como o Pixel, eles só carregam depois que o visitante clica em "Aceitar" no aviso de cookies. Quem recusa navega normalmente, mas sem gravação e sem o chat.',
+    ]);
+  }
   pdf.secao('5. Newsletter e WhatsApp')
     .lista(['Newsletter: o formulário só mostra confirmação local. Ligue-o ao Mailchimp, Brevo ou ferramenta similar (embed/ação do formulário).', `WhatsApp: ${site.config?.whatsapp ? 'já configurado (' + site.config.whatsapp + ').' : 'informe o número em "Configurar loja" e gere o site de novo.'}`]);
-  pdf.secao('6. Checklist final').lista(['Fotos e preços conferidos', 'Depoimentos reais', 'Respostas da FAQ conferidas', 'Formas de pagamento do selo iguais às do checkout', 'Políticas revisadas', 'Checkout testado de ponta a ponta', 'Domínio e HTTPS funcionando', 'Pixel/analytics instalados (se houver)']);
+  pdf.secao('6. Checklist final').lista(['Fotos e preços conferidos', 'Depoimentos reais', 'Respostas da FAQ conferidas', 'Formas de pagamento do selo iguais às do checkout', 'Políticas revisadas', 'Checkout testado de ponta a ponta', 'Site publicado numa hospedagem própria do cliente (fora do servidor da agência)', 'Domínio e HTTPS funcionando', 'Pixel/analytics instalados (se houver)']);
   return pdf;
 }
 
 async function manualPacote({ cliente, site, produtos, versao }) {
   const plat = nomePlat(site.plataforma);
-  const pdf = await criarPdf(`Manual de handoff — ${cliente.nome}`, `Pacote ${plat} · versão ${versao} · gerado em ${new Date().toLocaleDateString('pt-BR')} · ${produtos.length} produto(s)`);
+  const pdf = await criarPdf(`Manual de entrega — ${cliente.nome}`, `Pacote ${plat} · versão ${versao} · gerado em ${new Date().toLocaleDateString('pt-BR')} · ${produtos.length} produto(s)`);
+  pdf.secao('Resumo para o dono da loja').lista([`Sua loja vai funcionar dentro da ${plat}, numa conta em seu nome: o pagamento, o frete e a hospedagem são da própria ${plat}.`, 'Este manual é o passo a passo para montar a loja lá com os arquivos entregues: catálogo de produtos, textos, banners e as cores do tema.', `Depois de montada, quem cuida da loja no ar é o dono da conta na ${plat}.`]);
   pdf.secao('1. O que você recebeu').lista(['Catálogo de produtos em CSV, no formato de importação da ' + plat + '.', 'Banners e textos prontos (título, subtítulo, CTA e onde usar).', 'Briefing do tema: estilo, paleta, tipografia e seções da home.', 'Textos de página (sobre, FAQ) e descrições/SEO dos produtos, quando gerados.']);
   if (site.pagamentoPreferido && site.pagamentoPreferido !== 'nao_sei') pdf.texto(`Forma de pagamento pretendida pelo cliente: ${(PAGAMENTOS_PRETENDIDOS.find(([k]) => k === site.pagamentoPreferido) || [, site.pagamentoPreferido])[1]}. Ative-a primeiro em "Configurando a loja" (meios de pagamento).`);
   if (site.plataforma === 'shopify') {
@@ -286,6 +381,10 @@ async function manualPacote({ cliente, site, produtos, versao }) {
   pdf.secao('Rastreamento (Pixel do Meta e Google Ads)');
   if (passosPixel.length) pdf.lista(passosPixel, true);
   else pdf.texto('Nenhum ID de Pixel/Google Ads cadastrado para este cliente. Sem isso, as campanhas não medem conversão na loja: cadastre em Editar cliente > Rastreamento e gere o manual de novo.');
+  const passosExtras = passosExtrasPacote(rastreamentoDe(cliente), site.plataforma, plat);
+  if (passosExtras.length) pdf.secao('Hotjar (como as pessoas navegam) e Tawk.to (chat ao vivo)').lista(passosExtras, true);
+  pdf.secao('Hospedagem e responsabilidade').lista([`A loja fica hospedada na própria ${plat}, na conta do dono da loja: o plano, o domínio e as renovações são dessa conta.`,
+    'Ela não depende de nenhum servidor da agência. Depois de entregue, manter a loja no ar é responsabilidade do dono da conta; a agência não responde por isso, a não ser que tenha sido combinado explicitamente com o cliente.']);
   if (site.pacote?.banners?.length) pdf.secao('5. Banners').lista(site.pacote.banners.map((b) => `${b.uso}: "${b.titulo}" / "${b.subtitulo}" [${b.cta}]`));
   pdf.secao('Checklist final').lista(['Produtos e preços conferidos', 'Banners e textos publicados', 'Pagamento e frete configurados', 'Pedido de teste realizado', 'Domínio conectado']);
   return pdf;

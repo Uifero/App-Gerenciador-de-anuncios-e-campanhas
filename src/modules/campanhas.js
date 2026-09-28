@@ -217,7 +217,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <div><label class="label">Critério de decisão</label><input class="input" name="criterio" placeholder="Ex.: pausar quem gastar 2x o CPA alvo sem venda"></div></div>
           <div><label class="label">Criativos aprovados a vincular (entram em todos os conjuntos)</label>
             ${aprovados.length ? `<div class="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">${aprovados.map((c) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="cr_${c.id}"> ${esc(c.nome)} ${c.angulo ? `<span class="hint">(${esc(c.angulo)})</span>` : ''}</label>`).join('')}</div>`
-              : '<p class="hint">Nenhum criativo aprovado ainda.</p>'}</div></details>
+              : '<p class="hint">Nenhum criativo aprovado ainda.</p>'}${criativos.some((c) => c.status === 'reaprovacao') ? `<p class="hint text-amber-700"><i class="fa-solid fa-rotate"></i> ${criativos.filter((c) => c.status === 'reaprovacao').length} criativo(s) "Aguardando nova aprovação" não aparecem aqui: o arquivo mudou depois da aprovação. Voltam assim que o cliente aprovar a peça atual (aba Criativos).</p>` : ''}</div></details>
       <p class="caption"><b>Com IA:</b> monta os conjuntos (público, orçamento e objetivo de cada um), escolhe quais criativos aprovados vão em cada conjunto e explica o porquê de cada decisão. <b>Sem IA:</b> usa o que você preencher em "Estrutura manual" acima. Nos dois casos a estrutura abre como <b>rascunho</b>, com o diagrama: nada vira campanha até você clicar em "Confirmar estrutura".</p>
       <div class="flex flex-wrap gap-2"><button class="btn-ia" type="submit" data-modo="ia"><i class="fa-solid fa-wand-magic-sparkles"></i> Montar rascunho com IA</button>
         <button class="btn-ghost" type="submit" data-modo="manual">Montar rascunho com a estrutura manual</button></div></form>`);
@@ -354,7 +354,7 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
         ${e.duracaoDias ? `<p class="text-sm">Duração: ${esc(e.duracaoDias)} dias</p>` : ''}${e.criterioDecisao ? `<p class="text-sm">Decisão: ${esc(e.criterioDecisao)}</p>` : ''}</div></div>
 
     <div class="mt-3"><label class="label">URL de destino</label><input class="input" data-url-destino value="${esc(c.urlDestino || '')}" placeholder="https://…">
-      <p class="hint">${c.urlDestino ? 'Usada no checklist abaixo, já com parâmetros UTM.' : 'Sem link ainda — publique o site do cliente ou preencha manualmente.'}</p></div>
+      <p class="hint">${c.urlDestino ? 'Usada no checklist abaixo, já com etiquetas UTM (um final no link que mostra, no relatório de visitas, que a pessoa veio deste anúncio).' : 'Sem link ainda — publique o site do cliente ou preencha manualmente.'}</p></div>
 
     <div class="mt-4"><h4 class="mb-1 text-sm font-semibold">Criativos desta campanha</h4>
       <p class="hint mb-2">Quando subir um criativo no Meta, clique em "Marcar em uso": o app anota a data e avisa quando ele passar de ${cfg.diasFadiga} dias no ar (fadiga: o público já viu demais e o resultado costuma cair).</p>

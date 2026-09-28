@@ -31,7 +31,7 @@ export function perguntaZeroHtml(cliente) {
     <div class="rounded-lg border border-slate-200 bg-white p-2">
       <p class="text-sm font-medium"><i class="fa-solid fa-globe text-indigo-500"></i> Site</p>
       <div class="mt-1 flex flex-wrap gap-2"><input class="input min-w-0 flex-1" data-link-presenca value="${esc(ls?.url || '')}" placeholder="https://www.lojadocliente.com.br">
-        <button type="button" class="btn-ia btn-sm" data-puxar title="Lê a página do site e preenche o que encontrar"><i class="fa-solid fa-wand-magic-sparkles"></i> Puxar automaticamente</button></div>
+        <button type="button" class="btn-ia btn-sm" data-puxar title="Lê a página do site e preenche o que encontrar"><i class="fa-solid fa-wand-magic-sparkles"></i> Ler o site e preencher o perfil</button></div>
       <label class="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" data-proprio ${ls?.url ? 'checked' : ''}> Confirmo que é o site do próprio cliente</label>
       <p class="hint">Leva de 30 s a 1 min. Se o site bloquear a leitura direta, o app tenta pela busca na web (1 a 2 min).</p>
       <div data-resultado-leitura class="mt-2">${resultadoHtml(cliente, 'site')}</div></div>
@@ -41,7 +41,7 @@ export function perguntaZeroHtml(cliente) {
       <p class="hint mb-1">${esc(LEGENDA_PRINTS)}. Até ${MAX_PRINTS} imagens.</p>
       ${campoArquivo({ attrs: 'data-prints', accept: 'image/*', multiple: true, icone: 'camera', texto: 'Enviar prints do Instagram', destaque: false, lista: true })}
       <label class="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" data-prints-proprio> Confirmo que são prints do Instagram do próprio cliente</label>
-      <button type="button" class="btn-ia btn-sm mt-1" data-analisar-prints><i class="fa-solid fa-wand-magic-sparkles"></i> Ler prints com IA</button>
+      <button type="button" class="btn-ia btn-sm mt-1" data-analisar-prints><i class="fa-solid fa-wand-magic-sparkles"></i> Ler os prints e preencher o perfil com IA</button>
       <p class="hint">Leva cerca de 1 min. Os prints também ficam salvos em Materiais do cliente (Estúdio), para usar como referência visual ou prova social.</p>
       <div data-resultado-prints class="mt-2">${resultadoHtml(cliente, 'instagram')}</div></div></li>`;
 }
@@ -57,7 +57,7 @@ function resultadoHtml(cliente, fonte) {
       ${ls.encontrado === false ? `<p class="mt-1 text-amber-800"><i class="fa-solid fa-circle-info"></i> <b>Nada relevante encontrado</b> ${insta ? 'nos prints' : 'no site'} — nenhum campo foi preenchido.${ls.observacao ? ` ${esc(ls.observacao)}` : ''} ${insta ? 'Tente prints mais nítidos da bio e de posts com legenda, ou preencha as perguntas abaixo à mão.' : 'Preencha as perguntas abaixo à mão.'}</p>` : ''}
       ${ls.resumo ? `<p class="mt-1 text-slate-700">${esc(ls.resumo)}</p>` : ''}
       ${insta && (ls.imagens || []).length ? `<ul class="mt-1 space-y-0.5 text-xs">${ls.imagens.map((im) => `<li class="${im.legivel ? 'text-slate-600' : 'text-amber-800'}"><b>Print ${im.numero}:</b> ${esc(im.conteudo)}</li>`).join('')}</ul>` : ''}
-      ${ls.preenchidos?.length || ls.produtosCriados ? `<p class="mt-1 text-emerald-700"><i class="fa-solid fa-circle-check"></i> Preenchido: ${[...(ls.preenchidos || []).map(rotuloCampo), ls.produtosCriados ? `${ls.produtosCriados} produto(s)` : ''].filter(Boolean).join(', ')} — marcados como automáticos.</p>` : ''}
+      ${ls.preenchidos?.length || ls.produtosCriados ? `<p class="mt-1 text-emerald-700"><i class="fa-solid fa-circle-check"></i> Preenchido: ${[...(ls.preenchidos || []).map(rotuloCampo), ls.produtosCriados ? `${ls.produtosCriados} produto(s)` : ''].filter(Boolean).join(', ')}.</p><p class="mt-1 text-slate-700"><b>Próximo passo:</b> confira cada campo com a etiqueta amarela nas perguntas abaixo (b a e) e na lista de produtos: clique em <b>Confirmar</b> se estiver certo, ou corrija o texto. A IA já usa esses dados ao gerar criativos e o site, então vale conferir antes.</p>` : ''}
       ${insta && cliente.marca?.estetica ? `<div class="mt-2"><label class="label">Estética / paleta de cor</label><textarea class="input" rows="2" data-marca="estetica">${esc(cliente.marca.estetica)}</textarea>
         ${marca ? `<span class="mt-1 inline-flex flex-wrap items-center gap-1"><span class="tag tag-warn"><i class="fa-solid fa-robot mr-1"></i>${esc(textoMarca(marca))}</span><button type="button" class="text-xs text-indigo-600 underline" data-confirmar-campo="estetica">Confirmar</button></span>` : ''}
         <p class="hint">Vai para o perfil de marca; a geração de criativos usa como estética real da marca.</p></div>` : ''}

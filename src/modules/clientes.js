@@ -35,7 +35,7 @@ async function buscaInicial(c) {
         // lista confirma o que foi salvo). Em outra aba, o cartão avisa e leva até lá.
         if (salvas && location.hash === `#/c/${c.id}/referencias`) { window.dispatchEvent(new Event('hashchange')); toast(`Busca inicial concluída: ${salvas} referência(s) salva(s). Da próxima vez, o app pergunta antes de buscar.`); return; }
         cartao(`<div class="flex flex-wrap items-center justify-between gap-2"><p><i class="fa-solid fa-circle-check mr-1 text-emerald-500"></i><b>Busca inicial concluída:</b> ${salvas} referência(s) salva(s). Da próxima vez, a busca não roda sozinha: o app pergunta antes.</p>
-          <span class="flex gap-2">${salvas ? `<a class="btn-primary btn-sm" href="#/c/${c.id}/referencias">Ver em Referências</a>` : ''}<button class="btn-ghost btn-sm" data-ok-busca>Ok</button></span></div>`, 'border-emerald-200 bg-emerald-50/50');
+          <span class="flex gap-2">${salvas ? `<a class="btn-primary btn-sm" href="#/c/${c.id}/referencias">Ver em Referências</a>` : ''}<button class="btn-ghost btn-sm" data-ok-busca>Entendi, fechar aviso</button></span></div>`, 'border-emerald-200 bg-emerald-50/50');
       },
     });
     // Acabou de buscar: o convite "Buscar novos exemplos agora?" só volta numa próxima sessão, não logo em seguida.
@@ -48,9 +48,14 @@ async function buscaInicial(c) {
 }
 
 /** Etiqueta discreta "preenchido automaticamente do site" ao lado do rótulo (some quando a pessoa edita e salva). */
-const etiquetaAuto = (c, campo) => (c?.autoPreenchido?.[campo] ? `<span class="tag tag-warn font-normal">${esc(textoMarca(c.autoPreenchido[campo]))}</span>` : '');
+// Neste formulário, "confirmar" = marcar "Está certo" (ou editar o texto) e salvar: antes a etiqueta pedia para
+// confirmar, mas não havia onde clicar aqui (o botão Confirmar só existia na aba Site/Loja).
+const etiquetaAuto = (c, campo) => (c?.autoPreenchido?.[campo] ? `<span class="tag tag-warn font-normal">${esc(textoMarca(c.autoPreenchido[campo]))}</span>
+  <label class="ml-1 inline-flex items-center gap-1 text-xs font-normal text-slate-600"><input type="checkbox" name="confirmar_${campo}"> Está certo</label>` : '');
 
 export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]);
+
+const camposRastreamento = (v) => ({ metaPixelId: v.metaPixelId, googleAdsId: v.googleAdsId, hotjarId: v.hotjarId, tawkPropertyId: v.tawkPropertyId, tawkWidgetId: v.tawkWidgetId });
 
 /** Converte os campos do formulário/assistente no documento do cliente (mesma função para os dois caminhos). */
 export function montarDadosCliente(v, escopo) {
@@ -59,8 +64,8 @@ export function montarDadosCliente(v, escopo) {
     nome: v.nome, nicho: v.nicho, estagio: v.estagio, siteReferencia: v.siteReferencia || '', escopo,
     metas: { cpa: metaCpa > 0 ? metaCpa : null, roas: metaRoas > 0 ? metaRoas : null },
     orcamentoIaMensalUsd: num(v.orcamentoIa) > 0 ? num(v.orcamentoIa) : null,
-    // Pixel do Meta / tag do Google Ads (opcionais). Só vão para o código do site gerado; o app não envia nada a ninguém.
-    rastreamento: normalizarRastreamento({ metaPixelId: v.metaPixelId, googleAdsId: v.googleAdsId }).valor,
+    // Pixel do Meta / Google Ads / Hotjar / Tawk.to (opcionais). Só vão para o código do site gerado; o app não envia nada a ninguém.
+    rastreamento: normalizarRastreamento(camposRastreamento(v)).valor,
     historico: v.estagio === 'rodando' ? { cpaMedio: num(v.cpaMedio), orcamentoDiario: num(v.orcamentoDiario), publicos: v.publicosHist || '' } : {},
     marca: {
       tomDeVoz: v.tomDeVoz || '', linguagemDor: v.linguagemDor || '', objecoes: v.objecoes || '', provasSociais: v.provasSociais || '',
@@ -150,14 +155,24 @@ export async function viewForm(el, id, { baseId = null } = {}) {
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Limite de gasto com IA só para este cliente">Orçamento mensal de IA deste cliente (opcional)</summary>
         <div class="mt-3"><label class="label">Limite por mês (US$)</label><input class="input" type="number" step="0.01" min="0" name="orcamentoIa" value="${esc(fonte?.orcamentoIaMensalUsd)}" placeholder="Sem limite">
         <p class="hint">Ao passar do limite, cada geração de IA para este cliente pede confirmação. O limite geral fica em Configurações.</p></div></details>
-      <details class="rounded-lg border border-slate-200 p-3" data-rastreamento ${fonte?.rastreamento?.metaPixelId || fonte?.rastreamento?.googleAdsId ? 'open' : ''}><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Pixel do Meta e tag do Google Ads no site do cliente">Rastreamento: Pixel do Meta e Google Ads (opcional)</summary>
-        <p class="hint mt-2">Cole aqui o ID do Pixel/tag de conversão da sua conta de anúncios. Isso é necessário para a plataforma saber quem visitou o site e comprou, sem isso a campanha não consegue otimizar por conversão real.</p>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+      <details class="rounded-lg border border-slate-200 p-3" data-rastreamento ${Object.values(fonte?.rastreamento || {}).some(Boolean) ? 'open' : ''}><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Códigos que entram no site do cliente: Pixel do Meta, Google Ads, Hotjar e chat Tawk.to">Rastreamento: Pixel, Hotjar e chat ao vivo (opcional)</summary>
+        <p class="caption mt-2">São três coisas diferentes, todas opcionais: <b>o Pixel mostra quem comprou</b>. <b>O Hotjar mostra como as pessoas navegam e onde desistem</b>. <b>O Tawk.to coloca um chat ao vivo no site</b> para tirar dúvidas na hora.</p>
+        <h4 class="mt-3 text-sm font-semibold">Pixel (quem comprou)</h4>
+        <p class="hint">Cole aqui o ID do Pixel/tag de conversão da sua conta de anúncios. Isso é necessário para a plataforma saber quem visitou o site e comprou, sem isso a campanha não consegue otimizar por conversão real.</p>
+        <div class="mt-2 grid gap-3 sm:grid-cols-2">
           <div><label class="label">ID do Pixel do Meta</label><input class="input" name="metaPixelId" inputmode="numeric" value="${esc(fonte?.rastreamento?.metaPixelId)}" placeholder="Ex.: 123456789012345">
             <p class="hint">Onde achar: Gerenciador de Eventos do Meta > Pixels (o número abaixo do nome do pixel).</p></div>
           <div><label class="label">ID de acompanhamento do Google Ads</label><input class="input" name="googleAdsId" value="${esc([fonte?.rastreamento?.googleAdsId, fonte?.rastreamento?.googleAdsRotulo].filter(Boolean).join('/'))}" placeholder="Ex.: AW-123456789">
             <p class="hint">Onde achar: Google Ads > Ferramentas > Medição > Conversões. Se quiser contar a conversão no botão de compra, cole com o rótulo: AW-123456789/AbCdEf.</p></div></div>
-        <p class="hint">Em branco: o site é gerado normalmente, sem nenhum código de rastreamento. Preenchido: o site personalizado já sai com o código, e o manual do pacote Nuvemshop/Shopify traz os IDs para colar na loja. O app não envia esses dados a ninguém.</p></details>
+        <h4 class="mt-4 text-sm font-semibold">Hotjar (como as pessoas navegam)</h4>
+        <div class="mt-2"><label class="label">ID do site no Hotjar</label><input class="input sm:w-1/2" name="hotjarId" inputmode="numeric" value="${esc(fonte?.rastreamento?.hotjarId)}" placeholder="Ex.: 3456789">
+          <p class="hint">Onde achar: no Hotjar, em Configurações > Sites e organizações (coluna "Site ID"). Pode colar o código inteiro: o app pega só o número.</p></div>
+        <h4 class="mt-4 text-sm font-semibold">Tawk.to (chat ao vivo)</h4>
+        <div class="mt-2 grid gap-3 sm:grid-cols-2">
+          <div><label class="label">Property ID do Tawk.to</label><input class="input" name="tawkPropertyId" value="${esc(fonte?.rastreamento?.tawkPropertyId)}" placeholder="Ex.: 64f1a2b3c4d5e6f7a8b9c0d1"></div>
+          <div><label class="label">Widget ID do Tawk.to</label><input class="input" name="tawkWidgetId" value="${esc(fonte?.rastreamento?.tawkWidgetId)}" placeholder="Ex.: 1h2j3k4l5"></div></div>
+        <p class="hint">Onde achar: no Tawk.to, em Administração > Canais > Widget de chat. Os dois códigos aparecem no link "https://embed.tawk.to/<b>Property ID</b>/<b>Widget ID</b>"; se preferir, cole esse link inteiro no 1º campo que o app separa sozinho.</p>
+        <p class="hint mt-3">Em branco: o site é gerado normalmente, sem esses códigos. Preenchido: o site personalizado já sai com eles (só carregam depois que o visitante aceita os cookies), e o manual do pacote Nuvemshop/Shopify traz os códigos para colar na loja. O app não envia esses dados a ninguém.</p></details>
     </section>
 
     <section data-passo="1" class="hidden space-y-4">
@@ -209,7 +224,7 @@ export async function viewForm(el, id, { baseId = null } = {}) {
 
   /** ID de pixel com formato errado: avisa e abre a seção (em branco é sempre aceito). */
   const rastreamentoOk = (v) => {
-    const { erros } = normalizarRastreamento({ metaPixelId: v.metaPixelId, googleAdsId: v.googleAdsId });
+    const { erros } = normalizarRastreamento(camposRastreamento(v));
     if (!erros.length) return true;
     $('[data-rastreamento]', form).open = true;
     toast(erros.join(' '), 'erro');
@@ -234,7 +249,10 @@ export async function viewForm(el, id, { baseId = null } = {}) {
     await ocupado($('[data-salvar]', form), async () => {
       if (c) {
         const dados = montarDadosCliente(v, escopo);
-        if (c.autoPreenchido) dados.autoPreenchido = marcasQueContinuam(c.autoPreenchido, c.marca, dados.marca); // editou = confirmou
+        if (c.autoPreenchido) {
+          dados.autoPreenchido = marcasQueContinuam(c.autoPreenchido, c.marca, dados.marca); // editou = confirmou
+          for (const k of Object.keys(dados.autoPreenchido)) if (v['confirmar_' + k]) delete dados.autoPreenchido[k]; // marcou "Está certo"
+        }
         await db.atualizar(COL.clientes, c.id, dados); toast('Cliente atualizado.'); location.hash = `#/c/${c.id}`; return;
       }
       const novo = await criarCliente(v, escopo, {

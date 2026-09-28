@@ -2,7 +2,7 @@
 import { db, COL, removerArquivo } from '../core/storage.js';
 import { gerarCriativos, refinarCriativo, checarQualidade, acharTermosProibidos } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
-import { abrirEnvio, sincronizarAprovacoes, tagAprovacao } from './aprovacao.js';
+import { abrirEnvio, sincronizarAprovacoes, tagAprovacao, statusAposTrocarArquivo, legendaReaprovacao } from './aprovacao.js';
 import { perguntarBuscaMercado } from './busca-mercado.js';
 import { abrirEstudio } from './estudio.js';
 import { apagarCriativoEmCascata } from '../lib/cascata.js';
@@ -72,7 +72,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   };
   on(root, 'change', '[data-filtro]', (s) => { filtro = s.value; $('#lista', root).innerHTML = lista(); });
   on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg, produtos, sugestaoInsight));
-  on(root, 'click', '[data-enviar]', () => abrirEnvio(cliente, criativos, { preSelecionar: criativos.filter((c) => c.status === 'rascunho').map((c) => c.id), aoMudar: recarregar }));
+  on(root, 'click', '[data-enviar]', () => abrirEnvio(cliente, criativos, { preSelecionar: criativos.filter((c) => ['rascunho', 'reaprovacao'].includes(c.status)).map((c) => c.id), aoMudar: recarregar }));
 
   // Vindo da aba Referências: abre já com a referência escolhida como ponto de partida.
   let preRef = null;
@@ -248,7 +248,10 @@ function detalhe(c, cliente, cfg, recarregar) {
     <div class="mb-3 flex flex-wrap gap-1">${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}${c.framework ? tag(c.framework, 'tag-info') : ''}
       ${c.angulo ? tag(c.angulo) : ''}${c.gatilho ? tag('gatilho: ' + c.gatilho) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma)}
       ${c.emUsoDesde ? tag(`em uso desde ${dataBR(c.emUsoDesde)}`, 'tag-ok') : ''}${tagAprovacao(c)}</div>
-    ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
+    ${c.status === 'reaprovacao' ? `<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-aviso-reaprovacao><b><i class="fa-solid fa-rotate"></i> Aguardando nova aprovação</b>
+      <p class="mt-1">${esc(legendaReaprovacao(c))}</p>
+      <button class="btn-primary btn-sm mt-2" data-enviar-um><i class="fa-solid fa-paper-plane"></i> Gerar novo link de aprovação com o arquivo atual</button></div>` : ''}
+    ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.arquivoNome ? ` · arquivo que ele viu: <b>${esc(c.aprovacaoCliente.arquivoNome)}</b>${c.aprovacaoCliente.arquivoPath !== c.arquivoPath ? ' (não é mais o arquivo atual)' : ''}` : ''}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
     ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
     <form id="fe" class="space-y-3" data-aviso-sair>
       <p class="caption">Edite direto (sem IA) e salve como nova versão, ou peça um ajuste ao chat abaixo.</p>
@@ -293,6 +296,7 @@ function detalhe(c, cliente, cfg, recarregar) {
     <div class="mt-5"><h4 class="mb-2 text-sm font-semibold">Histórico de versões (${versoes.length})</h4>
       <ol class="space-y-2">${[...versoes].reverse().map((v) => `<li class="rounded-lg bg-slate-50 p-2 text-sm"><div class="flex justify-between"><b>v${v.n} · ${esc(v.nota || '')}</b><span class="hint">${dataBR(v.quando)}</span></div>
         <p class="line-clamp-2 text-slate-600">“${esc(v.hook)}”</p>
+        ${v.aprovadaPeloCliente ? `<p class="mt-1 text-xs text-emerald-700" data-versao-aprovada><i class="fa-solid fa-circle-check"></i> O cliente aprovou esta versão em ${dataBR(v.aprovadaPeloCliente.em)}${v.aprovadaPeloCliente.arquivoNome ? `, vendo o arquivo <b>${esc(v.aprovadaPeloCliente.arquivoNome)}</b>` : ' (sem arquivo anexado, só o texto)'}${v.aprovadaPeloCliente.arquivoPath && v.aprovadaPeloCliente.arquivoPath !== c.arquivoPath ? ' — esse arquivo já foi substituído' : ''}.</p>` : ''}
         ${v.n !== versoes.length ? `<button class="btn-ghost btn-sm mt-1" data-restaurar="${v.n}">Restaurar esta versão</button>` : '<span class="tag tag-ok mt-1">atual</span>'}</li>`).join('')}</ol></div>
     <div class="mt-5 flex justify-end"><button class="btn-danger btn-sm" data-apagar><i class="fa-solid fa-trash"></i> Apagar criativo</button></div>
     </details>`;
@@ -373,10 +377,11 @@ function detalhe(c, cliente, cfg, recarregar) {
     await ocupado(inp, async () => {
       const caminho = `gcc/${cliente.id}/criativos/${c.id}/${Date.now()}_${f.name.replace(/[^\w.-]/g, '_')}`;
       const r = await enviarArquivoOuAvisar(caminho, f);
-      if (c.arquivoPath) await removerArquivo(c.arquivoPath);
-      const patch = { arquivoUrl: r.url, arquivoPath: r.path, arquivoNome: f.name };
+      if (c.arquivoPath) await removerArquivo(c.arquivoPath); // o nome do arquivo que o cliente aprovou continua no histórico de versões
+      const patch = { arquivoUrl: r.url, arquivoPath: r.path, arquivoNome: f.name, ...statusAposTrocarArquivo(c) };
       await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch);
-      toast('Arquivo enviado.'); desenhar(); recarregar();
+      toast(patch.status === 'reaprovacao' ? 'Arquivo enviado. Como o cliente não viu este arquivo novo, o status mudou para "Aguardando nova aprovação".' : 'Arquivo enviado.', patch.status === 'reaprovacao' ? 'info' : undefined);
+      desenhar(); recarregar();
       previaEmSegundoPlano(cliente, c, f, desenhar); // versão reduzida para o link de aprovação, nos bastidores
     });
   });

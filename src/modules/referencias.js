@@ -152,7 +152,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <div><label class="label">Categoria/ângulo</label><input class="input" name="categoria"></div>
         <div><label class="label">Imagem do anúncio (opcional)</label>${campoArquivo({ attrs: 'name="imagem"', accept: 'image/*', icone: 'image', texto: 'Enviar print do anúncio (até 400 KB)', destaque: false })}</div></div>
       <div><label class="label">Texto do anúncio</label><textarea class="input" rows="4" name="texto"></textarea></div>
-      <div class="flex gap-2"><button class="btn-primary" type="submit" data-modo="salvar">Salvar</button>
+      <div class="flex gap-2"><button class="btn-primary" type="submit" data-modo="salvar">Salvar referência (sem IA)</button>
         <button class="btn-ia" type="submit" data-modo="analisar" title="Salva e pede à IA a análise estratégica">Salvar e analisar com IA</button></div></form>`;
   });
   on(root, 'submit', '#fm', async (f, ev) => {

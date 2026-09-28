@@ -69,7 +69,8 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
         `<div class="grid gap-2 sm:grid-cols-2"><input class="input" data-pixel="metaPixelId" value="${esc(r.metaPixelId)}" placeholder="ID do Pixel do Meta (só números)">
           <input class="input" data-pixel="googleAdsId" value="${esc(r.googleAdsId ? r.googleAdsId + (r.googleAdsRotulo ? '/' + r.googleAdsRotulo : '') : '')}" placeholder="Google Ads: AW-123456789 ou AW-…/rótulo"></div>
           <label class="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" data-sem-pixel ${ctx.site?.semPixel ? 'checked' : ''}> Ainda não tem (conta como respondida; dá para cadastrar depois)</label>
-          <p class="hint text-rose-600" data-erro-pixel></p>`)}
+          <p class="hint text-rose-600" data-erro-pixel></p>
+          <p class="hint">Hotjar (como as pessoas navegam) e chat ao vivo Tawk.to ficam no <a class="underline" href="#/c/${esc(cliente.id)}/editar">cadastro do cliente → Rastreamento</a>.</p>`)}
       ${pergunta('pagamento', 'h', 'Qual plataforma de pagamento você pretende usar?', 'só informativo: o manual de entrega mostra primeiro o passo a passo dessa opção',
         `<select class="input" data-pagamento><option value="">Escolha…</option>${PAGAMENTOS_PRETENDIDOS.map(([k, t]) => `<option value="${k}" ${ctx.site?.pagamentoPreferido === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
       ${pergunta('formato', 'i', 'Prefere loja completa numa plataforma pronta (Nuvemshop/Shopify) ou um site simples que eu hospedo?', 'modo do site deste cliente (site personalizado ou pacote de plataforma)',
@@ -130,7 +131,8 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
     const { valor, erros } = normalizarRastreamento({ metaPixelId: meta, googleAdsId: google });
     $('[data-erro-pixel]', alvo).textContent = erros.join(' ');
     if (erros.length) return; // não grava um ID inválido; o texto fica no campo para corrigir
-    salvarCliente({ rastreamento: valor }, 'Rastreamento salvo no cadastro do cliente.');
+    // Só os campos do Pixel mudam aqui: Hotjar e Tawk.to (cadastro do cliente) ficam como estão.
+    salvarCliente({ rastreamento: { ...(cliente.rastreamento || {}), metaPixelId: valor.metaPixelId, googleAdsId: valor.googleAdsId, googleAdsRotulo: valor.googleAdsRotulo } }, 'Rastreamento salvo no cadastro do cliente.');
   });
   on(alvo, 'change', '[data-sem-pixel]', async (c) => { await ctx.salvarSite({ semPixel: c.checked }); pintar(); });
   on(alvo, 'change', '[data-pagamento]', async (s) => { await ctx.salvarSite({ pagamentoPreferido: s.value || null }); pintar(); toast('Forma de pagamento anotada: o manual de entrega vai destacá-la.'); });

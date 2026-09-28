@@ -75,7 +75,7 @@ export async function view(el) {
         <button class="btn-primary btn-sm" data-exportar-tudo><i class="fa-solid fa-file-export"></i> Exportar agora</button></div>`
     : `<p class="hint -mt-2 mb-4" data-ultimo-backup><i class="fa-solid fa-circle-check mr-1 text-emerald-600"></i>${esc(lembrete.texto)} (${esc(new Date(cfg.ultimoBackupEm).toLocaleDateString('pt-BR'))}).</p>`}
     <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      ${[['Clientes', clientes.length], ['Criativos em uso', total('status', 'em_uso')], ['Rascunho ou aguardando aprovação', total('status', 'rascunho') + total('status', 'pronto_aprovacao')], ['Campanhas ativas', campanhas.filter((c) => c.status === 'ativa').length]]
+      ${[['Clientes', clientes.length], ['Criativos em uso', total('status', 'em_uso')], ['Rascunho ou aguardando aprovação', total('status', 'rascunho') + total('status', 'pronto_aprovacao') + total('status', 'reaprovacao')], ['Campanhas ativas', campanhas.filter((c) => c.status === 'ativa').length]]
         .map(([k, v]) => `<div class="card"><p class="caption">${k}</p><p class="text-2xl font-bold">${v}</p></div>`).join('')}
       <div class="card sm:col-span-2 lg:col-span-4" title="Soma das chamadas de IA registradas neste mês (estimativa por tabela de preços)"><div class="flex flex-wrap items-center justify-between gap-2">
         <div><p class="caption"><i class="fa-solid fa-coins mr-1"></i>Custo de IA neste mês</p><p class="text-2xl font-bold">${usd(orc.totalMes)} <span class="text-base font-normal text-slate-500">(≈ ${brl(orc.totalMes, cfg.cotacaoUsd)})</span></p></div>

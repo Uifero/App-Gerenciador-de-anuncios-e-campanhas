@@ -60,7 +60,7 @@ describe('cookies (LGPD) e Pixel', () => {
     expect(html).toContain('id="cookiesOk"');
     expect(html).toContain('id="cookiesNao"');
     expect(html).toContain("if(v==='aceito'&&window.carregarRastreamento)window.carregarRastreamento();");
-    expect(html).toContain('para medir anúncios (Meta/Google)');
+    expect(html).toContain('se você aceitar, para medir os anúncios');
   });
   it('o script do banner roda: 1ª visita mostra, aceitar grava e some, próxima visita não mostra, reabrir mostra', () => {
     const html = gerarSiteHTML({ cliente: { ...cliente, rastreamento: {} }, produtos: PRODUTOS });

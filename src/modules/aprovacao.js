@@ -62,7 +62,9 @@ export async function criarLink(cliente, criativos, dias = 30) {
   }, token);
   const quando = new Date().toISOString();
   await Promise.all(criativos.map((c) => {
-    const patch = { status: 'pronto_aprovacao', aprovacaoToken: token, aprovacaoEnviadaEm: quando, aprovacaoCliente: null };
+    // Guarda QUAL arquivo e qual versão do texto foram no link: é isso que o cliente vai ver e, se aprovar, aprovar.
+    const patch = { status: 'pronto_aprovacao', aprovacaoToken: token, aprovacaoEnviadaEm: quando, aprovacaoCliente: null,
+      aprovacaoArquivo: c.arquivoPath ? { nome: c.arquivoNome || '', path: c.arquivoPath } : null, aprovacaoVersao: (c.versoes || []).length || null };
     Object.assign(c, patch);
     return db.atualizar(COL.criativos, c.id, patch);
   }));
@@ -92,8 +94,15 @@ export async function sincronizarAprovacoes(cliente, criativos) {
       const anterior = c.aprovacaoCliente?.status;
       const seguePendente = c.status === 'pronto_aprovacao';
       const seguiaResposta = anterior && c.status === (anterior === 'aprovado' ? 'aprovado' : 'rascunho'); // cliente mudou de ideia e o admin não mexeu depois
-      const patch = { aprovacaoCliente: { status: r.status, comentario: r.comentario || '', em: r.em } };
+      const visto = c.aprovacaoArquivo || null; // o arquivo que estava no link (o que o cliente viu)
+      const patch = { aprovacaoCliente: { status: r.status, comentario: r.comentario || '', em: r.em, arquivoNome: visto?.nome || null, arquivoPath: visto?.path || null } };
       if (seguePendente || seguiaResposta) patch.status = r.status === 'aprovado' ? 'aprovado' : 'rascunho';
+      // O arquivo mudou depois que o link foi gerado: a resposta vale para o arquivo ANTIGO, não para o atual.
+      if (r.status === 'aprovado' && patch.status === 'aprovado' && arquivoMudouDesdeOLink(c)) patch.status = 'reaprovacao';
+      // Histórico de versões: marca na versão que foi no link que o cliente a aprovou, e com qual arquivo.
+      if (r.status === 'aprovado' && c.aprovacaoVersao && c.versoes?.[c.aprovacaoVersao - 1]) {
+        patch.versoes = c.versoes.map((v, i) => (i === c.aprovacaoVersao - 1 ? { ...v, aprovadaPeloCliente: { em: r.em, arquivoNome: visto?.nome || null, arquivoPath: visto?.path || null } } : v));
+      }
       await db.atualizar(COL.criativos, c.id, patch, { silencioso: true }); // sincronização automática ao abrir a aba
       Object.assign(c, patch);
       mudou++;
@@ -105,8 +114,29 @@ export async function sincronizarAprovacoes(cliente, criativos) {
   return { mudou, falhas };
 }
 
+/** O arquivo da peça hoje é outro, diferente do que foi no último link de aprovação? (sem link/arquivo = não) */
+export function arquivoMudouDesdeOLink(c) {
+  // Links gerados antes deste controle não guardaram o arquivo (campo ausente): sem como comparar, não acusa troca.
+  if (!c?.aprovacaoToken || c.aprovacaoArquivo === undefined) return false;
+  return (c.aprovacaoArquivo?.path || null) !== (c.arquivoPath || null);
+}
+
+/**
+ * Chamado quando a peça final recebe um arquivo novo (upload ou "Usar como peça final" do editor). Se o criativo já
+ * estava aprovado — ou com um link aguardando o cliente, que mostra o arquivo antigo — o status passa para
+ * "Aguardando nova aprovação": o cliente nunca viu este arquivo. Devolve o patch extra ({} quando nada muda).
+ */
+export function statusAposTrocarArquivo(c) {
+  return ['aprovado', 'pronto_aprovacao'].includes(c?.status) ? { status: 'reaprovacao', reaprovacaoDesde: new Date().toISOString(), statusAntesDaTroca: c.status } : {};
+}
+
+export const LEGENDA_REAPROVACAO = 'Este criativo já tinha sido aprovado, mas o arquivo mudou desde então. Gere um novo link de aprovação para confirmar a peça atual com o cliente.';
+export const LEGENDA_REAPROVACAO_PENDENTE = 'O arquivo mudou depois que o link de aprovação foi enviado: o link que o cliente tem ainda mostra o arquivo anterior. Gere um novo link de aprovação para ele ver a peça atual.';
+export const legendaReaprovacao = (c) => (c?.statusAntesDaTroca === 'pronto_aprovacao' ? LEGENDA_REAPROVACAO_PENDENTE : LEGENDA_REAPROVACAO);
+
 /** Tag/resumo da resposta do cliente para os cards e o detalhe. */
 export function tagAprovacao(c) {
+  if (c.aprovacaoCliente?.status === 'aprovado' && arquivoMudouDesdeOLink(c)) return tag('cliente aprovou o arquivo anterior', 'tag-warn');
   if (c.aprovacaoCliente?.status === 'aprovado') return tag('aprovado pelo cliente', 'tag-ok');
   if (c.aprovacaoCliente?.status === 'ajuste') return tag('cliente pediu ajuste', 'tag-bad');
   return '';
@@ -195,7 +225,7 @@ export async function viewPublica(host, token) {
   let doc = null;
   try { doc = await db.obter(COL.aprovacoes, token); } catch { doc = null; } // regra nega leitura de link expirado
   if (!doc || !(doc.expiraMs > Date.now())) {
-    app.innerHTML = '<div class="mx-auto max-w-2xl p-6"><div class="card text-center"><div class="mb-2 text-3xl text-slate-300"><i class="fa-solid fa-link-slash"></i></div><p class="font-semibold">Este link não está mais disponível.</p><p class="caption">Ele pode ter expirado ou sido cancelado. Peça um novo link a quem o enviou.</p></div></div>';
+    app.innerHTML = '<div class="mx-auto max-w-2xl p-6"><div class="card text-center"><div class="mb-2 text-3xl text-slate-300"><i class="fa-solid fa-link-slash"></i></div><p class="font-semibold">Este link de aprovação não funciona mais.</p><p class="caption mt-1">Por segurança, cada link vale só por alguns dias (ou quem enviou pode ter cancelado, por exemplo porque a peça mudou). Se você já tinha respondido, sua resposta foi guardada.</p><p class="caption mt-1"><b>O que fazer:</b> peça um link novo para quem te enviou este.</p></div></div>';
     return;
   }
   const estado = {}; // criativoId -> resposta
@@ -244,7 +274,7 @@ export async function viewPublica(host, token) {
     if (status === 'ajuste' && !comentario) { $('[data-erro]', cx).textContent = 'Conte o que precisa ser ajustado para pedirmos a alteração.'; $('[data-erro]', cx).className = 'hint text-rose-600'; return; }
     await ocupado(b, async () => {
       const resp = { token, clienteId: doc.clienteId, criativoId: id, status, comentario: comentario.slice(0, 1000), em: new Date().toISOString() };
-      try { await db.definir(COL.respostas, `${token}_${id}`, resp); }
+      try { await db.definir(COL.respostas, `${token}_${id}`, resp, { silencioso: true }); } // sem o selo interno "Salvo às": a página já confirma
       catch { throw new Error('Não foi possível enviar sua resposta. O link pode ter expirado ou sido cancelado; peça um novo link a quem o enviou.'); }
       estado[id] = resp; delete estado[`_editar_${id}`];
       desenhar();

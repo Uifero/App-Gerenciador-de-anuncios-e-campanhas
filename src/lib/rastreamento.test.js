@@ -8,12 +8,12 @@ const cliente = (rastreamento) => ({ id: 'c1', nome: 'Loja Teste', nicho: 'moda 
 
 describe('normalizarRastreamento', () => {
   it('aceita em branco (campo opcional)', () => {
-    expect(normalizarRastreamento({})).toEqual({ valor: { metaPixelId: '', googleAdsId: '', googleAdsRotulo: '' }, erros: [] });
+    expect(normalizarRastreamento({})).toEqual({ valor: { metaPixelId: '', googleAdsId: '', googleAdsRotulo: '', hotjarId: '', tawkPropertyId: '', tawkWidgetId: '' }, erros: [] });
   });
   it('limpa espaços, aceita "aw-" minúsculo e separa o rótulo da conversão', () => {
     const r = normalizarRastreamento({ metaPixelId: ' 1234 5678 9012 345 ', googleAdsId: 'aw-987654321/AbC-12_x' });
     expect(r.erros).toEqual([]);
-    expect(r.valor).toEqual({ metaPixelId: '123456789012345', googleAdsId: 'AW-987654321', googleAdsRotulo: 'AbC-12_x' });
+    expect(r.valor).toEqual({ metaPixelId: '123456789012345', googleAdsId: 'AW-987654321', googleAdsRotulo: 'AbC-12_x', hotjarId: '', tawkPropertyId: '', tawkWidgetId: '' });
   });
   it('recusa formatos errados (e nunca guarda o valor inválido)', () => {
     const r = normalizarRastreamento({ metaPixelId: '12ab34', googleAdsId: 'G-XYZ123' });
