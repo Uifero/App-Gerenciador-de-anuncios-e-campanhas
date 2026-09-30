@@ -22,6 +22,7 @@ import { montarEditorVideo } from './video-editor.js';
 import { htmlFerramentas } from '../lib/ferramentas-ia.js';
 import { montarNarracao } from './narracao.js';
 import { montarBroll } from './broll.js';
+import { abrirBiblioteca } from './modelos-prompt.js';
 
 const COLE_AQUI = 'Cole esse prompt numa dessas ferramentas:';
 
@@ -79,6 +80,7 @@ export function abrirEstudio(criativo, cliente) {
       <div class="mt-2 flex flex-wrap items-center justify-end gap-2"><select class="input !w-auto" data-modelo-prompt title="Modelo de roteiro">
           <option value="roteiro">Seguir o roteiro do criativo</option><option value="unboxing">UGC: unboxing + manuseio (6 cenas de 5 s)</option></select>
         <button class="btn-ia btn-sm" data-sugerir-prompt>Escrever prompts com IA</button></div>
+      <p class="hint mt-2 flex flex-wrap items-center gap-2">Ou parta de um padrão já testado (fundo branco, foto hero, oferta De/Por…): <button type="button" class="btn-ghost btn-sm" data-modelo-pronto="todos"><i class="fa-solid fa-swatchbook"></i> Usar um modelo pronto</button></p>
       <div data-prompts class="mt-2 space-y-2"></div></details>
     <details class="mt-3 rounded-lg border border-indigo-200 p-2"><summary class="cursor-pointer text-sm font-medium text-indigo-800"><i class="fa-solid fa-film"></i> Animar uma foto com IA (clipe real de ~5 s)</summary>
       <p class="hint my-1">A IA dá movimento à foto (pessoa, tecido, câmera). Leva de 1 a 3 minutos. <b>A foto é enviada por 1 hora a uma hospedagem pública anônima e ao gerador</b>: use só fotos que o cliente autorizou.</p>
@@ -95,7 +97,8 @@ export function abrirEstudio(criativo, cliente) {
       <p class="hint my-2">O app tenta cada gerador gratuito configurado e, se um atingir a cota do dia, passa ao próximo. Peça a imagem sem texto: o texto entra pelo template, com letras nítidas. Para produto real, prefira a foto verdadeira.</p>
       <p class="mb-2 text-xs text-slate-600" data-status-ia>Carregando geradores…</p>
       <div class="flex gap-2"><input class="input" data-prompt-ia value="${esc(`Foto publicitária vertical, estilo orgânico de redes sociais, para anúncio de ${cliente.nicho || 'produto'}: ${criativo.hook}. Sem texto, sem logotipos.`)}">
-        <button class="btn-ia btn-sm shrink-0" data-gerar-ia>Gerar imagem</button></div></details>
+        <button class="btn-ia btn-sm shrink-0" data-gerar-ia>Gerar imagem</button></div>
+      <p class="hint mt-2 flex flex-wrap items-center gap-2">Em vez de escrever do zero: <button type="button" class="btn-ghost btn-sm" data-modelo-pronto="gerador"><i class="fa-solid fa-swatchbook"></i> Usar um modelo pronto</button> (o texto do modelo vem para o campo acima).</p></details>
   </section>
 
   <details class="mt-4 rounded-lg border border-sky-200 p-3" data-etapa="broll" data-secao-nova="broll"><summary class="cursor-pointer">
@@ -355,6 +358,15 @@ export function abrirEstudio(criativo, cliente) {
     listarCenas();
     toast(`Linha do tempo criada com ${l.length} cenas de 5 s. Envie ou gere um clipe para cada cena e ligue no seletor "Imagem/vídeo".`);
   });
+  on(raiz, 'click', '[data-modelo-pronto]', (b) => ocupado(b, () => abrirBiblioteca({
+    cliente, criativo,
+    categorias: b.dataset.modeloPronto === 'gerador' ? ['premium', 'contexto', 'anuncio'] : null,
+    aoUsarNoGerador: (prompt) => {
+      const campo = $('[data-prompt-ia]', raiz); campo.value = prompt;
+      const sec = campo.closest('details'); if (sec) sec.open = true;
+      campo.scrollIntoView({ block: 'center' }); toast('Prompt do modelo colocado em "Gerar imagem com IA". Clique em "Gerar imagem".', 'info');
+    },
+  })));
   on(raiz, 'click', '[data-copiar-prompt]', (b) => copiar($('[data-texto-prompt]', b.closest('div').parentElement).textContent));
 
   // ---- imagem por IA (gratuita, vários provedores) ----

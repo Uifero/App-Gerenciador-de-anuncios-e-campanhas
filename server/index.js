@@ -63,6 +63,7 @@ export const TAREFAS = {
   leitura_web:  { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // site do cliente que bloqueia leitura direta (busca web)
   leitura_prints: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', imagens: true }, // prints do Instagram do cliente
   leitura_provas: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', imagens: true }, // prints de prova social (avaliações, WhatsApp)
+  modelo_prompt: { modelo: MODELO_LEVE,     max: 1500, semRaciocinio: true }, // "Modelos de Prompt": preenche os marcadores com os dados do cliente
   ajuste_site: { modelo: MODELO_LEVE,     max: 3000 },  // "Ajustar este site": pedido pontual (texto, ordem, cor)
   ajuste_site_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low' }, // "Ajustar este site": pedido amplo (várias seções / reescrever)
   leitura_respostas: { modelo: MODELO_LEVE, max: 6000 },                   // associa a resposta colada do cliente às 18 perguntas
@@ -184,6 +185,8 @@ async function viaCli({ tarefa, t, estavel, system, messages, webSearch, imagens
   if (stream) args.splice(args.indexOf('json'), 1, 'stream-json', '--input-format', 'stream-json', '--verbose');
   const entrada = stream ? JSON.stringify({ type: 'user', message: { role: 'user', content: blocosComImagens(prompt, imagens) } }) + '\n' : prompt;
   const env = { ...process.env }; delete env.ANTHROPIC_API_KEY; delete env.ANTHROPIC_BASE_URL; delete env.ANTHROPIC_AUTH_TOKEN; // usa o login da assinatura
+  // Tarefa de preencher campo curto: sem raciocínio interno (com ele, o modelo leve gastava ~3 mil tokens e ~30 s num JSON de 3 linhas).
+  if (t.semRaciocinio) env.MAX_THINKING_TOKENS = '0';
   await vez();
   try {
     const saida = await new Promise((ok, falha) => {

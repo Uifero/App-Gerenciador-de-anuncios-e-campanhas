@@ -517,6 +517,41 @@ Se um campo não aparece nos prints, use null. Textos em português do Brasil. U
 }
 
 /**
+ * "Modelos de Prompt": preenche os marcadores ([NOME DO PRODUTO], [COR DE DESTAQUE]…) de UM modelo com os dados
+ * reais do cliente. Tarefa curta (modelo leve). Cada valor volta em {en, pt}: o "en" entra no prompt em inglês e o
+ * "pt" na tradução; texto que aparece na imagem (nome, preço, chamada, pergunta) fica em português nos dois.
+ * Conferência em lib/modelos-prompt.js (valoresDaIa).
+ */
+export async function preencherModeloPrompt({ cliente, modelo, marcadores, produto = null, produtos = [], corMarca = '', criativo = null }) {
+  const system = 'Você preenche modelos de prompt de imagem com dados REAIS de uma marca. Nunca inventa preço, número, prêmio ou promessa: se o dado não existe, deixa o campo vazio.';
+  const m = cliente.marca || {};
+  // Regras só dos marcadores deste modelo: listar todos fazia a IA preencher campos que o modelo nem tem (resposta 10x maior e lenta).
+  const REGRA = {
+    '[NOME DO PRODUTO]': 'nome do produto escolhido, como no catálogo (texto na imagem: en = pt)',
+    '[PREÇO DE]': 'só se houver preço promocional: o preço cheio, "R$ 00,00" (en = pt)',
+    '[PREÇO POR]': 'o preço promocional, ou o preço normal se não houver promoção, "R$ 00,00" (en = pt)',
+    '[CHAMADA PARA AÇÃO]': 'texto curto do botão em português, no tom da marca (en = pt)',
+    '[EX.: PERGUNTA-GANCHO]': 'pergunta de até 2 linhas, em português, que dá vontade, sem promessa exagerada (en = pt)',
+    '[COR DE DESTAQUE]': 'a cor da marca: nome da cor + código # (en em inglês, pt em português)',
+    '[DIFERENCIAL]': 'o diferencial real do perfil de marca (en em inglês, pt em português)',
+    '[USO DO PRODUTO]': 'onde/como o produto é usado no dia a dia, em poucas palavras (en em inglês, pt em português)',
+    '[OUTROS PRODUTOS DA MESMA COLEÇÃO]': 'outros produtos do catálogo (en em inglês, pt em português)',
+  };
+  const pedido = `Modelo: "${modelo.titulo}". Prompt base (inglês): ${modelo.en}
+Preencha SÓ estes ${marcadores.length} marcador(es), nenhum outro:
+${marcadores.map((k) => `- ${k}: ${REGRA[k] || 'valor curto'}`).join('\n')}
+Dados do cliente "${cliente.nome}" (nicho: ${cliente.nicho || 'n/d'}):
+- Produto escolhido: ${produto ? `${produto.nome}${produto.descricao ? ` — ${String(produto.descricao).slice(0, 300)}` : ''}; preço ${produto.preco || 'não informado'}${Number(produto.precoPromocional) > 0 ? `; preço promocional ${produto.precoPromocional}` : ''}` : 'nenhum (use o produto principal do nicho só se o catálogo abaixo deixar claro qual é)'}
+- Catálogo: ${produtos.slice(0, 12).map((p) => p.nome).join('; ') || 'vazio'}
+- Diferencial (USP): ${m.usp || 'não informado'} · Tom de voz: ${m.tomDeVoz || 'n/d'} · Estética: ${m.estetica || 'n/d'} · Oferta ativa: ${m.ofertaAtiva || 'nenhuma'}
+- Cor da marca: ${corMarca || 'não informada'}${criativo ? `\n- Criativo atual: hook "${criativo.hook || ''}", CTA "${criativo.cta || ''}"` : ''}
+Preço, cor, diferencial e produtos: só com os dados acima (sem dado real, omita o marcador). Chamada para ação, pergunta-gancho e uso do produto são textos que VOCÊ escreve: preencha sempre, a partir do nicho, do produto e do criativo. Valores curtos, sem explicação.
+Saída JSON: {"valores": {"[MARCADOR]": {"en": string, "pt": string}}}. ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'modelo_prompt', cliente, system, messages: [{ role: 'user', content: pedido }] });
+  return dados || {};
+}
+
+/**
  * Prints de PROVA SOCIAL do cliente (avaliação do Google/marketplace, depoimento no WhatsApp, site de avaliações…).
  * Devolve, por imagem, um resumo factual (nota, nº de avaliações, trecho do elogio) SEM dado pessoal de terceiros, e
  * onde esses dados aparecem (áreas em fração da imagem) para o app cobrir com tarja antes de guardar o print.

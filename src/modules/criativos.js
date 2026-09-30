@@ -5,6 +5,7 @@ import { obterConfig } from './configuracoes.js';
 import { abrirEnvio, sincronizarAprovacoes, tagAprovacao, statusAposTrocarArquivo, legendaReaprovacao } from './aprovacao.js';
 import { perguntarBuscaMercado } from './busca-mercado.js';
 import { abrirEstudio } from './estudio.js';
+import { abrirBiblioteca } from './modelos-prompt.js';
 import { montarQuestionarioNaAba } from './perguntas-site.js';
 import { apagarCriativoEmCascata } from '../lib/cascata.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
@@ -63,6 +64,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   root.innerHTML = `${cabecalho('Criativos', 'Caminho de cada anúncio: 1. gerar ou escrever → 2. abrir, revisar e completar o checklist → 3. enviar ao cliente aprovar → 4. "Gerar foto e vídeo" → 5. vincular na aba Campanhas. Cada ajuste vira uma versão.',
     `<select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
+     <button class="btn-ghost" data-modelos-prompt title="Modelos prontos de prompt para editar ou gerar fotos de produto, preenchidos com os dados deste cliente"><i class="fa-solid fa-swatchbook"></i> Modelos de prompt</button>
      <button class="btn-ghost" data-enviar title="Gera um link para o cliente final ver as peças e aprovar ou pedir ajuste, sem login"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação</button>
      <button class="btn-primary" data-novo title="Gerar ou escrever um criativo novo"><i class="fa-solid fa-plus"></i> Novo criativo</button>`)}
     <div class="mb-4" data-questionario></div><div id="painel"></div><div id="lista">${lista()}</div>`;
@@ -74,6 +76,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     $('#lista', root).innerHTML = lista();
   };
   on(root, 'change', '[data-filtro]', (s) => { filtro = s.value; $('#lista', root).innerHTML = lista(); });
+  on(root, 'click', '[data-modelos-prompt]', (b) => ocupado(b, () => abrirBiblioteca({ cliente })));
   on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg, produtos, sugestaoInsight));
   on(root, 'click', '[data-enviar]', () => abrirEnvio(cliente, criativos, { preSelecionar: criativos.filter((c) => ['rascunho', 'reaprovacao'].includes(c.status)).map((c) => c.id), aoMudar: recarregar }));
 

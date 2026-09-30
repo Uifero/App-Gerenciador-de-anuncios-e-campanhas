@@ -17,6 +17,7 @@ import * as produtos from './modules/produtos.js';
 import * as sites from './modules/sites.js';
 import * as relatorios from './modules/relatorios.js';
 import * as playbooks from './modules/playbooks.js';
+import * as modelosPrompt from './modules/modelos-prompt.js';
 import * as onboarding from './modules/onboarding.js';
 import { viewPublica } from './modules/aprovacao.js';
 import { montarBusca } from './modules/busca.js';
@@ -61,6 +62,7 @@ function layout() {
     <div id="busca-slot" class="order-last w-full md:order-none md:ml-2 md:flex-1"></div>
     <nav class="ml-auto flex items-center gap-1 text-sm"><a class="btn-ghost btn-sm" href="#/" title="Visão geral de todos os clientes"><i class="fa-solid fa-house"></i> <span class="hidden sm:inline">Início</span></a>
       <a class="btn-ghost btn-sm" href="#/playbooks" title="Receitas de ângulos e hooks por tipo de produto"><i class="fa-solid fa-book-open"></i> <span class="hidden sm:inline">Playbooks</span></a>
+      <a class="btn-ghost btn-sm" href="#/modelos" title="Modelos prontos de prompt para editar ou gerar fotos de produto"><i class="fa-solid fa-swatchbook"></i> <span class="hidden sm:inline">Modelos de Prompt</span></a>
       <a class="btn-ghost btn-sm" href="#/config" title="Ajustes globais"><i class="fa-solid fa-gear"></i> <span class="hidden sm:inline">Configurações</span></a>
       <button class="btn-ghost btn-sm" id="tema" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro"><i class="fa-solid fa-${iconeTema()}"></i></button>
       <button class="btn-ghost btn-sm" id="sair" title="Encerrar a sessão"><i class="fa-solid fa-right-from-bracket"></i> <span class="hidden sm:inline">Sair</span></button></nav></div></header>
@@ -88,6 +90,7 @@ async function rotear() {
     if (!partes.length) await dashboard.view(main);
     else if (partes[0] === 'config') await configuracoes.view(main);
     else if (partes[0] === 'playbooks') await playbooks.view(main);
+    else if (partes[0] === 'modelos') await modelosPrompt.view(main);
     else if (partes[0] === 'clientes' && partes[1] === 'novo' && partes[2] === 'assistente') await onboarding.view(main);
     else if (partes[0] === 'clientes' && partes[1] === 'novo' && partes[2] === 'completo') {
       let baseId = null;   // vindo de "Duplicar como base"

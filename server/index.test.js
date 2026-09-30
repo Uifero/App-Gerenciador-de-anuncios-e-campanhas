@@ -16,6 +16,11 @@ describe('TAREFAS', () => {
     expect(TAREFAS.hooks.modelo).not.toBe(TAREFAS.criativos.modelo);
   });
 
+  it('só o preenchimento de modelo de prompt roda sem raciocínio interno (campo curto)', () => {
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.semRaciocinio).map(([n]) => n)).toEqual(['modelo_prompt']);
+    expect(TAREFAS.modelo_prompt.modelo).toBe(TAREFAS.hooks.modelo); // modelo leve, como as tarefas simples
+  });
+
   it('só busca de mercado, leitura de site pela busca e diagnóstico pedem busca web', () => {
     expect(Object.entries(TAREFAS).filter(([, t]) => t.web).map(([n]) => n)).toEqual(['referencias', 'diagnostico', 'leitura_web']);
     expect(TAREFAS.criativos.web).toBeFalsy();
