@@ -16,8 +16,10 @@ describe('TAREFAS', () => {
     expect(TAREFAS.hooks.modelo).not.toBe(TAREFAS.criativos.modelo);
   });
 
-  it('só o preenchimento de modelo de prompt roda sem raciocínio interno (campo curto)', () => {
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.semRaciocinio).map(([n]) => n)).toEqual(['modelo_prompt']);
+  it('sem raciocínio só nas tarefas leves medidas sem perda de qualidade; nunca no modelo complexo', () => {
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.semRaciocinio).map(([n]) => n).sort()).toEqual(['ajuste_site', 'checklist', 'imagem', 'modelo_prompt', 'reparo']);
+    for (const n of ['hooks', 'refino', 'narracao', 'faq', 'leitura_respostas']) expect(TAREFAS[n].semRaciocinio).toBeFalsy(); // pioravam sem raciocínio
+    for (const t of Object.values(TAREFAS).filter((x) => x.semRaciocinio)) expect(t.modelo).toBe(TAREFAS.hooks.modelo);
     expect(TAREFAS.modelo_prompt.modelo).toBe(TAREFAS.hooks.modelo); // modelo leve, como as tarefas simples
   });
 

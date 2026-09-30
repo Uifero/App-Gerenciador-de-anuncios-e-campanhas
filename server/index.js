@@ -41,12 +41,18 @@ const cliDisponivel = () => PROVEDOR === 'cli' && Date.now() >= cliPausadaAte;
 const MODELO_LEVE = process.env.ANTHROPIC_MODEL_LEVE || 'claude-haiku-4-5';
 const MODELO_COMPLEXO = process.env.ANTHROPIC_MODEL_COMPLEXO || 'claude-sonnet-5';
 
-/** max = limite padrão de tokens de saída (o app pode sobrescrever por tarefa em Configurações). */
+/**
+ * max = limite padrão de tokens de saída (o app pode sobrescrever por tarefa em Configurações).
+ * semRaciocinio = na CLI da assinatura, roda o modelo leve sem raciocínio interno (MAX_THINKING_TOKENS=0). Só onde foi
+ * MEDIDO que a qualidade não cai (2026-09-30). Ficaram COM raciocínio, de propósito: hooks (sem ele inventava promessa de
+ * saúde), refino (inventava prazo/número), narracao (falas não cabiam no tempo da cena), faq (inventava garantia de
+ * segurança) e leitura_respostas (deixou de ler uma resposta). Na API, o Haiku já roda sem raciocínio.
+ */
 export const TAREFAS = {
   hooks:       { modelo: MODELO_LEVE,     max: 2000 },
   refino:      { modelo: MODELO_LEVE,     max: 3000 },
-  checklist:   { modelo: MODELO_LEVE,     max: 1200 },
-  imagem:      { modelo: MODELO_LEVE,     max: 1800 },
+  checklist:   { modelo: MODELO_LEVE,     max: 1200, semRaciocinio: true }, // medido: 31 s -> 8 s, mesma avaliação
+  imagem:      { modelo: MODELO_LEVE,     max: 1800, semRaciocinio: true }, // "Sugerir prompts": 35 s -> 16 s, prompts equivalentes
   criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium' },
   campanha:    { modelo: MODELO_COMPLEXO, max: 7000,  effort: 'medium' },
   discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium' }, // chat do rascunho de campanha
@@ -64,11 +70,11 @@ export const TAREFAS = {
   leitura_prints: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', imagens: true }, // prints do Instagram do cliente
   leitura_provas: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', imagens: true }, // prints de prova social (avaliações, WhatsApp)
   modelo_prompt: { modelo: MODELO_LEVE,     max: 1500, semRaciocinio: true }, // "Modelos de Prompt": preenche os marcadores com os dados do cliente
-  ajuste_site: { modelo: MODELO_LEVE,     max: 3000 },  // "Ajustar este site": pedido pontual (texto, ordem, cor)
+  ajuste_site: { modelo: MODELO_LEVE,     max: 3000, semRaciocinio: true },  // "Ajustar este site": pedido pontual (texto, ordem, cor); 8 s -> 6 s, mesmas operações
   ajuste_site_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low' }, // "Ajustar este site": pedido amplo (várias seções / reescrever)
   leitura_respostas: { modelo: MODELO_LEVE, max: 6000 },                   // associa a resposta colada do cliente às 18 perguntas
   leitura_produtos:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low' }, // lista de produtos da resposta do cliente
-  reparo:      { modelo: MODELO_LEVE,     max: 12000 }, // corrige JSON inválido de outra resposta (sem refazer a tarefa)
+  reparo:      { modelo: MODELO_LEVE,     max: 12000, semRaciocinio: true }, // corrige JSON inválido de outra resposta (sem refazer a tarefa); 8 s -> 5 s, resultado idêntico
 };
 
 // ---------- imagens anexadas (só tarefas com `imagens: true`, hoje o diagnóstico) ----------
