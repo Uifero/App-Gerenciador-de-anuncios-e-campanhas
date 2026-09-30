@@ -127,3 +127,57 @@ describe('conferirFontesMercado', () => {
     expect(r.desperdicio[0].alerta).toMatch(/não foi enviada/);
   });
 });
+
+describe('diagnóstico com Biblioteca de Anúncios e país', () => {
+  it('lê os dias no ar só do print de anúncio ativo', () => {
+    const r = conferirLeituraImagens({ imagens: [
+      { numero: 1, tipo: 'anuncio_ativo', leitura: 'Veiculação iniciada em 1 set', diasNoAr: '29' },
+      { numero: 2, tipo: 'metricas', leitura: 'CPM', diasNoAr: 10 },
+    ] }, 2);
+    expect(r.imagens[0]).toMatchObject({ tipo: 'anuncio_ativo', diasNoAr: 29 });
+    expect(r.imagens[1].diasNoAr).toBeUndefined();
+  });
+
+  it('conclusão tirada de print de anúncio ativo é usável (sem alerta)', () => {
+    const r = conferirLeituraImagens({ imagens: [{ numero: 1, tipo: 'anuncio_ativo', leitura: 'x' }], recomendacoes: [{ texto: 'CTA pequeno', fonte: 'imagem', imagem: 1 }] }, 1);
+    expect(r.recomendacoes[0].alerta).toBeUndefined();
+  });
+
+  it('avisa quando o texto usa R$ mas o dado é de outra moeda', () => {
+    const r = conferirFontesMercado({ buscaMercado: { encontrou: true }, comparacaoMercado: [
+      { texto: 'CPA médio do nicho é R$ 12', fonte: 'mercado', link: 'https://a.com', pais: 'Estados Unidos', moeda: 'usd' },
+      { texto: 'CPA médio do nicho é US$ 12', fonte: 'mercado', link: 'https://a.com', pais: 'Estados Unidos', moeda: 'USD' },
+    ] });
+    expect(r.comparacaoMercado[0].moeda).toBe('USD');
+    expect(r.comparacaoMercado[0].alerta).toMatch(/R\$/);
+    expect(r.comparacaoMercado[1].alerta).toBeUndefined();
+    // Caso real do teste ao vivo: cita as duas moedas justamente para NÃO comparar — não é mistura.
+    const honesto = conferirFontesMercado({ comparacaoMercado: [{ texto: 'Os benchmarks estão em US$, então não comparo com os R$ do cliente.', fonte: 'mercado', link: 'https://a.com', moeda: 'USD' }] });
+    expect(honesto.comparacaoMercado[0].alerta).toBeUndefined();
+  });
+
+  it('guarda de que país são os dados achados e confere conclusões atribuídas à Biblioteca', () => {
+    const r = conferirFontesMercado({
+      buscaMercado: { encontrou: true, noPaisDoCliente: 'false', paisDosDados: 'Estados Unidos, US$' },
+      buscaBiblioteca: { encontrou: false, resumo: 'página não achada' },
+      desperdicio: [{ texto: 'Oferta fraca', fonte: 'biblioteca', link: 'https://facebook.com/ads/library/x' }],
+      recomendacoes: [{ texto: 'y', fonte: 'Biblioteca' }],
+    });
+    expect(r.buscaMercado).toMatchObject({ noPaisDoCliente: false, paisDosDados: 'Estados Unidos, US$' });
+    expect(r.desperdicio[0].alerta).toMatch(/não achou os anúncios da marca/);
+    // Apoiada também num print válido: não manda descartar, só conferir.
+    const mista = conferirDiagnostico({ imagens: [{ numero: 1, tipo: 'anuncio_ativo', leitura: 'x' }], buscaBiblioteca: { encontrou: false },
+      recomendacoes: [{ texto: 'claim 12h x 8h no site', fonte: 'biblioteca', imagem: 1, link: 'https://a.com' }] }, 1);
+    expect(mista.recomendacoes[0].alerta).toMatch(/se apoia na imagem 1/);
+    const ok = conferirFontesMercado({ buscaBiblioteca: { encontrou: true }, recomendacoes: [{ texto: 'y', fonte: 'biblioteca' }] });
+    expect(ok.recomendacoes[0].alerta).toMatch(/Sem o link/);
+  });
+
+  it('sem IA: o link da Biblioteca fica no registro, sem interpretação', () => {
+    const r = resumoSemIA({ dados: { bibliotecaAnuncios: ' https://www.facebook.com/ads/library/?q=loja ' }, locais: {}, nicho: {}, referenciasFortes: [], simbolo: '€' });
+    expect(r.bibliotecaAnuncios).toBe('https://www.facebook.com/ads/library/?q=loja');
+    const s = resumoSemIA({ dados: {}, locais: { angulo: [{ valor: 'dor', roasMedio: 2, cpaMedio: 10, amostras: 2 }] }, nicho: {}, referenciasFortes: [], simbolo: '€' });
+    expect(s.bibliotecaAnuncios).toBeNull();
+    expect(s.padroesDoCliente[0]).toContain('CPA € 10.00');
+  });
+});

@@ -14,7 +14,7 @@ vi.mock('../core/storage.js', () => ({
 }));
 vi.mock('../core/ia.js', () => ({ explicarInsights: vi.fn() }));
 
-const { padroesLocais, padroesPorNicho, sugestaoNaoTestada, sugestoesDashboard, cartaoInsights } = await import('./insights.js');
+const { padroesLocais, padroesPorNicho, padroesDoNicho, sugestaoNaoTestada, sugestoesDashboard, cartaoInsights } = await import('./insights.js');
 
 const resultado = (over) => ({ angulo: '', framework: '', formato: '', roas: null, cpa: null, gasto: 0, ...over });
 
@@ -98,6 +98,30 @@ describe('padroesPorNicho', () => {
     const r = await padroesPorNicho('moda', 'a');
     expect(r.clientes).toBe(0);
     expect(r.padroes.angulo).toEqual([]);
+  });
+});
+
+describe('padrões de nicho por país', () => {
+  it('só junta clientes do mesmo país (sem o campo = Brasil), para não misturar moedas', async () => {
+    bancos.clientes = new Map([
+      ['a', { nicho: 'moda' }], ['b', { nicho: 'moda', pais: 'Brasil' }], ['c', { nicho: 'moda', pais: 'Estados Unidos' }],
+    ]);
+    bancos.resultados = new Map([
+      ['r1', { clienteId: 'b', angulo: 'dor', roas: 3, gasto: 10 }], ['r2', { clienteId: 'b', angulo: 'dor', roas: 3, gasto: 10 }],
+      ['r3', { clienteId: 'c', angulo: 'economia', roas: 9, gasto: 10 }], ['r4', { clienteId: 'c', angulo: 'economia', roas: 9, gasto: 10 }],
+    ]);
+    const br = await padroesDoNicho({ id: 'a', nicho: 'moda' });
+    expect(br.clientes).toBe(1);
+    expect(br.padroes.angulo.map((g) => g.valor)).toEqual(['dor']);
+    const us = await padroesDoNicho({ id: 'x', nicho: 'moda', pais: 'EUA' });
+    expect(us.padroes.angulo.map((g) => g.valor)).toEqual(['economia']);
+    expect((await padroesPorNicho('moda', 'a')).clientes).toBe(2); // sem país: comportamento antigo
+  });
+
+  it('no dashboard, a sugestão também só vem de cliente do mesmo nicho e país', () => {
+    const clientes = [{ id: 'a', nicho: 'moda' }, { id: 'b', nicho: 'moda', pais: 'Portugal' }];
+    const resultadosTodos = [{ clienteId: 'b', angulo: 'economia', roas: 6, gasto: 10 }, { clienteId: 'b', angulo: 'economia', roas: 6, gasto: 10 }];
+    expect(sugestoesDashboard(clientes, [], resultadosTodos)).toEqual([]);
   });
 });
 

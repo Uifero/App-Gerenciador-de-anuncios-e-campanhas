@@ -4,6 +4,7 @@ import { buscarReferencias, analisarReferencia } from '../core/ia.js';
 import { obterConfig, classificarSinal } from './configuracoes.js';
 import { esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, toast, ocupado, lerForm, num, modal, campoArquivo } from '../core/ui.js';
 import { podePerguntar, marcarPerguntado, consumirPedidoBusca } from './busca-mercado.js';
+import { paisDoCliente, chavePais } from '../lib/pais.js';
 
 const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -16,7 +17,8 @@ async function oferecerReuso(cliente, cfg, aoCopiar) {
   if (!dias) return 'buscar';
   const corte = Date.now() - dias * 864e5;
   const alvo = norm(cliente.nicho);
-  const recentes = (await db.listar(COL.referencias)).filter((r) => norm(r.nicho) === alvo && new Date(r.criadoEm).getTime() >= corte);
+  const paisAlvo = chavePais(cliente);
+  const recentes = (await db.listar(COL.referencias)).filter((r) => norm(r.nicho) === alvo && chavePais({ pais: r.paisCliente }) === paisAlvo && new Date(r.criadoEm).getTime() >= corte);
   if (!recentes.length) return 'buscar';
   const jaTem = (r) => recentes.some((d) => d.clienteId === cliente.id && ((d.link && d.link === r.link) || d.titulo === r.titulo));
   const copiaveis = recentes.filter((r) => r.clienteId !== cliente.id && !jaTem(r));
@@ -27,7 +29,7 @@ async function oferecerReuso(cliente, cfg, aoCopiar) {
     const decidir = (v) => { if (!decidido) { decidido = true; ok(v); } };
     const fim = (v) => { decidir(v); m.fechar(); };
     const m = modal('Já existem referências recentes deste nicho', `<div class="space-y-3">
-      <p class="text-sm">Encontrei <b>${recentes.length}</b> referência(s) de "<b>${esc(cliente.nicho)}</b>" salvas nos últimos ${dias} dias${deste ? ` (${deste} já estão neste cliente)` : ''}. Uma busca nova gasta tokens de IA e busca na web.</p>
+      <p class="text-sm">Encontrei <b>${recentes.length}</b> referência(s) de "<b>${esc(cliente.nicho)}</b>" (${esc(paisDoCliente(cliente))}) salvas nos últimos ${dias} dias${deste ? ` (${deste} já estão neste cliente)` : ''}. Uma busca nova gasta tokens de IA e busca na web.</p>
       <div class="flex flex-wrap gap-2">
         ${copiaveis.length ? `<button class="btn-primary" data-copiar title="Copia as referências de outros clientes para este, sem custo de IA"><i class="fa-solid fa-copy"></i> Usar as salvas (copiar ${copiaveis.length} para este cliente)</button>`
           : `<button class="btn-primary" data-ver><i class="fa-solid fa-eye"></i> Usar as que já estão salvas</button>`}
@@ -63,10 +65,10 @@ export async function buscarExemplosMercado(cliente, cfg, { aoFechar } = {}) {
   const enriquecidos = itens.map((i) => ({ ...i, sinal: classificarSinal(i.diasNoAr, cfg) }));
   let salvas = 0;
   const m = modal(`Exemplos de mercado encontrados — ${cliente.nome}`, `<div class="space-y-3">
-    ${iaNota(`A IA pesquisou na web e encontrou ${enriquecidos.length} exemplo(s) no nicho "${cliente.nicho}", com análise estratégica de cada um. Confira o link antes de salvar: a busca pode não confirmar o tempo no ar — nesse caso aparece "sinal n/d" e você pode preencher depois.`)}
+    ${iaNota(`A IA pesquisou na web e encontrou ${enriquecidos.length} exemplo(s) no nicho "${cliente.nicho}" em ${paisDoCliente(cliente)}, com análise estratégica de cada um. Exemplo de outro país aparece com o país em amarelo. Confira o link antes de salvar: a busca pode não confirmar o tempo no ar — nesse caso aparece "sinal n/d" e você pode preencher depois.`)}
     ${enriquecidos.length ? enriquecidos.map((r, i) => `<div class="rounded-lg border border-slate-200 p-3">
       <div class="flex justify-between gap-2"><b>${esc(r.titulo)}</b>${r.sinal ? tag('sinal ' + r.sinal, COR_SINAL[r.sinal]) : tag('sinal n/d')}</div>
-      <div class="mt-1 flex flex-wrap gap-1">${r.empresa ? tag(r.empresa) : ''}${r.diasNoAr != null ? tag(r.diasNoAr + ' dias no ar') : tag('tempo no ar não confirmado', 'tag-warn')}
+      <div class="mt-1 flex flex-wrap gap-1">${r.empresa ? tag(r.empresa) : ''}${tagPais(r.pais, cliente)}${r.diasNoAr != null ? tag(r.diasNoAr + ' dias no ar') : tag('tempo no ar não confirmado', 'tag-warn')}
       ${r.diasNoAr != null && r.diasNoAr < cfg.diasMinimosReferencia ? tag(`abaixo do mínimo (${cfg.diasMinimosReferencia}d)`, 'tag-bad') : ''}</div>
       ${r.evidencia ? `<p class="hint">Fonte da informação: ${esc(r.evidencia)}</p>` : ''}
       ${r.texto ? `<p class="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-slate-600">${esc(r.texto)}</p>` : ''}
@@ -83,6 +85,7 @@ export async function buscarExemplosMercado(cliente, cfg, { aoFechar } = {}) {
       await db.criar(COL.referencias, {
         clienteId: cliente.id, nicho: cliente.nicho, origem: 'busca', titulo: r.titulo || '', empresa: r.empresa || '', link: r.link || '',
         texto: r.texto || '', diasNoAr: r.diasNoAr ?? null, sinal: r.sinal, analise: r.analise || null, evidencia: r.evidencia || '',
+        pais: r.pais || null, paisCliente: paisDoCliente(cliente), // país do anúncio (pela fonte) e mercado para o qual foi buscado
       });
       salvas++;
       btn.outerHTML = '<span class="tag tag-ok">Salvo</span>'; toast('Referência salva.');
@@ -92,6 +95,8 @@ export async function buscarExemplosMercado(cliente, cfg, { aoFechar } = {}) {
 }
 
 const COR_SINAL = { forte: 'tag-ok', moderado: 'tag-warn', fraco: '' };
+/** Etiqueta do país do anúncio: amarela quando é de outro país que não o do cliente; "país n/d" quando a fonte não mostrou. */
+const tagPais = (pais, cliente) => (!pais ? tag('país n/d') : chavePais({ pais }) === chavePais(cliente) ? tag(pais) : tag(`outro país: ${pais}`, 'tag-warn'));
 
 function blocoAnalise(a) {
   if (!a) return '<p class="hint">Sem análise estratégica ainda.</p>';
@@ -109,7 +114,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     <div class="flex items-start justify-between gap-2"><h3 class="font-semibold leading-tight">${esc(r.titulo || 'Anúncio de referência')}</h3>
       ${r.sinal ? tag('sinal ' + r.sinal, COR_SINAL[r.sinal]) : tag('sinal n/d')}</div>
     <div class="mt-2 flex flex-wrap gap-1">${r.empresa ? tag(r.empresa) : ''}${r.categoria ? tag(r.categoria, 'tag-info') : ''}${tag(r.origem === 'busca' ? 'busca de mercado' : 'manual')}
-      ${r.diasNoAr != null ? tag(r.diasNoAr + ' dias no ar') : ''}${r.nicho ? tag(r.nicho) : ''}</div>
+      ${r.diasNoAr != null ? tag(r.diasNoAr + ' dias no ar') : ''}${r.nicho ? tag(r.nicho) : ''}${r.pais ? tagPais(r.pais, cliente) : ''}</div>
     ${r.texto ? `<p class="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-slate-600">${esc(r.texto)}</p>` : ''}
     ${r.imagemUrl ? `<img src="${esc(r.imagemUrl)}" alt="Anúncio" class="mt-2 max-h-40 rounded-lg" loading="lazy">` : ''}
     ${blocoAnalise(r.analise)}

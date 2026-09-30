@@ -7,6 +7,7 @@ import { db, COL } from '../core/storage.js';
 import { explicarInsights } from '../core/ia.js';
 import { esc, tag, ocupado } from '../core/ui.js';
 import { FORMATOS } from '../lib/constantes.js';
+import { paisDoCliente, chavePais, simboloDoCliente } from '../lib/pais.js';
 
 const DIMENSOES = [['angulo', 'Ângulo'], ['framework', 'Framework de copy'], ['formato', 'Formato']];
 const normNicho = (s) => String(s || '').toLowerCase().trim();
@@ -49,13 +50,18 @@ export function padroesLocais(resultados = [], minimoAmostras = 2) {
  * próprio cliente. Só o padrão agregado sai daqui — nunca o nome, id ou número isolado de um cliente específico.
  * Precisa de pelo menos 1 outro cliente do mesmo nicho com resultados; senão devolve padrões vazios.
  */
-export async function padroesPorNicho(nicho, excluirClienteId, minimoAmostras = 2) {
+export async function padroesPorNicho(nicho, excluirClienteId, minimoAmostras = 2, pais = null) {
   const clientes = await db.listar(COL.clientes);
-  const doNicho = clientes.filter((c) => c.id !== excluirClienteId && normNicho(c.nicho) === normNicho(nicho) && normNicho(c.nicho));
+  // Com país: só clientes do mesmo país/mercado (CPA em R$ e em US$ não se misturam na média). Sem país: todos (compatível).
+  const doNicho = clientes.filter((c) => c.id !== excluirClienteId && normNicho(c.nicho) === normNicho(nicho) && normNicho(c.nicho)
+    && (pais == null || chavePais(c) === chavePais({ pais })));
   if (!doNicho.length) return { padroes: padroesLocais([], minimoAmostras), clientes: 0 };
   const porCliente = await Promise.all(doNicho.map((c) => db.listar(COL.resultados, { clienteId: c.id })));
   return { padroes: padroesLocais(porCliente.flat(), minimoAmostras), clientes: doNicho.length };
 }
+
+/** Padrões de clientes do mesmo nicho E do mesmo país deste cliente (é o que todas as telas usam). */
+export const padroesDoNicho = (cliente) => padroesPorNicho(cliente.nicho, cliente.id, 2, paisDoCliente(cliente));
 
 /** true se `valor` (ângulo/framework) já aparece em algum criativo do cliente — "já testado". */
 const jaTestado = (valor, criativos, campo) => criativos.some((c) => String(c[campo] || '').trim().toLowerCase() === valor.toLowerCase());
@@ -85,11 +91,11 @@ export function sugestoesDashboard(clientes, criativosTodos, resultadosTodos, mi
   for (const c of clientes) {
     const chave = normNicho(c.nicho);
     if (!chave) continue;
-    (porNicho[chave] ||= []).push(c.id);
+    (porNicho[chave + '|' + chavePais(c)] ||= []).push(c.id); // mesmo nicho E mesmo país
   }
   const out = [];
   for (const c of clientes) {
-    const chave = normNicho(c.nicho);
+    const chave = normNicho(c.nicho) + '|' + chavePais(c);
     const idsDoNicho = (porNicho[chave] || []).filter((id) => id !== c.id);
     if (idsDoNicho.length < 1) continue;
     const resultadosOutros = resultadosTodos.filter((r) => idsDoNicho.includes(r.clienteId));
@@ -103,11 +109,11 @@ export function sugestoesDashboard(clientes, criativosTodos, resultadosTodos, mi
 
 // ---------------- interface (card colapsável dentro da aba Resultados) ----------------
 
-function linhaPadrao([campo, rotulo], grupos) {
+function linhaPadrao([campo, rotulo], grupos, simbolo = 'R$') {
   if (!grupos.length) return '';
   // Formato é guardado como chave ("video_curto"): mostra o nome legível.
   const nome = (v) => (campo === 'formato' ? FORMATOS.find(([k]) => k === v)?.[1] || v : v);
-  const top = grupos.slice(0, 3).map((g) => `<li>${tag(nome(g.valor), 'tag-info')} ROAS ${g.roasMedio != null ? g.roasMedio.toFixed(2) + 'x' : '—'} · CPA ${g.cpaMedio != null ? 'R$ ' + g.cpaMedio.toFixed(2) : '—'} <span class="hint">(${g.amostras} resultado(s))</span></li>`).join('');
+  const top = grupos.slice(0, 3).map((g) => `<li>${tag(nome(g.valor), 'tag-info')} ROAS ${g.roasMedio != null ? g.roasMedio.toFixed(2) + 'x' : '—'} · CPA ${g.cpaMedio != null ? simbolo + ' ' + g.cpaMedio.toFixed(2) : '—'} <span class="hint">(${g.amostras} resultado(s))</span></li>`).join('');
   return `<div><h5 class="text-xs font-semibold uppercase text-slate-500">${esc(rotulo)}</h5><ul class="mt-1 space-y-0.5 text-sm">${top}</ul></div>`;
 }
 
@@ -119,18 +125,18 @@ export async function cartaoInsights(cliente, resultados) {
   const locais = padroesLocais(resultados);
   const temLocal = DIMENSOES.some(([c]) => locais[c].length);
   let nicho = { padroes: padroesLocais([]), clientes: 0 };
-  try { nicho = await padroesPorNicho(cliente.nicho, cliente.id); } catch (e) { console.warn('[insights] não consegui buscar padrões de nicho:', e); }
+  try { nicho = await padroesDoNicho(cliente); } catch (e) { console.warn('[insights] não consegui buscar padrões de nicho:', e); }
   const temNicho = DIMENSOES.some(([c]) => nicho.padroes[c].length);
   if (!temLocal && !temNicho) {
     return `<details class="card mb-5" id="insights-card"><summary class="cursor-pointer text-sm font-medium text-slate-600"><i class="fa-solid fa-chart-simple mr-1 text-slate-400"></i> Insights</summary>
-      <p class="hint mt-2">Ainda não há resultados suficientes (mínimo 2 por ângulo/framework/formato) para identificar um padrão. Registre mais resultados aqui ou em clientes do mesmo nicho.</p></details>`;
+      <p class="hint mt-2">Ainda não há resultados suficientes (mínimo 2 por ângulo/framework/formato) para identificar um padrão. Registre mais resultados aqui ou em clientes do mesmo nicho e do mesmo país.</p></details>`;
   }
   return `<details class="card mb-5" id="insights-card" open><summary class="cursor-pointer text-sm font-medium text-slate-600"><i class="fa-solid fa-chart-simple mr-1 text-slate-400"></i> Insights <span class="tag tag-info">sem custo de IA</span></summary>
     <p class="hint mt-2">Calculado direto dos números registrados (média ponderada pelo gasto, só com pelo menos 2 resultados) — nenhuma IA envolvida até aqui.</p>
     <p class="caption mb-3"><b>Como usar:</b> em cada coluna, o primeiro item é o que mais deu retorno. No próximo criativo, escreva esse ângulo/framework no campo "O que você quer comunicar?" (aba Criativos). ROAS acima de 3x costuma ser bom; abaixo de 1x é prejuízo.</p>
-    ${temLocal ? `<div><p class="text-xs font-semibold text-slate-500 mb-1">NESTE CLIENTE</p><div class="grid gap-3 sm:grid-cols-3">${DIMENSOES.map((d) => linhaPadrao(d, locais[d[0]])).join('')}</div></div>` : ''}
-    ${temNicho ? `<div class="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3"><p class="text-xs font-semibold text-indigo-700 mb-1" title="Agregado de ${nicho.clientes} outro(s) cliente(s) com o mesmo nicho — nunca mostra de qual cliente veio cada número">PADRÃO EM ${nicho.clientes} CLIENTE(S) DO MESMO NICHO (${esc(cliente.nicho || '')})</p>
-      <div class="grid gap-3 sm:grid-cols-3">${DIMENSOES.map((d) => linhaPadrao(d, nicho.padroes[d[0]])).join('')}</div></div>` : ''}
+    ${temLocal ? `<div><p class="text-xs font-semibold text-slate-500 mb-1">NESTE CLIENTE</p><div class="grid gap-3 sm:grid-cols-3">${DIMENSOES.map((d) => linhaPadrao(d, locais[d[0]], simboloDoCliente(cliente))).join('')}</div></div>` : ''}
+    ${temNicho ? `<div class="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3"><p class="text-xs font-semibold text-indigo-700 mb-1" title="Agregado de ${nicho.clientes} outro(s) cliente(s) com o mesmo nicho — nunca mostra de qual cliente veio cada número">PADRÃO EM ${nicho.clientes} CLIENTE(S) DO MESMO NICHO (${esc(cliente.nicho || '')}) · ${esc(paisDoCliente(cliente))}</p>
+      <div class="grid gap-3 sm:grid-cols-3">${DIMENSOES.map((d) => linhaPadrao(d, nicho.padroes[d[0]], simboloDoCliente(cliente))).join('')}</div></div>` : ''}
     <div class="mt-3 flex flex-wrap items-center gap-2"><button class="btn-ia btn-sm" data-explicar-ia title="A IA lê estes mesmos números e escreve uma explicação e recomendações — não calcula nada novo"><i class="fa-solid fa-wand-magic-sparkles"></i> Pedir explicação à IA</button>
       <span data-explicacao-status class="hint"></span></div>
     <div data-explicacao class="mt-3"></div>
@@ -144,7 +150,7 @@ export function ligarExplicacaoIA(root, cliente, resultados) {
   btn.addEventListener('click', () => ocupado(btn, async () => {
     const padroes = padroesLocais(resultados);
     let nicho = { padroes: padroesLocais([]) };
-    try { nicho = await padroesPorNicho(cliente.nicho, cliente.id); } catch { /* segue só com os locais */ }
+    try { nicho = await padroesDoNicho(cliente); } catch { /* segue só com os locais */ }
     const r = await explicarInsights({ cliente, padroes, padroesNicho: nicho.padroes });
     root.querySelector('[data-explicacao]').innerHTML = `<div class="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
       <p class="mb-1 text-xs font-semibold text-violet-700"><i class="fa-solid fa-wand-magic-sparkles"></i> Explicação da IA — baseada só nos números acima</p>

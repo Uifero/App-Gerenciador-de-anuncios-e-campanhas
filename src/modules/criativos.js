@@ -9,7 +9,7 @@ import { montarQuestionarioNaAba } from './perguntas-site.js';
 import { apagarCriativoEmCascata } from '../lib/cascata.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
 import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '../lib/previa.js';
-import { padroesPorNicho, sugestaoNaoTestada } from './insights.js';
+import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -40,7 +40,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   // cliente ainda não testou em nenhum criativo. Falha aqui não impede o resto da tela (é só uma sugestão).
   let sugestaoInsight = null;
   try {
-    const nicho = await padroesPorNicho(cliente.nicho, cliente.id);
+    const nicho = await padroesDoNicho(cliente);
     sugestaoInsight = sugestaoNaoTestada(nicho.padroes, criativos);
   } catch (e) { console.warn('[insights] sugestão de ângulo/framework indisponível:', e); }
   // Traz para o painel o que o cliente final respondeu pelo link de aprovação (falha aqui não impede de usar a aba,

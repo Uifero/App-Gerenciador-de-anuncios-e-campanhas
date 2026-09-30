@@ -14,6 +14,7 @@ import { pedirBuscaInicial, consumirBuscaInicial, deveBuscarAutomatico, iniciouB
 import { buscarExemplosMercado } from './referencias.js';
 import { marcasQueContinuam, textoMarca } from '../lib/leitura.js';
 import { normalizarRastreamento, indicadorPixel } from '../lib/rastreamento.js';
+import { PAISES, PAIS_PADRAO, paisDoCliente } from '../lib/pais.js';
 
 /**
  * Busca de exemplos de mercado do primeiro uso: roda sozinha na tela do cliente recém-cadastrado, mostra o que está
@@ -62,6 +63,7 @@ export function montarDadosCliente(v, escopo) {
   const metaCpa = num(v.metaCpa), metaRoas = num(v.metaRoas);
   return {
     nome: v.nome, nicho: v.nicho, estagio: v.estagio, siteReferencia: v.siteReferencia || '', escopo,
+    pais: String(v.pais || '').trim() || PAIS_PADRAO, // país/mercado das buscas de mercado (padrão Brasil)
     metas: { cpa: metaCpa > 0 ? metaCpa : null, roas: metaRoas > 0 ? metaRoas : null },
     orcamentoIaMensalUsd: num(v.orcamentoIa) > 0 ? num(v.orcamentoIa) : null,
     // Pixel do Meta / Google Ads / Hotjar / Tawk.to (opcionais). Só vão para o código do site gerado; o app não envia nada a ninguém.
@@ -143,6 +145,10 @@ export async function viewForm(el, id, { baseId = null } = {}) {
       <div class="grid gap-3 sm:grid-cols-2">
         <div><label class="label">Estágio</label><select class="input" name="estagio">${opcoes(ESTAGIOS, c?.estagio || 'novo')}</select></div>
         <div><label class="label">Idioma dos criativos</label><select class="input" name="idioma">${opcoes(IDIOMAS, m.idioma || 'pt-BR')}</select></div>
+        <div class="sm:col-span-2"><label class="label">País / mercado do cliente</label>
+          <input class="input" name="pais" list="lista-paises" value="${esc(paisDoCliente(fonte))}" placeholder="Brasil">
+          <datalist id="lista-paises">${PAISES.map(([p]) => `<option value="${esc(p)}">`).join('')}</datalist>
+          <p class="hint">Usado para buscar preços, benchmarks e referências de mercado no país certo. Padrão: Brasil. Escolha da lista ou digite outro país.</p></div>
       </div>
       <div data-rodando class="grid gap-3 sm:grid-cols-2 ${(c?.estagio || 'novo') === 'rodando' ? '' : 'hidden'}">
         <div><label class="label">CPA médio (R$)</label><input class="input" type="number" step="0.01" name="cpaMedio" value="${esc(h.cpaMedio)}"></div>
@@ -294,7 +300,7 @@ export async function viewCliente(el, id, aba, abasMap) {
 
   el.innerHTML = `<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
     <div><a href="#/" class="caption hover:text-indigo-600"><i class="fa-solid fa-arrow-left"></i> Todos os clientes</a>
-      <h1 class="text-2xl font-bold text-slate-900">${esc(c.nome)} <span class="text-base font-normal text-slate-500">· ${esc(c.nicho)}</span></h1>
+      <h1 class="text-2xl font-bold text-slate-900">${esc(c.nome)} <span class="text-base font-normal text-slate-500">· ${esc(c.nicho)} · <span title="País / mercado usado nas buscas de mercado (muda em Editar)"><i class="fa-solid fa-earth-americas text-sm"></i> ${esc(paisDoCliente(c))}</span></span></h1>
       ${indicadorPixel(c, id)}</div>
     <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="#/c/${id}/editar" title="Editar dados, marca, metas e escopo"><i class="fa-solid fa-pen"></i> Editar</a>
       <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Baixar backup</button>

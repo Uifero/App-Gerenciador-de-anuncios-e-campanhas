@@ -4,7 +4,7 @@ import { db, COL } from '../core/storage.js';
 import { gerarEstruturaCampanha, discutirEstruturaCampanha } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
 import { definirStatus } from './criativos.js';
-import { padroesLocais, padroesPorNicho } from './insights.js';
+import { padroesLocais, padroesDoNicho } from './insights.js';
 import { STATUS_CAMPANHA, FORMATOS } from '../lib/constantes.js';
 import { tipoDaPeca, previaAtual } from '../lib/previa.js';
 import { perguntarBuscaMercado } from './busca-mercado.js';
@@ -244,7 +244,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         const base = { clienteId: cliente.id, nome: v.nome, objetivo: v.objetivo, orcamentoDiario: num(v.orcamento), urlDestino: v.urlDestino || null, status: 'rascunho', criativos: [] };
         let nova;
         if (btn.dataset.modo === 'ia') {
-          const nicho = await padroesPorNicho(cliente.nicho, cliente.id).catch(() => ({ padroes: null }));
+          const nicho = await padroesDoNicho(cliente).catch(() => ({ padroes: null }));
           ctx.nicho = nicho.padroes;
           const e = await gerarEstruturaCampanha({
             cliente, criativos: aprovados, criativosAprovados: aprovados, objetivo: v.objetivo, orcamentoDiario: v.orcamento,
@@ -315,7 +315,7 @@ function abrirRascunho(c, ctx) {
     const mensagem = lerForm(f).mensagem;
     if (!mensagem) return;
     await ocupado(f.querySelector('button'), async () => {
-      if (ctx.nicho === undefined) ctx.nicho = (await padroesPorNicho(cliente.nicho, cliente.id).catch(() => ({ padroes: null }))).padroes;
+      if (ctx.nicho === undefined) ctx.nicho = (await padroesDoNicho(cliente).catch(() => ({ padroes: null }))).padroes;
       const r = await discutirEstruturaCampanha({
         cliente, campanha: c, mensagem, conversa: (c.discussao || []).map((t) => ({ role: t.role, content: t.content })),
         criativosAprovados: aprovados, padroesLocais: ctx.locais, padroesNicho: ctx.nicho, referenciasFortes: ctx.referenciasFortes, qtdResultados: ctx.qtdResultados, resultadosPorCriativo: ctx.porCriativo,

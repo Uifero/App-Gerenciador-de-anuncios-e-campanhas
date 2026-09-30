@@ -2,6 +2,7 @@
 // Toda função aqui tem um equivalente manual nos módulos (formulários "sem IA").
 import { tokenAtual } from './auth.js';
 import { IDIOMA_NOME, MODELO_DESCRICAO, CENAS_UNBOXING } from '../lib/constantes.js';
+import { paisDoCliente, infoPais, descreverMercado, simboloDoCliente } from '../lib/pais.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
 
@@ -131,7 +132,7 @@ export function contextoCliente(c) {
   // Campos preenchidos a partir do site/Instagram do PRÓPRIO cliente (leitura automática, ainda editáveis).
   const auto = (campo) => (c.autoPreenchido?.[campo] ? (c.autoPreenchido[campo].origem === 'resposta' ? ' (resposta do próprio cliente ao questionário)' : ` (tirado do ${c.autoPreenchido[campo].origem === 'instagram' ? 'Instagram' : 'site'} do próprio cliente — é a voz real da marca)`) : '');
   const l = [
-    `CLIENTE: ${c.nome}`, `Nicho/produto: ${c.nicho}`,
+    `CLIENTE: ${c.nome}`, `Nicho/produto: ${c.nicho}`, `País / mercado onde anuncia: ${descreverMercado(c)}`,
     m.negocio && `O que vende e para quem${auto('negocio')}: ${m.negocio}`,
     `Estágio: ${c.estagio === 'rodando' ? 'já roda anúncios' : 'novo, ainda não anuncia'}`,
     m.publicoCompra && `Quem mais compra hoje${auto('publicoCompra')}: ${m.publicoCompra}`,
@@ -147,7 +148,7 @@ export function contextoCliente(c) {
     c.angulosSugeridos?.length && `Ângulos que costumam funcionar nesse tipo de produto (playbook "${c.playbookNome || ''}"): ${c.angulosSugeridos.join('; ')}`,
   ];
   if (c.estagio === 'rodando') {
-    l.push(h.cpaMedio && `CPA médio atual: R$ ${h.cpaMedio}`, h.orcamentoDiario && `Orçamento diário atual: R$ ${h.orcamentoDiario}`,
+    l.push(h.cpaMedio && `CPA médio atual: ${simboloDoCliente(c)} ${h.cpaMedio}`, h.orcamentoDiario && `Orçamento diário atual: ${simboloDoCliente(c)} ${h.orcamentoDiario}`,
       h.publicos && `Públicos que já convertem: ${h.publicos}`);
   }
   return l.filter(Boolean).join('\n');
@@ -429,10 +430,12 @@ export function normalizarCampanha(d = {}) {
 // ---------- referências ----------
 export async function buscarReferencias({ cliente, diasMinimos, quantidade = 5 }) {
   const system = `Você pesquisa anúncios reais de empresas de destaque num nicho e os analisa estrategicamente. Você NUNCA inventa anúncios, links ou datas: só inclui o que encontrou na pesquisa.`;
-  const pedido = `Nicho do cliente: ${cliente.nicho}. Idioma/mercado: ${IDIOMA_NOME[cliente.marca?.idioma] || 'pt-BR'}.
-Pesquise na web com VÁRIAS buscas diferentes (marcas líderes do nicho, "Biblioteca de Anúncios Meta <marca>" em facebook.com/ads/library, páginas de anúncio e landing pages) e traga até ${quantidade} exemplos de anúncios de empresas de destaque nesse nicho, priorizando anúncios ATIVOS e os que estão no ar há pelo menos ${diasMinimos} dias.
+  const pais = paisDoCliente(cliente), iso = infoPais(pais)?.iso;
+  const pedido = `Nicho do cliente: ${cliente.nicho}. PAÍS / MERCADO DO CLIENTE: ${descreverMercado(cliente)}. Idioma dos anúncios: ${IDIOMA_NOME[cliente.marca?.idioma] || 'pt-BR'}.
+Pesquise na web com VÁRIAS buscas diferentes, sempre incluindo o país "${pais}" nos termos (marcas líderes do nicho EM ${pais}, "Biblioteca de Anúncios Meta <marca>" em facebook.com/ads/library${iso ? ` com o filtro de país ${iso} (country=${iso})` : ''}, páginas de anúncio e landing pages) e traga até ${quantidade} exemplos de anúncios de empresas de destaque nesse nicho, priorizando anúncios ATIVOS e os que estão no ar há pelo menos ${diasMinimos} dias.
 Se não conseguir CONFIRMAR que o anúncio está ativo ou há quanto tempo, inclua mesmo assim o melhor candidato REAL que encontrou, com "diasNoAr": null, e explique em "evidencia" o que foi e o que não foi confirmado. Devolva [] somente se não encontrou nenhuma empresa ou anúncio real e relevante.
-Para cada um: "titulo" (descrição curta), "empresa", "link" (URL real encontrada), "texto" (copy do anúncio, se visível), "diasNoAr" (número SE a fonte mostra data de início; senão null — nunca estime), "evidencia" (de onde veio a informação de dias/atividade), e "analise": {"angulo","framework" (AIDA/PAS/4Us/HRR/outro), "formato", "publico", "replicar" (o que vale replicar para o cliente, sem copiar)}.
+Priorize marcas que anunciam em ${pais}. Se não achar exemplos bons de ${pais} e trouxer de outro país, diga isso em "evidencia" e informe o país real em "pais" — nunca apresente anúncio de outro país como se fosse de ${pais}. Preços e valores no "texto" ficam na moeda original do anúncio (não converta).
+Para cada um: "titulo" (descrição curta), "empresa", "pais" (país onde esse anúncio roda ou, se a fonte não mostrar, o mercado onde a marca anuncia/vende segundo a fonte — ex.: marca americana vendendo nos EUA → "Estados Unidos"; null só se a fonte não der nenhuma indicação), "link" (URL real encontrada), "texto" (copy do anúncio, se visível), "diasNoAr" (número SE a fonte mostra data de início; senão null — nunca estime), "evidencia" (de onde veio a informação de dias/atividade), e "analise": {"angulo","framework" (AIDA/PAS/4Us/HRR/outro), "formato", "publico", "replicar" (o que vale replicar para o cliente, sem copiar)}.
 Se a Biblioteca não for acessível pela busca, use outras fontes e diga isso em "evidencia". Nunca invente links ou datas. Saída: array JSON. Escreva a análise em português do Brasil; o texto do anúncio ("texto") fica no idioma original. Use EXATAMENTE as chaves pedidas. ${SO_JSON}`;
   const { dados, fontes } = await gerarJSON({
     tarefa: 'referencias', cliente, system, messages: [{ role: 'user', content: pedido }], webSearch: { maxUses: 8 },
@@ -754,8 +757,8 @@ Saída JSON: {"foto": string, "fotoPt": string, "cenas": [string], "cenasPt": [s
 export async function explicarInsights({ cliente, padroes, padroesNicho }) {
   const system = 'Você é um estrategista de mídia paga que interpreta dados de performance e sugere próximos passos claros e realistas. Nunca invente números que não estejam nos dados fornecidos.';
   const resumirGrupos = (p) => Object.entries(p || {}).filter(([, l]) => l.length).map(([campo, l]) =>
-    `${campo}: ` + l.slice(0, 5).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio?.toFixed(2) ?? 'n/d'}, ${g.amostras} amostra(s))`).join('; ')).join('\n');
-  const pedido = `Padrões deste cliente (já calculados, média ponderada pelo gasto):\n${resumirGrupos(padroes) || '(nenhum com amostra suficiente)'}
+    `${campo}: ` + l.slice(0, 5).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio != null ? simboloDoCliente(cliente) + ' ' + g.cpaMedio.toFixed(2) : 'n/d'}, ${g.amostras} amostra(s))`).join('; ')).join('\n');
+  const pedido = `País / mercado do cliente: ${descreverMercado(cliente)} (os valores abaixo estão nessa moeda; os padrões de nicho vêm só de clientes do mesmo país).\nPadrões deste cliente (já calculados, média ponderada pelo gasto):\n${resumirGrupos(padroes) || '(nenhum com amostra suficiente)'}
 ${padroesNicho ? `\nPadrões agregados de OUTROS clientes do mesmo nicho (${cliente.nicho}), sem identificar quem são:\n${resumirGrupos(padroesNicho) || '(nenhum com amostra suficiente)'}` : ''}
 Explique em português do Brasil, de forma curta e direta, o que esses números sugerem e o que testar a seguir para ${cliente.nome}. Use só os dados acima — não invente ângulos, frameworks nem números novos. Se os dados forem poucos, diga isso e sugira registrar mais resultados.
 Saída JSON: {"resumo": string (2-4 frases), "recomendacoes": [string] (1 a 3 ações práticas)}. ${SO_JSON}`;
@@ -763,22 +766,39 @@ Saída JSON: {"resumo": string (2-4 frases), "recomendacoes": [string] (1 a 3 a�
 }
 
 // ---------- diagnóstico de campanha já rodando ----------
+/** Como o gestor marcou cada imagem anexada ao diagnóstico (o rótulo diz à IA como ler: números x composição do anúncio). */
+export const ROTULOS_IMAGEM_DIAGNOSTICO = {
+  metricas: 'print de métricas (painel/Gerenciador de Anúncios)',
+  anuncio_ativo: 'print de anúncio ativo DO PRÓPRIO CLIENTE (Biblioteca de Anúncios)',
+  criativo: 'arquivo de peça/criativo do próprio cliente',
+};
+
 /**
  * Cruza o que o gestor informou sobre a campanha em curso com os padrões já detectados pelo motor de Insights
- * (próprio cliente e clientes de nicho semelhante) e as referências de mercado de sinal forte. A IA NÃO calcula
- * padrão novo — só interpreta o que já foi calculado localmente (ver insights.js) e o que o gestor descreveu.
- * `imagens` (opcional): prints do painel de métricas e/ou peças no ar, [{ media_type, data }] na ordem em que o
- * gestor enviou. Cada conclusão volta com "fonte" para a tela separar o que veio da imagem do que veio dos dados.
+ * (próprio cliente e clientes de nicho semelhante do MESMO país) e as referências de mercado de sinal forte, e pesquisa
+ * na web o mercado do país do cliente. A IA NÃO calcula padrão novo — só interpreta o que já foi calculado localmente
+ * (ver insights.js) e o que o gestor descreveu.
+ * `imagens` (opcional): [{ media_type, data, rotulo }] na ordem em que o gestor enviou; `rotulo` em
+ * ROTULOS_IMAGEM_DIAGNOSTICO. `dados.bibliotecaAnuncios` (opcional): link da Biblioteca de Anúncios da marca ou nome
+ * da página, usado como pista para a busca web achar os anúncios DO PRÓPRIO cliente.
+ * Cada conclusão volta com "fonte" (e país/moeda) para a tela mostrar de onde veio.
  */
 export async function diagnosticarCampanha({ cliente, dados, padroesLocais, padroesNicho, referenciasFortes = [], imagens = [] }) {
   const system = 'Você é estrategista de tráfego pago sênior, cético e direto: só recomenda o que os dados sustentam, nunca acha bonito nem invade terreno de opinião sem base.';
+  const pais = paisDoCliente(cliente), info = infoPais(pais), mercado = descreverMercado(cliente);
+  const moeda = info ? info.simbolo : `(moeda de ${pais})`;
+  const hoje = new Date().toISOString().slice(0, 10);
+  const biblioteca = String(dados.bibliotecaAnuncios || '').trim();
+  const temAnuncioAtivo = imagens.some((im) => im.rotulo === 'anuncio_ativo');
   const resumirGrupos = (p) => Object.entries(p || {}).filter(([, l]) => l.length).map(([campo, l]) =>
-    `${campo}: ` + l.slice(0, 4).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio?.toFixed(2) ?? 'n/d'}, ${g.amostras} amostra(s))`).join('; ')).join('\n') || '(nenhum com amostra suficiente)';
-  const pedido = `O que o gestor informou sobre a campanha ATUALMENTE no ar:
+    `${campo}: ` + l.slice(0, 4).map((g) => `${g.valor} (ROAS ${g.roasMedio?.toFixed(2) ?? 'n/d'}x, CPA ${g.cpaMedio != null ? moeda + ' ' + g.cpaMedio.toFixed(2) : 'n/d'}, ${g.amostras} amostra(s))`).join('; ')).join('\n') || '(nenhum com amostra suficiente)';
+  const pedido = `PAÍS / MERCADO DO CLIENTE: ${mercado}. Todos os valores que o gestor digitou e os padrões abaixo estão nessa moeda. Data de hoje: ${hoje}.
+
+O que o gestor informou sobre a campanha ATUALMENTE no ar:
 Plataforma: ${dados.plataforma || 'não informada'}
 Públicos usados: ${dados.publicos || 'não informado'}
-Orçamento diário atual: ${dados.orcamentoDiario ? 'R$ ' + dados.orcamentoDiario : 'não informado'}
-CPA atual: ${dados.cpaAtual ? 'R$ ' + dados.cpaAtual : 'não informado'}
+Orçamento diário atual: ${dados.orcamentoDiario ? moeda + ' ' + dados.orcamentoDiario : 'não informado'}
+CPA atual: ${dados.cpaAtual ? moeda + ' ' + dados.cpaAtual : 'não informado'}
 ROAS atual: ${dados.roasAtual || 'não informado'}
 Criativos que já estão rodando (ângulo, formato, tempo no ar): ${dados.criativosRodando || 'não informado'}
 Ofertas/promoções ativas: ${dados.ofertas || 'não informado'}
@@ -786,35 +806,44 @@ Ofertas/promoções ativas: ${dados.ofertas || 'não informado'}
 PADRÕES JÁ DETECTADOS (calculados sem IA, direto dos resultados registrados — média ponderada pelo gasto; USE para embasar, não invente outro padrão):
 Deste cliente:
 ${resumirGrupos(padroesLocais)}
-De clientes de nicho semelhante (sem identificar quem):
+De clientes de nicho semelhante no mesmo país (sem identificar quem):
 ${resumirGrupos(padroesNicho)}
 
-Referências de mercado salvas de sinal forte: ${referenciasFortes.map((r) => `"${r.titulo || 'referência'}" (ângulo ${r.analise?.angulo || 'n/d'}, framework ${r.analise?.framework || 'n/d'})`).join('; ') || '(nenhuma)'}.
+Referências de mercado salvas de sinal forte (anúncios de OUTRAS marcas, guardados como inspiração): ${referenciasFortes.map((r) => `"${r.titulo || 'referência'}" (ângulo ${r.analise?.angulo || 'n/d'}, framework ${r.analise?.framework || 'n/d'}${r.pais ? `, país ${r.pais}` : ''})`).join('; ') || '(nenhuma)'}.
 
-${imagens.length ? `IMAGENS ANEXADAS: ${imagens.length} imagem(ns), numeradas na ordem em que aparecem (imagem 1 = a primeira). Podem ser prints do painel de métricas da plataforma (ex.: Gerenciador de Anúncios do Meta) e/ou peças de criativo que estão no ar. Use-as como evidência ADICIONAL:
-- Em prints de métricas: leia só o que está visível (CPM, frequência, CTR e se está caindo, CPC, custo por resultado, ROAS, gasto) e procure sinais de fadiga (frequência alta com CTR caindo, CPM subindo). Se um número da imagem contradisser um dado digitado, aponte o conflito.
-- Em peças de criativo: poluição visual, CTA pouco visível, texto cortado, contraste ruim, excesso de texto, legibilidade no celular.
-- Se a imagem estiver ilegível (borrada, pequena, cortada) ou não tiver relação com métricas/criativo (foto aleatória, print de outra coisa), marque isso e NÃO tire conclusão dela. Nunca invente um número que não aparece na imagem.
-Preencha "imagens" com UM item por imagem: {"numero": 1, "tipo": "metricas" | "criativo" | "ilegivel" | "sem_relacao", "leitura": "o que você leu nela, ou por que não dá para usar"}.
+${imagens.length ? `IMAGENS ANEXADAS: ${imagens.length} imagem(ns), numeradas na ordem em que aparecem (imagem 1 = a primeira). O gestor marcou cada uma:
+${imagens.map((im, i) => `- imagem ${i + 1}: ${ROTULOS_IMAGEM_DIAGNOSTICO[im.rotulo] || ROTULOS_IMAGEM_DIAGNOSTICO.metricas}`).join('\n')}
+Leia cada uma conforme a marcação:
+- Print de métricas: leia só os NÚMEROS visíveis (CPM, frequência, CTR e se está caindo, CPC, custo por resultado, ROAS, gasto) e procure sinais de fadiga (frequência alta com CTR caindo, CPM subindo). Se um número da imagem contradisser um dado digitado, aponte o conflito. Confira a moeda mostrada no print; se não for a do cliente, diga.
+- Print de anúncio ativo (Biblioteca de Anúncios): é um anúncio DO PRÓPRIO CLIENTE que está no ar agora — NUNCA trate como concorrente ou referência. Avalie a COMPOSIÇÃO visual de verdade (gancho no primeiro quadro, enquadramento, legibilidade no celular, texto sobre a imagem, CTA, oferta visível, poluição visual) e o texto do anúncio. Se aparecer "Veiculação iniciada em <data>" ou "ativo há X dias", calcule/leia os dias no ar até hoje (${hoje}) e informe em "diasNoAr"; um anúncio do próprio cliente no ar há muito tempo é sinal de que ele vende (ou de fadiga, se as métricas caíram).
+- Arquivo de peça/criativo: poluição visual, CTA pouco visível, texto cortado, contraste ruim, excesso de texto, legibilidade no celular.
+- Se a imagem não corresponder à marcação (ex.: marcada como métricas, mas é um anúncio), diga isso na "leitura" e leia pelo que ela realmente é, usando o "tipo" real.
+- Se a imagem estiver ilegível (borrada, pequena, cortada) ou não tiver relação com a campanha (foto aleatória, print de outra coisa), marque isso e NÃO tire conclusão dela. Nunca invente um número que não aparece na imagem.
+Preencha "imagens" com UM item por imagem: {"numero": 1, "tipo": "metricas" | "anuncio_ativo" | "criativo" | "ilegivel" | "sem_relacao", "leitura": "o que você leu nela, ou por que não dá para usar", "diasNoAr": número ou null (só para anúncio ativo com a data/tempo visível)}.
 
-` : ''}CONHECIMENTO DE MERCADO (pesquisa na web): antes de concluir, faça algumas buscas (3 a 5) sobre o que é reconhecido HOJE como eficaz em anúncios pagos no nicho "${cliente.nicho || 'e-commerce'}" (mercado: ${IDIOMA_NOME[cliente.marca?.idioma] || IDIOMA_NOME['pt-BR']}): benchmarks atuais de CPA/ROAS/CTR/CPM do nicho, formatos e ângulos que marcas de referência do nicho estão usando nos anúncios, e práticas recomendadas pelas próprias plataformas ou por fontes reconhecidas de performance. Se o nicho for estreito demais para achar algo específico, busque as boas práticas gerais de performance/tráfego pago (e diga que é prática geral, não do nicho).
+` : ''}${biblioteca ? `BIBLIOTECA DE ANÚNCIOS DO PRÓPRIO CLIENTE: o gestor informou "${biblioteca}" (link da Biblioteca de Anúncios do Meta ou nome da página da marca). Use isso como pista FORTE na pesquisa web para achar o texto, a oferta e o contexto dos anúncios que ESTA marca tem no ar agora (buscas como o nome da página + "Biblioteca de Anúncios"/"Ad Library", site da marca, landing pages dos anúncios), filtrando pelo país do cliente. A pesquisa web não enxerga o vídeo em si: não descreva cortes, ritmo nem enquadramento a partir dela${temAnuncioAtivo ? ' (isso vem dos prints de anúncio ativo)' : ''}. Esses anúncios são DO CLIENTE, não referências de outras marcas. Se não conseguir achar nada da página, diga em "buscaBiblioteca". Use a fonte "biblioteca" SÓ para o que veio de anúncios da marca que você de fato achou; se só achou o site/página de produto da marca, isso é pesquisa web: fonte "mercado" com o link, dizendo na "origem" que é o site da própria marca.
+
+` : ''}CONHECIMENTO DE MERCADO (pesquisa na web): antes de concluir, faça algumas buscas (3 a 5) sobre o que é reconhecido HOJE como eficaz em anúncios pagos no nicho "${cliente.nicho || 'e-commerce'}" NO PAÍS DO CLIENTE (${pais}) — inclua "${pais}" (e o idioma de lá) nos termos de busca: benchmarks atuais de CPA/ROAS/CTR/CPM do nicho nesse país e nessa moeda, formatos e ângulos que marcas de referência do nicho nesse país estão usando, e práticas recomendadas pelas próprias plataformas ou por fontes reconhecidas de performance. Se o nicho for estreito demais para achar algo específico, busque as boas práticas gerais de performance/tráfego pago (e diga que é prática geral, não do nicho).
+- PAÍS E MOEDA: se não achar dado confiável de ${pais}, diga isso claramente e informe de que país/moeda é o dado que achou. Nunca misture moedas nem regiões em silêncio, nunca converta moeda por conta própria e nunca escreva "R$" (ou outro símbolo) num valor que a fonte deu em outra moeda: escreva o valor com o símbolo da moeda REAL da fonte (ex.: "US$ 12,50", "€ 8", "R$ 40"). Métricas sem moeda (CTR, ROAS, frequência) podem ser comparadas entre países, dizendo de onde vêm.
 - Só use o que a busca de fato encontrou, com o link da página. Prefira fontes dos últimos 2 anos; se a fonte for antiga ou não disser a data, diga isso.
 - Se a busca não trouxer nada relevante ou atual, diga isso claramente em "buscaMercado" e siga APENAS com os dados internos e as referências salvas. NUNCA invente benchmark, número de mercado, marca ou prática.
 - Benchmark de mercado é comparação, não verdade do cliente: aponte quando o cliente está acima/abaixo dele, sem tratar como meta garantida.
 
-Gere um diagnóstico como faria um profissional sênior de performance. Cada item de "funcionandoBem", "desperdicio", "comparacaoMercado" e "recomendacoes" precisa vir com:
-- "fonte": "dados" (digitado pelo gestor), ${imagens.length ? '"imagem" (lido em uma imagem anexada — informe também "imagem": o número dela), ' : ''}"padrao" (padrão deste cliente ou do nicho), "referencia" (referência de mercado SALVA listada acima) ou "mercado" (prática/benchmark encontrado na pesquisa web — informe também "link": a URL da página);
-- "origem": a citação em texto (ex.: "dado informado pelo gestor", ${imagens.length ? '"imagem 2 — print de métricas", ' : ''}"padrão de clientes do nicho", o nome de uma referência salva, ou "pesquisa: <site/título da página>").
+Gere UM diagnóstico coerente como faria um profissional sênior de performance, cruzando todas as fontes disponíveis (não faça um bloco separado por fonte). Cada item de "funcionandoBem", "desperdicio", "comparacaoMercado" e "recomendacoes" precisa vir com:
+- "fonte": "dados" (digitado pelo gestor), ${imagens.length ? '"imagem" (lido em uma imagem anexada — informe também "imagem": o número dela; vale para print de métricas E para print de anúncio ativo), ' : ''}"padrao" (padrão deste cliente ou do nicho), "referencia" (referência de mercado SALVA listada acima), ${biblioteca ? '"biblioteca" (anúncio DO CLIENTE encontrado na pesquisa a partir do link/nome da Biblioteca de Anúncios — informe também "link"), ' : ''}ou "mercado" (prática/benchmark encontrado na pesquisa web — informe também "link": a URL da página);
+- "origem": a citação em texto (ex.: "dado informado pelo gestor", ${imagens.length ? '"imagem 2 — print de anúncio ativo", ' : ''}"padrão de clientes do nicho", o nome de uma referência salva, ${biblioteca ? '"Biblioteca de Anúncios da marca", ' : ''}ou "pesquisa: <site/título da página>");
+- "pais": o país a que a informação se refere (para dados, imagens e padrões do cliente: "${pais}"; para pesquisa: o país REAL da fonte, ou "geral" se a prática não for de um país);
+- "moeda": o código da moeda dos valores em dinheiro citados no texto (ex.: "BRL", "USD", "EUR"), ou null se o item não cita valor em dinheiro.
 O que cada lista significa:
 - "funcionandoBem": o que está funcionando E POR QUÊ (o porquê no próprio texto);
 - "desperdicio": o que provavelmente está desperdiçando verba (e o sinal que indica isso);
 - "comparacaoMercado": 1 a 4 comparações entre o que o cliente faz e o que marcas de referência do nicho ou o mercado estão fazendo (fonte "mercado" ou "referencia"); [] se não houver base;
 - "recomendacoes": 3 a 5 itens, do mais importante para o menos, "prioridade" em: alta, media, baixa.
-"buscaMercado": {"encontrou": true|false, "resumo": "o que a pesquisa trouxe de útil (nicho específico ou prática geral), ou por que não trouxe nada"}.
-NÃO invente números que não estejam nos dados acima${imagens.length ? ', visíveis nas imagens' : ''} ou nas páginas encontradas. Se faltar informação para concluir algo, diga isso em vez de adivinhar.
-Saída em JSON: {${imagens.length ? '"imagens": [{"numero","tipo","leitura"}], ' : ''}"buscaMercado": {"encontrou","resumo"}, "funcionandoBem": [{"texto","fonte","origem","link"${imagens.length ? ',"imagem"' : ''}}], "desperdicio": [{"texto","fonte","origem","link"${imagens.length ? ',"imagem"' : ''}}], "comparacaoMercado": [{"texto","fonte","origem","link"}], "recomendacoes": [{"texto","fonte","origem","link","prioridade"${imagens.length ? ',"imagem"' : ''}}]} — "link" só quando a fonte for "mercado" (senão omita). Escreva em português do Brasil. ${SO_JSON}`;
+"buscaMercado": {"encontrou": true|false, "noPaisDoCliente": true|false (achou dado específico de ${pais}?), "paisDosDados": "de que país/moeda são os dados que achou (ex.: 'Brasil, R$' ou 'Estados Unidos, US$ — não achei do Brasil')", "resumo": "o que a pesquisa trouxe de útil (nicho específico ou prática geral), ou por que não trouxe nada"}.
+${biblioteca ? '"buscaBiblioteca": {"encontrou": true|false, "resumo": "o que achou dos anúncios atuais da marca (texto, oferta, contexto), ou por que não achou"}.\n' : ''}NÃO invente números que não estejam nos dados acima${imagens.length ? ', visíveis nas imagens' : ''} ou nas páginas encontradas. Se faltar informação para concluir algo, diga isso em vez de adivinhar.
+Saída em JSON: {${imagens.length ? '"imagens": [{"numero","tipo","leitura","diasNoAr"}], ' : ''}"buscaMercado": {"encontrou","noPaisDoCliente","paisDosDados","resumo"}, ${biblioteca ? '"buscaBiblioteca": {"encontrou","resumo"}, ' : ''}"funcionandoBem": [{"texto","fonte","origem","link","pais","moeda"${imagens.length ? ',"imagem"' : ''}}], "desperdicio": [{"texto","fonte","origem","link","pais","moeda"${imagens.length ? ',"imagem"' : ''}}], "comparacaoMercado": [{"texto","fonte","origem","link","pais","moeda"}], "recomendacoes": [{"texto","fonte","origem","link","pais","moeda","prioridade"${imagens.length ? ',"imagem"' : ''}}]} — "link" só quando a fonte for "mercado"${biblioteca ? ' ou "biblioteca"' : ''} (senão omita). Escreva em português do Brasil. ${SO_JSON}`;
   const { dados: r, fontes } = await gerarJSON({
-    tarefa: 'diagnostico', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }], webSearch: { maxUses: 5 },
+    tarefa: 'diagnostico', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }], webSearch: { maxUses: biblioteca ? 7 : 5 },
     imagens: imagens.length ? imagens.map(({ media_type, data }) => ({ media_type, data })) : undefined,
   });
   // Páginas citadas pela busca (só a API devolve; pela assinatura os links vêm dentro de cada item).
