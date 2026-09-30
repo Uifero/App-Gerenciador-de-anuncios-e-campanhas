@@ -56,7 +56,7 @@ export const TAREFAS = {
   pacote:      { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'low' },
   playbook:    { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'low' },
   insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low' },
-  diagnostico: { modelo: MODELO_COMPLEXO, max: 5000,  effort: 'medium', imagens: true },
+  diagnostico: { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', imagens: true, web: true }, // busca web: benchmarks e práticas do nicho
   narracao:    { modelo: MODELO_LEVE,     max: 2500 },
   faq:         { modelo: MODELO_LEVE,     max: 2500 }, // FAQ do site a partir das objeções
   leitura_site: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low' },            // interpreta o texto extraído do site do cliente
@@ -330,7 +330,7 @@ app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), a
       content: imagens.length && i === messages.length - 1 ? blocosComImagens(m.content, imagens) : String(m.content) })),
     ...paramsDoModelo(t.modelo, t),
   };
-  // Busca web só para a tarefa de mercado (é a única que precisa e a que mais custa).
+  // Busca web só nas tarefas marcadas com web: true (mercado, leitura de site pela busca, diagnóstico).
   if (webSearch && t.web) {
     params.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: Math.min(Number(webSearch.maxUses) || 5, 10) }];
   }

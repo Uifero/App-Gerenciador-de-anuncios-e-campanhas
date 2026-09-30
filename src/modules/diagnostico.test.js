@@ -1,6 +1,6 @@
 // Testes do resumo "sem IA" do diagnóstico de campanha: dados e padrões lado a lado, sem nenhuma interpretação.
 import { describe, it, expect } from 'vitest';
-import { resumoSemIA, conferirLeituraImagens } from './diagnostico.js';
+import { resumoSemIA, conferirLeituraImagens, conferirFontesMercado, conferirDiagnostico } from './diagnostico.js';
 
 describe('resumoSemIA', () => {
   it('repassa os dados informados sem alteração', () => {
@@ -84,5 +84,46 @@ describe('conferirLeituraImagens', () => {
     expect(r.funcionandoBem[0]).toEqual({ texto: 'CPA dentro da meta', fonte: 'dados', origem: 'dado informado' });
     expect(r.desperdicio).toEqual([]);
     expect(r.recomendacoes).toEqual([]);
+  });
+});
+
+describe('conferirFontesMercado', () => {
+  it('normaliza buscaMercado e aceita encontrou em texto', () => {
+    const r = conferirFontesMercado({ buscaMercado: { encontrou: 'true', resumo: 'Benchmarks de CPA do nicho' } });
+    expect(r.buscaMercado).toEqual({ encontrou: true, resumo: 'Benchmarks de CPA do nicho' });
+  });
+
+  it('diagnóstico antigo (sem pesquisa) fica sem buscaMercado', () => {
+    expect(conferirFontesMercado({ recomendacoes: [] }).buscaMercado).toBeUndefined();
+  });
+
+  it('conclusão de mercado sem link ganha alerta; com link http não', () => {
+    const r = conferirFontesMercado({ buscaMercado: { encontrou: true }, recomendacoes: [
+      { texto: 'UGC', fonte: 'mercado', link: 'https://exemplo.com/estudo' },
+      { texto: 'Carrossel', fonte: 'mercado' },
+      { texto: 'Vídeo curto', fonte: 'mercado', link: 'javascript:alert(1)' },
+    ] });
+    expect(r.recomendacoes[0].alerta).toBeUndefined();
+    expect(r.recomendacoes[1].alerta).toMatch(/Sem o link/);
+    expect(r.recomendacoes[2].link).toBeUndefined();
+    expect(r.recomendacoes[2].alerta).toMatch(/Sem o link/);
+  });
+
+  it('se a pesquisa não achou nada, qualquer conclusão atribuída ao mercado é marcada para desconsiderar', () => {
+    const r = conferirFontesMercado({ buscaMercado: { encontrou: false, resumo: 'nada atual' }, comparacaoMercado: [{ texto: 'x', fonte: 'Mercado', link: 'https://a.com' }] });
+    expect(r.comparacaoMercado[0].alerta).toMatch(/não trouxe nada/);
+  });
+
+  it('não mexe em conclusões de outras fontes e remove páginas consultadas repetidas ou inválidas', () => {
+    const r = conferirFontesMercado({ funcionandoBem: [{ texto: 'ok', fonte: 'dados' }], paginasConsultadas: [{ url: 'https://a.com' }, { url: 'https://a.com' }, { url: 'ftp://b' }] });
+    expect(r.funcionandoBem[0].alerta).toBeUndefined();
+    expect(r.paginasConsultadas).toEqual([{ url: 'https://a.com' }]);
+  });
+
+  it('conferirDiagnostico junta as duas conferências (imagens + mercado)', () => {
+    const r = conferirDiagnostico({ buscaMercado: { encontrou: true }, comparacaoMercado: [{ texto: 'x', fonte: 'MERCADO' }], desperdicio: [{ texto: 'y', fonte: 'imagem', imagem: 2 }] }, 1);
+    expect(r.comparacaoMercado[0]).toMatchObject({ fonte: 'mercado' });
+    expect(r.comparacaoMercado[0].alerta).toMatch(/Sem o link/);
+    expect(r.desperdicio[0].alerta).toMatch(/não foi enviada/);
   });
 });

@@ -209,4 +209,38 @@ export function ativarCamposArquivo() {
     input.value = '';
     input.dispatchEvent(new Event('change', { bubbles: true })); // o módulo zera o estado dele (logo, trilha...)
   });
+  // Arrastar e soltar: qualquer campoArquivo() (ou uma área maior marcada com data-soltar em volta dele) aceita
+  // arquivos soltos em cima. Os arquivos entram no próprio input e disparam o mesmo "change" do clique, então o
+  // módulo não precisa saber de onde vieram. Enquanto arrasta por cima, a área ganha destaque.
+  const zonaDe = (ev) => ev.target?.closest?.('[data-soltar]') || ev.target?.closest?.('[data-upload]'); // a área maior tem prioridade
+  const inputDe = (zona) => { const i = zona && $('input[type=file]', zona); return i && !i.disabled ? i : null; };
+  const temArquivo = (ev) => [...(ev.dataTransfer?.types || [])].includes('Files');
+  const DESTAQUE = ['ring-2', 'ring-indigo-400', 'bg-sky-50']; // sky-50 é remapeado no tema escuro
+  const apagar = () => document.querySelectorAll('[data-soltando]').forEach((z) => { z.removeAttribute('data-soltando'); z.classList.remove(...DESTAQUE); });
+  document.addEventListener('dragover', (ev) => {
+    const zona = zonaDe(ev); if (!temArquivo(ev) || !inputDe(zona)) return;
+    ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy';
+    if (!zona.hasAttribute('data-soltando')) { apagar(); zona.setAttribute('data-soltando', ''); zona.classList.add(...DESTAQUE); }
+  });
+  document.addEventListener('dragleave', (ev) => {
+    const zona = zonaDe(ev); if (zona && !zona.contains(ev.relatedTarget)) apagar();
+  });
+  document.addEventListener('drop', (ev) => {
+    const zona = zonaDe(ev), input = inputDe(zona);
+    apagar();
+    if (!input || !temArquivo(ev)) return;
+    ev.preventDefault();
+    const aceita = (input.accept || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const confere = (f) => !aceita.length || aceita.some((a) => (a.endsWith('/*') ? f.type.startsWith(a.slice(0, -1)) : a.startsWith('.') ? f.name.toLowerCase().endsWith(a) : f.type === a));
+    const arqs = [...ev.dataTransfer.files];
+    const bons = arqs.filter(confere).slice(0, input.multiple ? undefined : 1);
+    if (!bons.length) return toast('Esse tipo de arquivo não é aceito aqui.', 'erro');
+    if (bons.length < arqs.length) toast(`${arqs.length - bons.length} arquivo(s) ficaram de fora (tipo não aceito${input.multiple ? '' : ' ou só cabe um'}).`, 'erro');
+    const dt = new DataTransfer(); bons.forEach((f) => dt.items.add(f));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  // Soltar fora de uma área de upload não abre o arquivo no lugar do app.
+  window.addEventListener('dragover', (ev) => { if (temArquivo(ev) && !ev.defaultPrevented) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'none'; } });
+  window.addEventListener('drop', (ev) => { if (temArquivo(ev)) { ev.preventDefault(); apagar(); } });
 }

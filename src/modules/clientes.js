@@ -148,7 +148,7 @@ export async function viewForm(el, id, { baseId = null } = {}) {
         <div><label class="label">CPA médio (R$)</label><input class="input" type="number" step="0.01" name="cpaMedio" value="${esc(h.cpaMedio)}"></div>
         <div><label class="label">Orçamento diário (R$)</label><input class="input" type="number" step="0.01" name="orcamentoDiario" value="${esc(h.orcamentoDiario)}"></div>
         <div class="sm:col-span-2"><label class="label">Públicos que convertem</label><input class="input" name="publicosHist" value="${esc(h.publicos)}" placeholder="Ex.: mulheres 25-40, lookalike compradores"></div>
-        <p class="hint sm:col-span-2">Números de hoje, do Gerenciador de Anúncios (CPA = custo médio de cada venda). A IA parte deles nas sugestões e o "Diagnosticar campanha" já vem preenchido com eles.</p>
+        <p class="hint sm:col-span-2">Números de hoje, do Gerenciador de Anúncios (CPA = custo médio de cada venda). A IA parte deles nas sugestões e o "Diagnosticar campanha" (aba Campanhas) já vem preenchido com eles.</p>
       </div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600" title="Ativa o semáforo verde/amarelo/vermelho e o alerta de hora de escalar">Meta de resultado (opcional)</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2"><div><label class="label">Meta de CPA (R$)</label><input class="input" type="number" step="0.01" min="0" name="metaCpa" value="${esc(metas.cpa)}"></div>
@@ -298,7 +298,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       ${indicadorPixel(c, id)}</div>
     <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="#/c/${id}/editar" title="Editar dados, marca, metas e escopo"><i class="fa-solid fa-pen"></i> Editar</a>
       <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Baixar backup</button>
-      <button class="btn-ghost btn-sm" data-mais title="Duplicar como base, playbooks e outras ações"><i class="fa-solid fa-ellipsis"></i> Mais ações</button>
+      <button class="btn-ghost btn-sm" data-mais title="Duplicar como base e playbooks (ações de uso raro)"><i class="fa-solid fa-ellipsis"></i> Mais ações</button>
       <button class="btn-danger btn-sm" data-excluir title="Apagar este cliente"><i class="fa-solid fa-trash"></i></button></div></div>
     <div id="busca-inicial" data-cliente="${esc(id)}">${buscaEmAndamento(id) ? `<div class="card mb-5 border-indigo-200 bg-indigo-50/50 text-sm"><i class="fa-solid fa-spinner fa-spin mr-1 text-indigo-500"></i>Busca inicial de exemplos de mercado em andamento… os resultados abrem numa janela assim que chegarem.</div>` : ''}</div>
     <div id="cards"><div class="card mb-5 h-16 animate-pulse" aria-hidden="true"></div></div>
@@ -350,7 +350,7 @@ export async function viewCliente(el, id, aba, abasMap) {
     const pbs = await db.listar(COL.playbooks);
     const m = modal('Mais ações', `<div class="space-y-3">
       ${c.estagio === 'rodando' ? `<div><button class="btn-ia w-full" data-diagnostico><i class="fa-solid fa-stethoscope"></i> Diagnosticar campanha atual</button>
-        <p class="hint">Cruza o que já está no ar com os padrões do motor de Insights e as referências de mercado salvas, pra sugerir o que manter e o que mudar.</p></div>` : ''}
+        <p class="hint">Atalho: o diagnóstico mora na aba <b>Campanhas</b> deste cliente, com a data do último e o histórico.</p></div>` : ''}
       <div><button class="btn-ghost w-full" data-duplicar><i class="fa-solid fa-copy"></i> Duplicar como base para novo cliente</button>
         <p class="hint">Abre um cadastro novo já com o perfil de marca, as metas, o escopo, os hooks e as estruturas de campanha deste cliente. Resultados e criativos finalizados não vão junto.</p></div>
       <div><button class="btn-ghost w-full" data-salvar-pb><i class="fa-solid fa-book-open"></i> Salvar como playbook</button>

@@ -8,6 +8,7 @@ import { padroesLocais, padroesPorNicho } from './insights.js';
 import { STATUS_CAMPANHA, FORMATOS } from '../lib/constantes.js';
 import { tipoDaPeca, previaAtual } from '../lib/previa.js';
 import { perguntarBuscaMercado } from './busca-mercado.js';
+import { abrirDiagnostico } from './diagnostico.js';
 import {
   esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, moeda, toast, modal, ocupado, lerForm, opcoes, copiar,
   listaDeLinhas, num, confirmar,
@@ -169,10 +170,12 @@ export function raciocinioHtml(c, aberta = true) {
 }
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [campanhas, criativos, sites, referencias, resultados, cfg] = await Promise.all([
+  const rodando = cliente.estagio === 'rodando';
+  const [campanhas, criativos, sites, referencias, resultados, cfg, diagnosticos] = await Promise.all([
     db.listar(COL.campanhas, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
     db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
     db.listar(COL.resultados, { clienteId: cliente.id }), obterConfig(),
+    rodando ? db.listar(COL.diagnosticos, { clienteId: cliente.id }) : [],
   ]);
   const destino = siteDestino(sites);
   const fadigados = criativos.filter((c) => c.status === 'em_uso' && (diasDesde(c.emUsoDesde) ?? 0) >= cfg.diasFadiga);
@@ -190,8 +193,18 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <div class="mt-3 flex flex-wrap gap-1">${tag(moeda(c.orcamentoDiario) + '/dia')}${(c.conjuntos || []).length ? tag(c.conjuntos.length + ' conjunto(s)') : ''}${tag((c.criativos || []).length + ' criativos')}${(c.publicos || []).slice(0, 2).map((p) => tag(p.nome, 'tag-info')).join('')}${c.origem === 'ia' ? tag('estrutura por IA', 'tag-info') : ''}</div>
       <p class="hint mt-2">${dataBR(c.criadoEm)}</p></button>`;
 
+  // Cliente "rodando": o diagnóstico do que já está no ar mora aqui (é onde se procura primeiro), não em "Mais ações".
+  const ultimoDiag = diagnosticos.map((d) => d.criadoEm).sort().pop();
+  const secaoDiagnostico = rodando ? `<section class="card mb-5 flex flex-wrap items-center gap-3 border-indigo-200">
+      <div class="min-w-0 flex-1"><h3 class="font-semibold"><i class="fa-solid fa-stethoscope text-indigo-500"></i> Diagnosticar o que já está no ar</h3>
+        <p class="caption mt-1">Cruza o que já está no ar com os padrões do motor de Insights e as referências de mercado salvas, e (com IA) pesquisa na web o que funciona hoje no nicho, pra sugerir o que manter e o que mudar. Aceita prints do painel e das peças.</p>
+        <p class="hint">${ultimoDiag ? `Último diagnóstico em ${dataBR(ultimoDiag)} · ${diagnosticos.length} no histórico. Rode de novo depois de registrar resultados novos para comparar.` : 'Nenhum diagnóstico ainda. Próximo passo: rode o primeiro para saber por onde começar.'}</p></div>
+      <button class="btn-ia" data-diagnosticar title="Abre o formulário do diagnóstico, já preenchido com o perfil do cliente"><i class="fa-solid fa-stethoscope"></i> Diagnosticar campanha atual</button>
+    </section>` : '';
+
   root.innerHTML = `${cabecalho('Campanhas', 'Estrutura de teste, públicos e orçamento — pronta para replicar no Gerenciador de Anúncios do Meta.',
     '<button class="btn-primary" data-nova title="Cria uma estrutura nova (com IA ou manual). Ela nasce como rascunho até você confirmar."><i class="fa-solid fa-plus"></i> Nova campanha</button>')}
+    ${secaoDiagnostico}
     ${fadigados.length ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"><i class="fa-solid fa-triangle-exclamation"></i>
       <b>Alerta de fadiga:</b> ${fadigados.map((c) => `“${esc(c.nome)}” (${diasDesde(c.emUsoDesde)} dias no ar)`).join('; ')} — passou de ${cfg.diasFadiga} dias. Fadiga = o público já viu demais o anúncio e o resultado costuma cair: troque ou renove o criativo.</div>` : ''}
     ${rascunhos.length ? `<div class="mb-5"><h3 class="mb-1 text-sm font-semibold">Rascunhos (ainda não confirmados)</h3>
@@ -199,6 +212,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${rascunhos.map(card).join('')}</div></div>` : ''}
     ${oficiais.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${oficiais.map(card).join('')}</div>`
       : rascunhos.length ? '' : vazio('bullseye', 'Nenhuma campanha ainda', 'Crie a primeira: a estrutura sai pronta com públicos, orçamento e plano de teste.')}`;
+
+  on(root, 'click', '[data-diagnosticar]', () => abrirDiagnostico(cliente, { aoFechar: recarregar }));
 
   // ---------- nova campanha ----------
   on(root, 'click', '[data-nova]', () => {

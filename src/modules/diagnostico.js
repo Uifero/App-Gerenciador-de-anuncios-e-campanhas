@@ -48,7 +48,7 @@ export function conferirLeituraImagens(resultado, total) {
     return x ? { numero: i + 1, tipo: TIPOS_LEITURA.includes(tipo) ? tipo : 'sem_leitura', leitura: String(x.leitura || '') }
       : { numero: i + 1, tipo: 'sem_leitura', leitura: 'A IA não comentou esta imagem.' };
   });
-  for (const lista of ['funcionandoBem', 'desperdicio', 'recomendacoes']) {
+  for (const lista of ['funcionandoBem', 'desperdicio', 'comparacaoMercado', 'recomendacoes']) {
     r[lista] = (Array.isArray(r[lista]) ? r[lista] : []).map((it) => {
       const item = { ...it, fonte: normalizar(it?.fonte) || undefined };
       // Conclusão mista (ex.: dado digitado em conflito com o print) vem com fonte "dados" + número da imagem: confere igual.
@@ -62,6 +62,38 @@ export function conferirLeituraImagens(resultado, total) {
   }
   return r;
 }
+
+const linkValido = (u) => /^https?:\/\/[^\s]+$/i.test(String(u || '').trim());
+/**
+ * Confere a camada de mercado (pesquisa na web) sem confiar cegamente na IA:
+ *  - "buscaMercado" vira { encontrou: boolean, resumo } (ou fica ausente em diagnóstico antigo, feito antes da pesquisa);
+ *  - conclusão de fonte "mercado" sem link de verdade ganha `alerta` (não dá para conferir de onde veio);
+ *  - se a própria IA disse que a pesquisa não achou nada, qualquer conclusão atribuída ao mercado ganha `alerta`.
+ * Links que não são http(s) são descartados (nunca viram href).
+ */
+export function conferirFontesMercado(resultado) {
+  const r = { ...(resultado || {}) };
+  if (r.buscaMercado && typeof r.buscaMercado === 'object') {
+    const e = r.buscaMercado.encontrou;
+    r.buscaMercado = { encontrou: e === true || e === 'true', resumo: String(r.buscaMercado.resumo || '') };
+  } else delete r.buscaMercado;
+  r.paginasConsultadas = (Array.isArray(r.paginasConsultadas) ? r.paginasConsultadas : []).filter((f) => linkValido(f?.url))
+    .filter((f, i, l) => l.findIndex((x) => x.url === f.url) === i);
+  for (const lista of ['funcionandoBem', 'desperdicio', 'comparacaoMercado', 'recomendacoes']) {
+    if (!Array.isArray(r[lista])) continue;
+    r[lista] = r[lista].map((it) => {
+      const item = { ...it };
+      if (item.link != null) item.link = linkValido(item.link) ? String(item.link).trim() : undefined;
+      if (normalizar(item.fonte) !== 'mercado' || item.alerta) return item;
+      if (r.buscaMercado && !r.buscaMercado.encontrou) item.alerta = 'A IA disse que a pesquisa de mercado não trouxe nada, mas atribuiu esta conclusão ao mercado: desconsidere.';
+      else if (!item.link) item.alerta = 'Sem o link da página pesquisada: trate como opinião, não como prática de mercado confirmada.';
+      return item;
+    });
+  }
+  return r;
+}
+/** As duas conferências juntas (imagens + mercado), usadas no resultado novo e ao reabrir o histórico. */
+export const conferirDiagnostico = (resultado, totalImagens) => conferirFontesMercado(conferirLeituraImagens(resultado, totalImagens));
 
 /** Reduz a imagem (lado maior <= `lado`) e converte para JPEG. Devolve base64 puro (para a IA) e a data URL (para guardar/mostrar). */
 export async function prepararImagem(file, lado, qualidade) {
@@ -101,21 +133,34 @@ function htmlLeituraImagens(imagens = [], fontes = []) {
 const SELOS = {
   dados: '<span class="tag"><i class="fa-solid fa-keyboard mr-1"></i>dados digitados</span>',
   padrao: '<span class="tag"><i class="fa-solid fa-chart-line mr-1"></i>padrões</span>',
-  referencia: '<span class="tag"><i class="fa-solid fa-bookmark mr-1"></i>referência</span>',
+  referencia: '<span class="tag"><i class="fa-solid fa-bookmark mr-1"></i>referência salva</span>',
+  mercado: '<span class="tag tag-info"><i class="fa-solid fa-globe mr-1"></i>pesquisa de mercado</span>',
 };
 /** Selo da fonte + selo da imagem citada (os dois aparecem numa conclusão mista, ex.: dado digitado x print). */
 const seloFonte = (it) => (SELOS[it.fonte] || '')
-  + (it.fonte === 'imagem' || it.imagem != null ? `<span class="tag tag-info"><i class="fa-solid fa-image mr-1"></i>lido na imagem ${esc(it.imagem ?? '?')}</span>` : '');
+  + (it.fonte === 'imagem' || it.imagem != null ? `<span class="tag tag-info"><i class="fa-solid fa-image mr-1"></i>lido na imagem ${esc(it.imagem ?? '?')}</span>` : '')
+  + (it.link ? `<a class="text-xs text-indigo-600 underline" href="${esc(it.link)}" target="_blank" rel="noopener noreferrer">abrir a fonte</a>` : '');
+
+/** Faixa do topo: o que a pesquisa de mercado trouxe, ou o aviso de que não trouxe nada (e a análise seguiu só com o interno). */
+function htmlBuscaMercado(r) {
+  const b = r.buscaMercado; if (!b) return '';
+  const paginas = r.paginasConsultadas || [];
+  return `<div class="mt-2 rounded-lg border ${b.encontrou ? 'border-sky-300 bg-sky-50' : 'border-amber-300 bg-amber-50 text-amber-800'} p-2 text-sm">
+    <p><i class="fa-solid fa-globe"></i> <b>${b.encontrou ? 'Pesquisa de mercado' : 'A pesquisa de mercado não trouxe nada relevante ou atual'}</b>${b.encontrou ? '' : ' — esta análise usa só os dados internos e as referências salvas.'}</p>
+    ${b.resumo ? `<p class="mt-1">${esc(b.resumo)}</p>` : ''}
+    ${paginas.length ? `<details class="mt-1"><summary class="cursor-pointer text-xs">Páginas consultadas (${paginas.length})</summary><ul class="mt-1 list-disc pl-5 text-xs">${paginas.map((f) => `<li><a class="text-indigo-600 underline" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">${esc(f.titulo || f.url)}</a></li>`).join('')}</ul></details>` : ''}</div>`;
+}
 
 function htmlResultadoIA(r, fontes = []) {
   const bloco = (titulo, itens, classe) => (itens?.length ? `<div class="mt-2"><h5 class="text-xs font-semibold uppercase text-slate-500">${titulo}</h5>
     <ul class="mt-1 space-y-1 text-sm">${itens.map((it) => `<li class="rounded-lg ${classe} p-2">${esc(it.texto)}${it.prioridade ? ` <span class="tag ${it.prioridade === 'alta' ? 'tag-bad' : it.prioridade === 'media' ? 'tag-warn' : ''}">${esc(it.prioridade)}</span>` : ''}
       <br><span class="mt-1 inline-flex flex-wrap items-center gap-1">${seloFonte(it)}<span class="hint !mt-0">Origem: ${esc(it.origem || 'n/d')}</span></span>
       ${it.alerta ? `<p class="mt-1 text-xs font-medium text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(it.alerta)}</p>` : ''}</li>`).join('')}</ul></div>` : '');
-  return htmlLeituraImagens(r.imagens, fontes) +
-    bloco('O que provavelmente está funcionando', r.funcionandoBem, 'bg-emerald-50') +
-    bloco('Possível desperdício / oportunidade', r.desperdicio, 'bg-amber-50') +
-    bloco('Recomendações', r.recomendacoes, 'bg-indigo-50') +
+  return htmlBuscaMercado(r) + htmlLeituraImagens(r.imagens, fontes) +
+    bloco('O que provavelmente está funcionando (e por quê)', r.funcionandoBem, 'bg-emerald-50') +
+    bloco('Provável desperdício de verba / oportunidade', r.desperdicio, 'bg-amber-50') +
+    bloco('Comparação com o mercado e marcas de referência', r.comparacaoMercado, 'bg-sky-50') +
+    bloco('Recomendações (em ordem de prioridade)', r.recomendacoes, 'bg-indigo-50') +
     '<p class="caption mt-3"><b>Próximo passo:</b> comece pelas recomendações de prioridade alta. Depois de alguns dias, registre os novos números na aba Resultados e rode o diagnóstico de novo para comparar (o anterior fica no histórico abaixo).</p>';
 }
 function htmlResultadoManual(r, fontes = []) {
@@ -126,7 +171,8 @@ function htmlResultadoManual(r, fontes = []) {
       <div class="mt-1 flex flex-wrap gap-2">${fontes.map((src, i) => miniatura(src, i)).join('')}</div></div>` : '');
 }
 
-export async function abrirDiagnostico(cliente) {
+/** `aoFechar` (opcional): chamado ao fechar o modal (a aba Campanhas usa para atualizar "último diagnóstico"). */
+export async function abrirDiagnostico(cliente, { aoFechar } = {}) {
   const [referencias, resultados, historico] = await Promise.all([
     db.listar(COL.referencias, { clienteId: cliente.id }), db.listar(COL.resultados, { clienteId: cliente.id }), db.listar(COL.diagnosticos, { clienteId: cliente.id }),
   ]);
@@ -136,7 +182,7 @@ export async function abrirDiagnostico(cliente) {
   const anexos = []; // { file, url } escolhidos nesta abertura do modal
   let fontesNaTela = []; // imagens (URLs) do resultado mostrado agora, para o "ver maior"
 
-  const m = modal(`Diagnosticar campanha — ${cliente.nome}`, `<div id="diag"></div>`, { largo: true, aoFechar: () => anexos.forEach((a) => URL.revokeObjectURL(a.url)) });
+  const m = modal(`Diagnosticar campanha — ${cliente.nome}`, `<div id="diag"></div>`, { largo: true, aoFechar: () => { anexos.forEach((a) => URL.revokeObjectURL(a.url)); aoFechar?.(); } });
   const raiz = $('#diag', m.el);
   raiz.innerHTML = `
     <p class="hint mb-3">Descreva o que já está no ar hoje. Os campos já vêm preenchidos com o que está cadastrado no perfil do cliente — ajuste para refletir o estado mais atual.</p>
@@ -148,7 +194,8 @@ export async function abrirDiagnostico(cliente) {
       <div class="sm:col-span-2"><label class="label">Público(s) atual(is)</label><input class="input" name="publicos" value="${esc(h.publicos)}"></div>
       <div class="sm:col-span-2"><label class="label">Criativos que já estão rodando (ângulo, formato, há quanto tempo)</label><textarea class="input" rows="2" name="criativosRodando" placeholder="Ex.: 2 criativos de vídeo, ângulo dor, no ar há 3 semanas"></textarea></div>
       <div class="sm:col-span-2"><label class="label">Ofertas/promoções ativas</label><input class="input" name="ofertas" placeholder="Ex.: frete grátis acima de R$ 150"></div>
-      <div class="sm:col-span-2 rounded-lg border border-slate-200 p-3"><label class="label">Prints do painel e/ou peças no ar <span class="font-normal text-slate-500">(opcional)</span></label>
+      <div class="sm:col-span-2 rounded-lg border-2 border-dashed border-slate-300 p-3 transition" data-soltar><label class="label">Prints do painel e/ou peças no ar <span class="font-normal text-slate-500">(opcional)</span></label>
+        <p class="hint !mt-0 mb-2"><i class="fa-solid fa-arrow-down"></i> Clique no botão ou arraste as imagens para dentro desta área.</p>
         ${campoArquivo({ attrs: 'data-anexos', accept: 'image/png,image/jpeg,image/webp', multiple: true, icone: 'image', texto: 'Enviar prints ou peças (PNG/JPG)', lista: true, destaque: false,
           dica: `Ex.: print do Gerenciador de Anúncios com as colunas de CPM, frequência e CTR visíveis, ou as peças que estão rodando. Até ${MAX_ANEXOS} imagens.` })}
         <div data-lista-anexos class="mt-2 flex flex-wrap gap-2"></div>
@@ -156,6 +203,7 @@ export async function abrirDiagnostico(cliente) {
       <div class="sm:col-span-2 flex flex-wrap gap-2">
         <button class="btn-ia" type="submit" data-modo="ia"><i class="fa-solid fa-wand-magic-sparkles"></i> Diagnosticar com IA</button>
         <button class="btn-ghost" type="submit" data-modo="manual" title="Mostra os dados e padrões lado a lado, sem interpretação por texto; as imagens ficam só anexadas">Ver dados sem IA</button>
+        <p class="hint w-full !mt-0"><b>Com IA</b> (1 a 3 min): cruza os seus dados com os padrões e as referências salvas e pesquisa na web o que funciona hoje no nicho; cada recomendação diz de onde veio. <b>Sem IA</b>: só os dados organizados, na hora.</p>
       </div>
     </form>
     <div id="resultado-diag" class="mt-3"></div>
@@ -218,7 +266,7 @@ export async function abrirDiagnostico(cliente) {
       let resultado, origem;
       if (btn.dataset.modo === 'ia') {
         const imagens = await Promise.all(anexos.map((a) => paraIA(a.file)));
-        resultado = conferirLeituraImagens(await diagnosticarCampanha({ cliente, dados, padroesLocais: locais, padroesNicho: nicho.padroes, referenciasFortes, imagens }), anexos.length);
+        resultado = conferirDiagnostico(await diagnosticarCampanha({ cliente, dados, padroesLocais: locais, padroesNicho: nicho.padroes, referenciasFortes, imagens }), anexos.length);
         resultadoEl.innerHTML = htmlResultadoIA(resultado, fontes);
         origem = 'ia';
       } else {
@@ -239,7 +287,7 @@ export async function abrirDiagnostico(cliente) {
     const d = historico.find((x) => x.id === b.dataset.verDiag); if (!d) return;
     const imgs = d.imagens ? (await db.listar(COL.diagnosticoImagens, { diagnosticoId: d.id })).sort((a, z) => a.ordem - z.ordem).map((x) => x.dataUrl) : [];
     fontesNaTela = imgs;
-    resultadoEl.innerHTML = `<p class="hint mb-2">Diagnóstico de ${dataBR(d.criadoEm)}${d.origem === 'manual' ? ' (sem IA)' : ''}:</p>` + (d.origem === 'ia' ? htmlResultadoIA(conferirLeituraImagens(d.resultado, d.resultado?.imagens?.length || 0), imgs) : htmlResultadoManual(d.resultado, imgs));
+    resultadoEl.innerHTML = `<p class="hint mb-2">Diagnóstico de ${dataBR(d.criadoEm)}${d.origem === 'manual' ? ' (sem IA)' : ''}:</p>` + (d.origem === 'ia' ? htmlResultadoIA(conferirDiagnostico(d.resultado, d.resultado?.imagens?.length || 0), imgs) : htmlResultadoManual(d.resultado, imgs));
     resultadoEl.scrollIntoView({ block: 'start' });
   });
 }

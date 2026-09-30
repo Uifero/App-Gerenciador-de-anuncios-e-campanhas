@@ -797,15 +797,28 @@ ${imagens.length ? `IMAGENS ANEXADAS: ${imagens.length} imagem(ns), numeradas na
 - Se a imagem estiver ilegível (borrada, pequena, cortada) ou não tiver relação com métricas/criativo (foto aleatória, print de outra coisa), marque isso e NÃO tire conclusão dela. Nunca invente um número que não aparece na imagem.
 Preencha "imagens" com UM item por imagem: {"numero": 1, "tipo": "metricas" | "criativo" | "ilegivel" | "sem_relacao", "leitura": "o que você leu nela, ou por que não dá para usar"}.
 
-` : ''}Gere um diagnóstico. Cada item de "funcionandoBem", "desperdicio" e "recomendacoes" precisa vir com:
-- "fonte": "dados" (digitado pelo gestor), ${imagens.length ? '"imagem" (lido em uma imagem anexada — informe também "imagem": o número dela), ' : ''}"padrao" (padrão deste cliente ou do nicho) ou "referencia" (referência de mercado);
-- "origem": a citação em texto (ex.: "dado informado pelo gestor", ${imagens.length ? '"imagem 2 — print de métricas", ' : ''}"padrão de clientes do nicho", ou o nome de uma referência).
-NÃO invente números que não estejam nos dados acima${imagens.length ? ' ou visíveis nas imagens' : ''}. Se faltar informação para concluir algo, diga isso em vez de adivinhar.
-Saída em JSON: {${imagens.length ? '"imagens": [{"numero","tipo","leitura"}], ' : ''}"funcionandoBem": [{"texto","fonte","origem"${imagens.length ? ',"imagem"' : ''}}], "desperdicio": [{"texto","fonte","origem"${imagens.length ? ',"imagem"' : ''}}], "recomendacoes": [{"texto","fonte","origem","prioridade"${imagens.length ? ',"imagem"' : ''}}]} — "recomendacoes" com 3 a 5 itens, "prioridade" em: alta, media, baixa. Escreva em português do Brasil. ${SO_JSON}`;
-  return (await gerarJSON({
-    tarefa: 'diagnostico', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }],
+` : ''}CONHECIMENTO DE MERCADO (pesquisa na web): antes de concluir, faça algumas buscas (3 a 5) sobre o que é reconhecido HOJE como eficaz em anúncios pagos no nicho "${cliente.nicho || 'e-commerce'}" (mercado: ${IDIOMA_NOME[cliente.marca?.idioma] || IDIOMA_NOME['pt-BR']}): benchmarks atuais de CPA/ROAS/CTR/CPM do nicho, formatos e ângulos que marcas de referência do nicho estão usando nos anúncios, e práticas recomendadas pelas próprias plataformas ou por fontes reconhecidas de performance. Se o nicho for estreito demais para achar algo específico, busque as boas práticas gerais de performance/tráfego pago (e diga que é prática geral, não do nicho).
+- Só use o que a busca de fato encontrou, com o link da página. Prefira fontes dos últimos 2 anos; se a fonte for antiga ou não disser a data, diga isso.
+- Se a busca não trouxer nada relevante ou atual, diga isso claramente em "buscaMercado" e siga APENAS com os dados internos e as referências salvas. NUNCA invente benchmark, número de mercado, marca ou prática.
+- Benchmark de mercado é comparação, não verdade do cliente: aponte quando o cliente está acima/abaixo dele, sem tratar como meta garantida.
+
+Gere um diagnóstico como faria um profissional sênior de performance. Cada item de "funcionandoBem", "desperdicio", "comparacaoMercado" e "recomendacoes" precisa vir com:
+- "fonte": "dados" (digitado pelo gestor), ${imagens.length ? '"imagem" (lido em uma imagem anexada — informe também "imagem": o número dela), ' : ''}"padrao" (padrão deste cliente ou do nicho), "referencia" (referência de mercado SALVA listada acima) ou "mercado" (prática/benchmark encontrado na pesquisa web — informe também "link": a URL da página);
+- "origem": a citação em texto (ex.: "dado informado pelo gestor", ${imagens.length ? '"imagem 2 — print de métricas", ' : ''}"padrão de clientes do nicho", o nome de uma referência salva, ou "pesquisa: <site/título da página>").
+O que cada lista significa:
+- "funcionandoBem": o que está funcionando E POR QUÊ (o porquê no próprio texto);
+- "desperdicio": o que provavelmente está desperdiçando verba (e o sinal que indica isso);
+- "comparacaoMercado": 1 a 4 comparações entre o que o cliente faz e o que marcas de referência do nicho ou o mercado estão fazendo (fonte "mercado" ou "referencia"); [] se não houver base;
+- "recomendacoes": 3 a 5 itens, do mais importante para o menos, "prioridade" em: alta, media, baixa.
+"buscaMercado": {"encontrou": true|false, "resumo": "o que a pesquisa trouxe de útil (nicho específico ou prática geral), ou por que não trouxe nada"}.
+NÃO invente números que não estejam nos dados acima${imagens.length ? ', visíveis nas imagens' : ''} ou nas páginas encontradas. Se faltar informação para concluir algo, diga isso em vez de adivinhar.
+Saída em JSON: {${imagens.length ? '"imagens": [{"numero","tipo","leitura"}], ' : ''}"buscaMercado": {"encontrou","resumo"}, "funcionandoBem": [{"texto","fonte","origem","link"${imagens.length ? ',"imagem"' : ''}}], "desperdicio": [{"texto","fonte","origem","link"${imagens.length ? ',"imagem"' : ''}}], "comparacaoMercado": [{"texto","fonte","origem","link"}], "recomendacoes": [{"texto","fonte","origem","link","prioridade"${imagens.length ? ',"imagem"' : ''}}]} — "link" só quando a fonte for "mercado" (senão omita). Escreva em português do Brasil. ${SO_JSON}`;
+  const { dados: r, fontes } = await gerarJSON({
+    tarefa: 'diagnostico', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }], webSearch: { maxUses: 5 },
     imagens: imagens.length ? imagens.map(({ media_type, data }) => ({ media_type, data })) : undefined,
-  })).dados;
+  });
+  // Páginas citadas pela busca (só a API devolve; pela assinatura os links vêm dentro de cada item).
+  return { ...(r || {}), paginasConsultadas: fontes };
 }
 
 // ---------- checklist de qualidade (Haiku: tarefa curta e barata) ----------

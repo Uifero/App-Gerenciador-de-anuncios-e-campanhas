@@ -16,8 +16,8 @@ describe('TAREFAS', () => {
     expect(TAREFAS.hooks.modelo).not.toBe(TAREFAS.criativos.modelo);
   });
 
-  it('só a tarefa de referências (busca de mercado) pede busca web', () => {
-    expect(TAREFAS.referencias.web).toBe(true);
+  it('só busca de mercado, leitura de site pela busca e diagnóstico pedem busca web', () => {
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.web).map(([n]) => n)).toEqual(['referencias', 'diagnostico', 'leitura_web']);
     expect(TAREFAS.criativos.web).toBeFalsy();
     expect(TAREFAS.campanha.web).toBeFalsy();
   });
