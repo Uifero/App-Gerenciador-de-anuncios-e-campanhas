@@ -125,8 +125,8 @@ async function salvarCliente(cliente, patch) {
   await db.atualizar(COL.clientes, cliente.id, patch);
 }
 
-/** Guarda uma imagem em Materiais do cliente (Storage + gcc_materiais), para o Estúdio. */
-async function salvarMaterial(cliente, blob, origem, extra = {}) {
+/** Guarda uma imagem em Materiais do cliente (Storage + gcc_materiais), para o Estúdio. Também usada pela prova social. */
+export async function salvarMaterial(cliente, blob, origem, extra = {}) {
   const ext = { 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif' }[blob.type] || 'jpg';
   const nome = `${origem}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
   const env = await enviarArquivo(`gcc/${cliente.id}/materiais/${nome}`, new File([blob], nome, { type: blob.type || 'image/jpeg' }));

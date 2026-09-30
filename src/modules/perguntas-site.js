@@ -8,6 +8,7 @@ import { PERGUNTAS, BLOCOS_Q, TOTAL_PERGUNTAS as TOTAL, respondidas, PAGAMENTOS_
 import { abrirProduto } from './produtos.js';
 import { perguntaZeroHtml, ligarPerguntaZero } from './leitura-site.js';
 import { montarRespostasCliente } from './respostas-cliente.js';
+import { provaSocialHtml, ligarProvaSocial } from './prova-social.js';
 import { textoMarca } from '../lib/leitura.js';
 import { esc, $, on, tag, toast, moeda } from '../core/ui.js';
 
@@ -83,7 +84,7 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
       <button type="button" class="btn-ghost btn-sm" data-novo-prod><i class="fa-solid fa-plus"></i> Cadastrar produto</button></div>`,
     materiais: () => `${area('materiaisOriginais', m.materiaisOriginais)}<p class="hint">Peça por Google Drive ou WeTransfer (pelo WhatsApp a qualidade cai). Depois de baixar, envie os arquivos em <b>Estúdio > Materiais</b> (botão "Gerar foto e vídeo" num criativo). <span data-qtd-materiais></span></p>`,
     logo: () => `${area('logo', m.logo)}<p class="hint">O arquivo PNG também vai para Materiais do cliente, junto com as fotos.</p>`,
-    provas: () => area('provasSociais', m.provasSociais),
+    provas: () => `${area('provasSociais', m.provasSociais)}<p class="hint">Digite à mão (uma prova por linha) ou envie prints logo abaixo.</p>${provaSocialHtml('q')}`,
     presenca: () => '',
     referencia: () => `<input class="input" data-referencia value="${esc(cliente.siteReferencia)}" placeholder="https://…">${marcaAuto(auto('siteReferencia'), 'data-confirmar-campo="siteReferencia"')}`,
     anuncios: () => `<div class="grid gap-2 sm:grid-cols-3"><select class="input" data-anuncia><option value="">Escolha…</option><option value="nao" ${cliente.estagio !== 'rodando' && m.jaAnuncia === 'nao' ? 'selected' : ''}>Ainda não anuncia</option><option value="sim" ${cliente.estagio === 'rodando' ? 'selected' : ''}>Já anuncia</option></select>
@@ -124,6 +125,7 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
   }).catch(() => {});
   $('[data-perguntas-site]', alvo).addEventListener('toggle', (e) => abertoPorCliente.set(cliente.id, e.target.open));
   ligarPerguntaZero(alvo, ctx);
+  ligarProvaSocial($('[data-pergunta="provas"]', alvo), ctx);
   montarRespostasCliente($('[data-respostas-cliente]', alvo), { ...ctx, get site() { return ctx.site; }, get qtdMateriais() { return qtdMateriais; } });
 
   // Confirmar (ou editar) um campo preenchido automaticamente tira a etiqueta: a partir daí ele conta como dado da pessoa.

@@ -280,7 +280,7 @@ export function abrirEstudio(criativo, cliente) {
   db.listar(COL.materiais, { clienteId: cliente.id }).then((salvos) => {
     const alvo = $('[data-materiais-salvos]', raiz);
     if (!alvo || !salvos.length) return;
-    alvo.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><p><i class="fa-solid fa-folder-open text-emerald-600"></i> <b>${salvos.length} foto(s) salva(s) do cliente</b>${[salvos.some((m) => m.origem === 'site') && 'do site dele', salvos.some((m) => m.origem === 'instagram') && 'prints do Instagram dele'].filter(Boolean).map((x, i) => (i ? ' e ' : ' — ') + x).join('')}.</p>
+    alvo.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><p><i class="fa-solid fa-folder-open text-emerald-600"></i> <b>${salvos.length} foto(s) salva(s) do cliente</b>${[salvos.some((m) => m.origem === 'site') && 'do site dele', salvos.some((m) => m.origem === 'instagram') && 'prints do Instagram dele', salvos.some((m) => m.origem === 'prova_social') && 'prints de prova social (com dados pessoais cobertos)'].filter(Boolean).map((x, i) => (i ? ' e ' : ' — ') + x).join('')}.</p>
       <div class="my-1 flex flex-wrap gap-1">${salvos.slice(0, 12).map((m) => `<img src="${esc(m.url)}" alt="" class="h-10 w-10 rounded object-cover" loading="lazy">`).join('')}</div>
       <button type="button" class="btn-ghost btn-sm" data-usar-salvos><i class="fa-solid fa-plus"></i> Trazer para os materiais</button></div>`;
     on(alvo, 'click', '[data-usar-salvos]', (b) => ocupado(b, async () => {

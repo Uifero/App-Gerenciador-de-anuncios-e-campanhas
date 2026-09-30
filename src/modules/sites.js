@@ -11,6 +11,8 @@ import { temCustom, temPacote, baseDoCustom, baseDoPacote, aplicarBaseNoPacote, 
 import { criarZip } from '../lib/zip.js';
 import { estadoDoSite, registrarVersao, versoesDoModo } from '../lib/site-blocos.js';
 import { montarAjusteSite } from './ajuste-site.js';
+import { montarPainelMaterial } from './material-site.js';
+import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA } from '../lib/prova-social.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas } from '../core/ui.js';
 
@@ -36,8 +38,9 @@ export const textoParaFaq = (txt) => listaDeLinhas(txt).map((l) => { const [p, .
 export const perguntasDasObjecoes = (cliente) => objecoesDe(cliente).map((o) => `${/[?？]$/.test(o) ? o : o.charAt(0).toUpperCase() + o.slice(1) + '?'} | `).join('\n');
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [produtos, sites, criativos] = await Promise.all([
+  const [produtos, sites, criativos, materiais] = await Promise.all([
     db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
+    db.listar(COL.materiais, { clienteId: cliente.id }),
   ]);
   let site = sites[0] || null;
   // Criativos aprovados marcados "usar como prova social" (toggle na aba Criativos) — candidatos a depoimento do site.
@@ -65,8 +68,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     if (site.modo === 'custom') {
       const atual = site.conteudo || {};
       const r = await gerarConteudoSite({ cliente, produtos, base });
-      // Depoimentos puxados de criativos aprovados não se perdem ao gerar de novo.
-      const gerado = { ...atual, ...r, depoimentos: [...(r.depoimentos || []), ...(atual.depoimentos || []).filter((d) => d.origem === 'criativo')] };
+      // Depoimentos puxados de criativos aprovados e de prints de prova social não se perdem ao gerar de novo.
+      const gerado = { ...atual, ...r, depoimentos: [...(r.depoimentos || []), ...(atual.depoimentos || []).filter(depoimentoGerido)] };
       await salvarEVersionar({ ...(base ? aplicarBaseNoCustom(gerado, site.config || {}, base) : { conteudo: gerado }), ...reaproveitou }, 'Textos gerados de novo pela IA');
       toast(base ? 'Site gerado reaproveitando o texto, as cores e a FAQ do pacote que o cliente já viu. A IA só completou o que faltava.'
         : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. Revise e use "Ver prévia" ou "Baixar pasta do site".`);
@@ -79,9 +82,24 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   });
   const ctxPerguntas = { cliente, produtos, salvarSite, recarregar, gerar: gerarComIa, get site() { return site; } };
 
+  // Painel "Material para montar o site" (só leitura + links para o campo real). "Editar" de um item do perfil abre
+  // o questionário (abaixo) na pergunta certa, com o campo em foco.
+  const irParaPergunta = (id) => {
+    const card = $('[data-perguntas-site]', root); if (!card) return;
+    card.open = true;
+    const alvoP = id ? $(`[data-pergunta="${id}"]`, card) : card;
+    (alvoP || card).scrollIntoView({ block: 'center' });
+    alvoP?.querySelector?.('textarea, input:not([type=checkbox]):not([type=radio]):not([type=file]), select')?.focus({ preventScroll: true });
+  };
+  const painelMaterial = () => montarPainelMaterial($('[data-painel]', root), {
+    cliente, produtos, materiais, site, respondidas: progressoSite(cliente, site, produtos, materiais.length), totalPerguntas: TOTAL_PERGUNTAS,
+    recarregar, gerar: site?.modo ? gerarComIa : null, irParaPergunta,
+  });
+
   // ---------- escolha do modo ----------
   if (!site?.modo) {
     root.innerHTML = `${cabecalho('Site / Loja', 'Escolha como a loja deste cliente será entregue. Você pode trocar depois.')}
+    <div data-painel></div>
     <div class="grid gap-4 md:grid-cols-2">
       <button class="card text-left transition hover:border-indigo-400 hover:shadow-md" data-modo="custom"><div class="mb-2 text-2xl text-indigo-500"><i class="fa-solid fa-code"></i></div>
         <h3 class="font-semibold">Site personalizado</h3><p class="caption">Gera um site pronto, com catálogo, carrinho, banner, depoimentos e WhatsApp, para publicar numa hospedagem gratuita própria do cliente (o app explica o passo a passo). O pagamento é ligado a um serviço externo.</p></button>
@@ -91,6 +109,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     <p class="caption mt-4">Ainda não sabe? Converse com o cliente usando as perguntas abaixo — a pergunta (i) escolhe o modo por você.</p>
     <div class="mt-2" data-perguntas></div>`;
     montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: true });
+    painelMaterial();
     on(root, 'click', '[data-modo]', async (b) => { await salvarSite({ modo: b.dataset.modo, plataforma: b.dataset.modo === 'pacote_plataforma' ? 'nuvemshop' : null }); recarregar(); });
     return;
   }
@@ -100,6 +119,17 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const cfg = site.config || {};
   const custom = site.modo === 'custom';
   const rastro = rastreamentoDe(cliente);
+  // Prints de prova social (Materiais etiquetados "prova social") -> depoimentos do site, por escolha da pessoa.
+  const provas = provasEmImagem(materiais);
+  const exibirAtual = (m) => (c.depoimentos || []).find((d) => d.origem === ORIGEM_PROVA && d.materialId === m.id)?.exibir || '';
+  const cartaoProvasHTML = () => `<div class="card mt-4" data-cartao-provas><h3 class="mb-1 font-semibold"><i class="fa-solid fa-star-half-stroke mr-1 text-amber-500"></i> Prints de prova social no site</h3>
+      <p class="caption mb-3">Os prints de avaliação guardados (pergunta 10 ou o painel "Material para montar o site") podem entrar nos depoimentos do site como <b>imagem real</b> (mais confiável), como <b>texto</b> ou os dois. Escolha para cada um e clique em salvar. Gerar os textos com IA de novo não apaga essa escolha.</p>
+      ${!provas.length ? '<p class="hint">Nenhum print de prova social guardado ainda. Envie em "Material para montar o site", no topo desta aba, ou na pergunta 10.</p>'
+        : !custom ? '<p class="hint">No pacote Nuvemshop/Shopify, suba estes prints como imagem na seção de depoimentos do tema (o manual explica onde). Eles estão em Materiais do cliente.</p>'
+        : `<div class="grid gap-2 sm:grid-cols-2">${provas.map((m) => `<div class="flex gap-2 rounded-lg border border-slate-200 p-2 text-sm"><img src="${esc(m.url)}" alt="Print de prova social" class="h-20 w-20 shrink-0 rounded border object-cover" loading="lazy">
+          <div class="min-w-0 flex-1"><p class="line-clamp-2 text-slate-600">${esc(m.citacao || m.descricao || 'Print de prova social')}</p>
+            <select class="input mt-1 !py-1 text-xs" data-exibir-prova="${esc(m.id)}" title="Como este print aparece nos depoimentos do site">${opcoes(EXIBICOES_PROVA, exibirAtual(m))}</select></div></div>`).join('')}</div>
+          <button class="btn-primary btn-sm mt-3" data-salvar-provas-site><i class="fa-solid fa-floppy-disk"></i> Salvar a escolha nos depoimentos do site</button>`}</div>`;
 
   // Consistência entre os dois modos (lib/site-modos.js): aviso fixo e reabrível + oferta de sincronizar edições.
   const doisModos = temCustom(site) && temPacote(site);
@@ -122,6 +152,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ${cliente.siteReferencia ? `<a class="tag tag-info" href="${esc(cliente.siteReferencia)}" target="_blank" rel="noopener">site de referência</a>` : ''}</div>
     <div class="-mt-2 mb-4">${indicadorPixel(cliente)} ${tag(rastro.hotjarId ? 'Hotjar configurado' : 'Hotjar: não usado', rastro.hotjarId ? 'tag-ok' : '')} ${tag(rastro.tawkPropertyId ? 'Chat Tawk.to configurado' : 'Chat ao vivo: não usado', rastro.tawkPropertyId ? 'tag-ok' : '')}
       <p class="hint mt-1">${custom ? 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) entram sozinhos no site gerado e só carregam depois que o visitante aceita os cookies.' : 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) vão para o manual, com o passo a passo para colar na loja.'}</p></div>
+    <div data-painel></div>
     ${avisoModosHTML}${divergenciaHTML}
     <div class="mb-4" data-perguntas></div>
 
@@ -138,8 +169,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           ${custom ? `<div class="grid grid-cols-2 gap-3"><div><label class="label">Cor principal</label><input type="color" class="h-10 w-full rounded" name="corPrimaria" value="${esc(cfg.corPrimaria || '#4f46e5')}"></div>
             <div><label class="label">Cor de fundo</label><input type="color" class="h-10 w-full rounded" name="corFundo" value="${esc(cfg.corFundo || '#ffffff')}"></div></div>
             <div><label class="label">WhatsApp (com DDD)</label><input class="input" name="whatsapp" value="${esc(cfg.whatsapp)}" placeholder="5511999999999"></div>` : ''}
-          <div><label class="label">Depoimentos escritos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => d.origem !== 'criativo').map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
-            <p class="hint">Use depoimentos reais. Os gerados por IA são apenas modelos. Os depoimentos puxados de criativos (abaixo) não aparecem aqui — são geridos à parte.</p></div>
+          <div><label class="label">Depoimentos escritos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => !depoimentoGerido(d)).map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
+            <p class="hint">Use depoimentos reais. Os gerados por IA são apenas modelos. Os depoimentos puxados de criativos e de prints de prova social (abaixo) não aparecem aqui — são geridos à parte.</p></div>
           ${custom ? `<div><label class="label">Perguntas frequentes (uma por linha: pergunta | resposta)</label><textarea class="input" rows="4" name="faq" placeholder="E se não servir? | A troca é grátis em até 30 dias.">${esc(faqParaTexto(c.faq || []))}</textarea>
             <p class="hint">Vira a seção "Perguntas frequentes" do site. Pergunta sem resposta não aparece. ${objecoesDe(cliente).length ? `Base: as ${objecoesDe(cliente).length} objeção(ões) do perfil de marca.` : 'Sem objeções no perfil de marca: com o campo vazio, a seção não aparece no site.'}</p>
             ${objecoesDe(cliente).length ? `<div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ia btn-sm" data-faq-ia title="Só a FAQ: não mexe no resto do conteúdo"><i class="fa-solid fa-wand-magic-sparkles"></i> Escrever FAQ com IA a partir das objeções</button>
@@ -185,10 +216,19 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ${(c.depoimentos || []).some((d) => d.origem === 'criativo') ? `<div class="mt-3 grid gap-2 sm:grid-cols-2">${(c.depoimentos || []).filter((d) => d.origem === 'criativo').map((d) => `
         <div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><b>${esc(d.nome)}</b>${d.midiaUrl ? ` ${tag('com mídia', 'tag-ok')}` : ''}<p class="line-clamp-2 text-slate-600">“${esc(d.texto)}”</p></div>`).join('')}</div>` : ''}
     </div>
+    ${cartaoProvasHTML()}
     ${site.pacote ? `<div class="card mt-4"><h3 class="mb-2 font-semibold">Banners e briefing do tema${custom ? ' <span class="text-sm font-normal text-slate-500">(do pacote Nuvemshop/Shopify, não aparece neste site)</span>' : ''}</h3>${iaNota(custom ? 'Guardado da versão pacote deste cliente, só para consulta. O site personalizado usa o formulário "Conteúdo da loja" acima.' : 'Criado pela IA para a plataforma escolhida. Próximo passo: use os textos nos banners da loja e o briefing para escolher e ajustar o tema (o manual de entrega explica onde).')}
       ${pacoteHTML(site.pacote)}</div>` : ''}`;
 
   on(root, 'click', '[data-trocar]', async () => { await salvarSite({ modo: null }); recarregar(); });
+  painelMaterial();
+
+  on(root, 'click', '[data-salvar-provas-site]', (b) => ocupado(b, async () => {
+    const novos = provas.map((m) => depoimentoDeProva(m, $(`[data-exibir-prova="${m.id}"]`, root)?.value || ''));
+    const depoimentos = mesclarProvasNoSite(c.depoimentos, novos);
+    await salvarEVersionar({ conteudo: { ...c, depoimentos } }, 'Depoimentos a partir de prints de prova social');
+    toast(`Depoimentos atualizados: ${novos.filter(Boolean).length} print(s) no site. Confira em "Ver prévia".`); recarregar();
+  }));
 
   on(root, 'click', '[data-sync-prova]', (b) => ocupado(b, async () => {
     const novos = marcados.map((cr) => criativoParaDepoimento(cliente, cr));
@@ -201,7 +241,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const v = lerForm($('#fc', root));
     const escritos = listaDeLinhas(v.depoimentos).map((l) => { const [nome, ...t] = l.split('|'); return { nome: nome.trim(), texto: t.join('|').trim() }; }).filter((d) => d.texto);
     // Preserva os depoimentos puxados de criativos: este formulário só edita os escritos à mão.
-    const dep = [...escritos, ...(c.depoimentos || []).filter((d) => d.origem === 'criativo')];
+    const dep = [...escritos, ...(c.depoimentos || []).filter(depoimentoGerido)];
     return {
       conteudo: { ...c, heroTitulo: v.heroTitulo, heroSubtitulo: v.heroSubtitulo, heroCta: v.heroCta, storytelling: v.storytelling, depoimentos: dep,
         newsletterTitulo: v.newsletterTitulo, politicas: { trocas: v.trocas, envio: v.envio, privacidade: v.privacidade }, ...(custom ? { faq: textoParaFaq(v.faq) } : {}) },

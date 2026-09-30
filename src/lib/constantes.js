@@ -98,7 +98,7 @@ export const TAREFAS_IA = {
   site: ['Conteúdo do site', 'site', 6000, 'Sonnet'], pacote: ['Pacote de plataforma', 'site', 8000, 'Sonnet'], campanha: ['Estrutura de campanha', 'campanhas', 7000, 'Sonnet'], discussao_campanha: ['Discussão do rascunho de campanha', 'campanhas', 7000, 'Sonnet'], playbook: ['Playbooks', 'playbooks', 4000, 'Sonnet'],
   insights: ['Explicação de insights', 'insights', 3000, 'Sonnet'], diagnostico: ['Diagnóstico de campanha', 'campanhas', 8000, 'Sonnet'],
   narracao: ['Roteiro de narração', 'criativos', 2500, 'Haiku'], faq: ['FAQ do site', 'site', 2500, 'Haiku'],
-  leitura_site: ['Leitura do site do cliente', 'site', 4000, 'Sonnet'], leitura_web: ['Leitura do site pela busca', 'site', 4000, 'Sonnet'], leitura_prints: ['Leitura de prints do Instagram', 'site', 4000, 'Sonnet'],
+  leitura_site: ['Leitura do site do cliente', 'site', 4000, 'Sonnet'], leitura_web: ['Leitura do site pela busca', 'site', 4000, 'Sonnet'], leitura_prints: ['Leitura de prints do Instagram', 'site', 4000, 'Sonnet'], leitura_provas: ['Leitura de prints de prova social', 'site', 4000, 'Sonnet'],
   ajuste_site: ['Ajuste do site (pedido pontual)', 'site', 3000, 'Haiku'], ajuste_site_amplo: ['Ajuste do site (pedido amplo)', 'site', 5000, 'Sonnet'],
   leitura_respostas: ['Leitura da resposta do cliente', 'site', 6000, 'Haiku'], leitura_produtos: ['Produtos da resposta do cliente', 'site', 6000, 'Sonnet'],
   reparo: ['Correção de resposta da IA', 'criativos', 12000, 'Haiku'],

@@ -516,6 +516,31 @@ Se um campo não aparece nos prints, use null. Textos em português do Brasil. U
   return dados || {};
 }
 
+/**
+ * Prints de PROVA SOCIAL do cliente (avaliação do Google/marketplace, depoimento no WhatsApp, site de avaliações…).
+ * Devolve, por imagem, um resumo factual (nota, nº de avaliações, trecho do elogio) SEM dado pessoal de terceiros, e
+ * onde esses dados aparecem (áreas em fração da imagem) para o app cobrir com tarja antes de guardar o print.
+ * `imagens` = [{ media_type, data }] na ordem enviada. Tratamento/validação em lib/prova-social.js.
+ */
+export async function lerPrintsProvaSocial({ cliente, imagens }) {
+  const system = 'Você lê prints de avaliações e depoimentos de clientes de uma loja. Relata SÓ o que está visível e legível; nunca completa, melhora nem inventa elogio, nota ou número. Protege a privacidade de pessoas comuns que aparecem no print.';
+  const pedido = `Seguem ${imagens.length} print(s) enviados como prova social da loja "${cliente.nome}" (nicho: ${cliente.nicho || 'n/d'}), numerados na ordem (print 1 = o primeiro). Podem ser avaliações do Google ou de marketplace, conversa de WhatsApp com elogio, site de avaliações, comentário em rede social ou outro lugar.
+Para CADA print, devolva um item em "imagens":
+{"numero": n,
+ "legivel": true|false (dá para ler o conteúdo?),
+ "relevante": true|false (é mesmo uma avaliação/elogio/número sobre esta loja ou seus produtos?),
+ "origem": onde parece ser ("Google", "Mercado Livre", "WhatsApp", "Reclame Aqui", "Instagram", "outro"),
+ "nota": número da nota/estrelas visível (ex.: 4.8) ou null,
+ "quantidade": número de avaliações/clientes visível ou null,
+ "citacao": o trecho do elogio COPIADO como está (até 200 caracteres), sem nome, telefone, @ ou e-mail de ninguém; null se não houver,
+ "resumo": UMA linha factual para o perfil de marca (ex.: "Nota 4,8 no Google com 312 avaliações; cliente elogia a entrega rápida"). Sem nomes de pessoas comuns,
+ "dadosPessoais": lista do que identifica uma PESSOA COMUM (cliente/avaliador, não a loja) e está visível: [{"tipo": "nome"|"telefone"|"foto"|"email"|"usuario", "area": {"x","y","w","h"}}] — área em FRAÇÃO da largura/altura da imagem (0 a 1, x/y = canto superior esquerdo), com uma pequena folga; [] se não houver,
+ "motivo": se não for legível ou relevante, por quê}.
+Regras: o nome/logo da própria loja NÃO é dado pessoal. Se o print não tiver nada legível ou relevante, diga isso (legivel/relevante false + motivo) e deixe resumo e citacao null — nunca invente. Textos em português do Brasil. Use exatamente as chaves pedidas. ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'leitura_provas', cliente, system, messages: [{ role: 'user', content: pedido }], imagens });
+  return dados || {};
+}
+
 // ---------- site / loja ----------
 /**
  * Textos que já existem no OUTRO modo do site (lib/site-modos.js) e o cliente já viu: a IA recebe para manter o mesmo
