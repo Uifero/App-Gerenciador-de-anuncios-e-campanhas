@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   lerRespostaProvas, limparDadosPessoais, areaValida, acrescentarProvas, linhaProva, tipoMaterial, contarMateriais,
-  depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, resumoMaterialSite,
+  depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, resumoMaterialSite, montarDepoimentos, temProvaReal, provasEmTexto, MARCA_MODELO,
 } from './prova-social.js';
 
 describe('lerRespostaProvas', () => {
@@ -101,5 +101,44 @@ describe('resumoMaterialSite (painel)', () => {
     expect(provas.linhas[0]).toBe('2 em texto · 1 print(s) de avaliação');
     expect(provas.avisos).toEqual([]);
     expect(itens.find((i) => i.chave === 'rastreamento').avisos).toEqual([]);
+  });
+});
+
+describe('montarDepoimentos (site: prova real primeiro, modelo só sem nenhuma)', () => {
+  const modelosIa = [{ nome: 'Cliente', texto: 'Amei o produto' }, { nome: 'Cliente', texto: '[MODELO – substituir por depoimento real] Chegou rápido' }];
+  const print = { id: 'm1', origem: 'prova_social', url: 'https://x/p.jpg', descricao: 'Nota 4,9 no Google com 187 avaliações' };
+
+  it('sem nenhuma prova: usa os modelos da IA, todos marcados (a seção não fica vazia)', () => {
+    const r = montarDepoimentos({ cliente: { marca: {} }, modelosIa });
+    expect(r.usouModelos).toBe(true);
+    expect(r.depoimentos).toHaveLength(2);
+    expect(r.depoimentos.every((d) => d.texto.startsWith(MARCA_MODELO) && d.origem === 'modelo')).toBe(true);
+    expect(r.depoimentos[1].texto.match(/\[MODELO/g)).toHaveLength(1); // não marca duas vezes
+    expect(temProvaReal({ cliente: { marca: {} } })).toBe(false);
+  });
+
+  it('uma única prova em texto já basta: só ela, sem misturar modelo', () => {
+    const cliente = { marca: { provasSociais: 'Mais de 2 mil clientes atendidos' } };
+    const r = montarDepoimentos({ cliente, modelosIa, atuais: [{ nome: 'Cliente', texto: '[MODELO – substituir por depoimento real] velho' }] });
+    expect(r.usouModelos).toBe(false);
+    expect(r.depoimentos).toEqual([{ nome: 'Clientes da loja', texto: 'Mais de 2 mil clientes atendidos', origem: 'prova_texto' }]);
+    expect(temProvaReal({ cliente })).toBe(true);
+  });
+
+  it('respeita a escolha por print: no site, o texto dele não repete; "Não usar" some com o texto; sem decisão, o texto entra', () => {
+    const cliente = { marca: { provasSociais: 'Nota 4,9 no Google com 187 avaliações (do print enviado em 30/09/2026)\nElogio pelo WhatsApp: amei a vela' } };
+    const noSite = { nome: 'Avaliação no Google', texto: 'Velas maravilhosas', origem: 'prova_social', materialId: 'm1', exibir: 'print', midiaUrl: 'https://x/p.jpg' };
+    const a = montarDepoimentos({ cliente, materiais: [print], atuais: [noSite] });
+    expect(a.depoimentos.map((d) => d.texto)).toEqual(['Elogio pelo WhatsApp: amei a vela', 'Velas maravilhosas']);
+    const b = montarDepoimentos({ cliente, materiais: [print], provasOcultas: ['m1'] });
+    expect(b.depoimentos.map((d) => d.texto)).toEqual(['Elogio pelo WhatsApp: amei a vela']);
+    expect(provasEmTexto(cliente, [print]).map((d) => d.nome)).toEqual(['Avaliação no Google', 'Elogio pelo WhatsApp']);
+  });
+
+  it('só prints (sem texto) e criativos também contam como prova real; escrito à mão fica; sem duplicar', () => {
+    const atuais = [{ nome: 'Ana', texto: 'Serviu certinho' }, { nome: 'Ana', texto: 'Serviu certinho' }, { nome: 'Loja', texto: 'Hook', origem: 'criativo' }];
+    const r = montarDepoimentos({ cliente: { marca: {} }, atuais, modelosIa });
+    expect(r.usouModelos).toBe(false);
+    expect(r.depoimentos.map((d) => d.texto)).toEqual(['Serviu certinho', 'Hook']);
   });
 });

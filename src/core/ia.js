@@ -585,10 +585,11 @@ const linhaBase = (base) => (base && (base.heroTitulo || base.storytelling)
   ? `\nEste cliente JÁ TEM textos aprovados em outra versão da loja. Mantenha o mesmo discurso e use exatamente estes textos: título do banner "${base.heroTitulo || ''}", subtítulo "${base.heroSubtitulo || ''}", botão "${base.heroCta || ''}", história da marca: "${String(base.storytelling || '').slice(0, 1200)}".`
   : '');
 
-export async function gerarConteudoSite({ cliente, produtos, base = null }) {
+/** `semDepoimentos`: o cliente já tem prova social real — a IA não escreve depoimento-modelo (lib/prova-social.js montarDepoimentos). */
+export async function gerarConteudoSite({ cliente, produtos, base = null, semDepoimentos = false }) {
   const system = 'Você é copywriter de e-commerce.';
   const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.${linhaBase(base)}
-Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": [{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais),"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)})}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": ${semDepoimentos ? '[] (vazio: a loja já tem depoimentos reais, que o app coloca)' : '[{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais)'},"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)})}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
   return { ...textoPlano(d), faq: objecoesDe(cliente).length ? normalizarFaq(d?.faq) : [] };
 }

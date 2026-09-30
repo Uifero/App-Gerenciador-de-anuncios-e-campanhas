@@ -109,6 +109,49 @@ export const mesclarProvasNoSite = (atuais = [], novos = []) => [...atuais.filte
 /** Depoimentos que o formulário "Conteúdo da loja" NÃO edita (vêm de criativos ou de prints). */
 export const depoimentoGerido = (d) => d?.origem === 'criativo' || d?.origem === ORIGEM_PROVA;
 
+// ---------- depoimentos do site: prova real primeiro, modelo só sem nenhuma prova ----------
+export const MARCA_MODELO = '[MODELO – substituir por depoimento real]';
+/** Depoimento-modelo escrito pela IA (marcado agora com origem 'modelo'; os antigos, pelo texto "[MODELO…"). */
+export const ehModelo = (d) => d?.origem === 'modelo' || /^\s*\[\s*MODELO/i.test(String(d?.texto || ''));
+const semData = (l) => l.replace(/\s*\(do print enviado em [^)]*\)\s*$/i, '').trim();
+const chaveTexto = (t) => txt(t).toLowerCase().replace(/\s+/g, ' ');
+const FONTES_TEXTO = [[/google/i, 'Avaliação no Google'], [/whats/i, 'Elogio pelo WhatsApp'], [/mercado\s*livre/i, 'Avaliação no Mercado Livre'], [/reclame\s*aqui/i, 'Reclame Aqui'],
+  [/shopee/i, 'Avaliação na Shopee'], [/amazon/i, 'Avaliação na Amazon'], [/instagram/i, 'Comentário no Instagram']];
+const nomeDaLinha = (l) => (FONTES_TEXTO.find(([re]) => re.test(l)) || [, 'Clientes da loja'])[1];
+
+/**
+ * Provas em texto do perfil de marca que viram depoimento. Fica de fora a linha que veio de um print (mesmo texto do
+ * resumo dele) quando esse print já está no site (não repete) ou quando a pessoa escolheu "Não usar" para ele.
+ * Print ainda não decidido no cartão: a linha dele entra como texto (é prova real).
+ */
+export function provasEmTexto(cliente, materiais = [], excluirIds = new Set()) {
+  const excluidas = new Set(provasEmImagem(materiais).filter((m) => excluirIds.has(m.id)).map((m) => chaveTexto(m.descricao)).filter(Boolean));
+  return linhasDeProva(cliente?.marca?.provasSociais).map(semData).filter((l) => l && !excluidas.has(chaveTexto(l)))
+    .map((l) => ({ nome: nomeDaLinha(l), texto: l, origem: 'prova_texto' }));
+}
+
+/**
+ * Depoimentos ao gerar/regerar o site. Com QUALQUER prova real (provas em texto, prints escolhidos no cartão
+ * "Prints de prova social no site", criativos aprovados, depoimentos escritos à mão), a seção usa só o que é real —
+ * mesmo que seja um só —, sem misturar modelo inventado. Sem nenhuma prova, cai nos modelos da IA, sempre marcados
+ * com MARCA_MODELO para ninguém publicar achando que é real. Devolve { depoimentos, usouModelos }.
+ */
+export function montarDepoimentos({ cliente, materiais = [], atuais = [], modelosIa = [], provasOcultas = [] }) {
+  const geridos = atuais.filter(depoimentoGerido); // criativos + prints (cada print conforme a escolha dele)
+  const excluirIds = new Set([...provasOcultas, ...geridos.filter((d) => d.origem === ORIGEM_PROVA).map((d) => d.materialId)]);
+  const escritos = atuais.filter((d) => !depoimentoGerido(d) && !ehModelo(d) && d.origem !== 'prova_texto' && txt(d.texto)); // digitados à mão
+  const vistos = new Set();
+  const unico = (d) => { const k = chaveTexto(d.texto) + '|' + (d.midiaUrl || ''); if (vistos.has(k)) return false; vistos.add(k); return true; };
+  const reais = [...escritos, ...provasEmTexto(cliente, materiais, excluirIds), ...geridos].filter(unico);
+  if (reais.length) return { depoimentos: reais, usouModelos: false };
+  return {
+    depoimentos: modelosIa.filter((d) => txt(d?.texto)).map((d) => ({ nome: txt(d.nome) || 'Cliente', texto: ehModelo(d) ? txt(d.texto) : `${MARCA_MODELO} ${txt(d.texto)}`, origem: 'modelo' })),
+    usouModelos: true,
+  };
+}
+/** Tem alguma prova real para os depoimentos? (a IA nem escreve modelo quando tem) */
+export const temProvaReal = (args) => !montarDepoimentos({ ...args, modelosIa: [] }).usouModelos;
+
 // ---------- painel "Material para montar o site" ----------
 /**
  * Resumo do que já existe para montar o site. Só lê (cliente, produtos, materiais, site); nunca guarda cópia.

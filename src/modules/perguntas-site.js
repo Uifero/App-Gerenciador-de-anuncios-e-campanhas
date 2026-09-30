@@ -109,7 +109,7 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
     <div class="mt-3" data-respostas-cliente></div>
     ${BLOCOS_Q.map(([b, titulo]) => `<h4 class="mt-4 text-sm font-semibold uppercase tracking-wide text-slate-500">${titulo}</h4><ol class="mt-2 space-y-2">
       ${PERGUNTAS.filter((p) => p.bloco === b).map((p) => (p.id === 'presenca' ? perguntaZeroHtml(cliente, p.n) : pergunta(p.id, CORPO[p.id]()))).join('')}</ol>`).join('')}
-    ${ctx.gerar ? `<div class="mt-3 rounded-lg bg-slate-50 p-3"><p class="caption mb-2"><b>Gerar site com essas respostas:</b> usa a IA para escrever os textos no modo escolhido na pergunta 18 — no site personalizado: banner, história, depoimentos-modelo, políticas e a FAQ a partir das objeções; no pacote: banners, briefing do tema e textos das páginas. Depois é só revisar e baixar abaixo. Prefere sem IA? Preencha "Conteúdo da loja" à mão.</p>
+    ${ctx.gerar ? `<div class="mt-3 rounded-lg bg-slate-50 p-3"><p class="caption mb-2"><b>Gerar site com essas respostas:</b> usa a IA para escrever os textos no modo escolhido na pergunta 18 — no site personalizado: banner, história, depoimentos (os reais das provas sociais; modelos marcados só se não houver nenhuma), políticas e a FAQ a partir das objeções; no pacote: banners, briefing do tema e textos das páginas. Depois é só revisar e baixar abaixo. Prefere sem IA? Preencha "Conteúdo da loja" à mão.</p>
       <button type="button" class="btn-ia" data-gerar-respostas><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar site com essas respostas</button></div>` : ''}
   </details>`;
 

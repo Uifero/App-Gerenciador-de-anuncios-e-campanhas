@@ -12,7 +12,7 @@ import { criarZip } from '../lib/zip.js';
 import { estadoDoSite, registrarVersao, versoesDoModo } from '../lib/site-blocos.js';
 import { montarAjusteSite } from './ajuste-site.js';
 import { montarPainelMaterial } from './material-site.js';
-import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA } from '../lib/prova-social.js';
+import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal } from '../lib/prova-social.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas } from '../core/ui.js';
 
@@ -67,12 +67,15 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const reaproveitou = base ? { avisoModosVisto: false, baseReaproveitadaEm: new Date().toISOString() } : {};
     if (site.modo === 'custom') {
       const atual = site.conteudo || {};
-      const r = await gerarConteudoSite({ cliente, produtos, base });
-      // Depoimentos puxados de criativos aprovados e de prints de prova social não se perdem ao gerar de novo.
-      const gerado = { ...atual, ...r, depoimentos: [...(r.depoimentos || []), ...(atual.depoimentos || []).filter(depoimentoGerido)] };
+      // Depoimentos: com prova social real (texto, prints, criativos, escritos à mão), só o real — a IA nem escreve
+      // modelo. Sem nenhuma prova, os modelos da IA, sempre marcados "[MODELO – substituir…]" (lib/prova-social.js).
+      const argsProva = { cliente, materiais, atuais: atual.depoimentos || [], provasOcultas: atual.provasOcultas || [] };
+      const r = await gerarConteudoSite({ cliente, produtos, base, semDepoimentos: temProvaReal(argsProva) });
+      const { depoimentos, usouModelos } = montarDepoimentos({ ...argsProva, modelosIa: r.depoimentos || [] });
+      const gerado = { ...atual, ...r, depoimentos };
       await salvarEVersionar({ ...(base ? aplicarBaseNoCustom(gerado, site.config || {}, base) : { conteudo: gerado }), ...reaproveitou }, 'Textos gerados de novo pela IA');
       toast(base ? 'Site gerado reaproveitando o texto, as cores e a FAQ do pacote que o cliente já viu. A IA só completou o que faltava.'
-        : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. Revise e use "Ver prévia" ou "Baixar pasta do site".`);
+        : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. ${usouModelos ? 'Sem prova social cadastrada: os depoimentos são MODELOS marcados para substituir.' : `Depoimentos: só as ${depoimentos.length} prova(s) social(is) reais do cliente.`} Revise e use "Ver prévia" ou "Baixar pasta do site".`);
     } else {
       const gerado = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base });
       await salvarEVersionar({ pacote: base ? aplicarBaseNoPacote(gerado, base) : gerado, ...reaproveitou }, 'Pacote gerado de novo pela IA');
@@ -158,7 +161,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
     <div class="grid gap-4 lg:grid-cols-2">
       <form id="fc" class="card space-y-3"><h3 class="font-semibold">1. Conteúdo da loja</h3>
-        <p class="caption">Preencha à mão e clique em "Salvar conteúdo", ou use "Gerar textos com IA": ela escreve banner, história da marca, depoimentos-modelo, políticas${custom ? ' e a FAQ (a partir das objeções do perfil)' : ''}, e <b>substitui</b> o que estiver nos campos. ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : 'No pacote, estes textos são a base dos banners e da página Sobre.'}</p>
+        <p class="caption">Preencha à mão e clique em "Salvar conteúdo", ou use "Gerar textos com IA": ela escreve banner, história da marca, políticas${custom ? ' e a FAQ (a partir das objeções do perfil)' : ''}, e <b>substitui</b> o que estiver nos campos. Depoimentos: se o cliente tem prova social cadastrada (texto ou prints), entram só os reais; sem nenhuma, a IA escreve modelos marcados "[MODELO – substituir]". ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : 'No pacote, estes textos são a base dos banners e da página Sobre.'}</p>
         ${custom && !temCustom(site) && temPacote(site) ? `<div class="rounded-lg border border-sky-200 bg-sky-50 p-2 text-sm">Este cliente já tem o pacote Nuvemshop/Shopify pronto. Para o site sair igual ao que ele já viu, traga os textos e as cores de lá (sem IA), ou use "Gerar textos com IA", que também mantém esses textos e só completa o resto.
           <button type="button" class="btn-ghost btn-sm mt-1" data-trazer-pacote><i class="fa-solid fa-file-import"></i> Trazer texto e cores do pacote (sem IA)</button></div>` : ''}
         <div><label class="label">Título do banner (hero)</label><input class="input" name="heroTitulo" value="${esc(c.heroTitulo)}"></div>
@@ -170,7 +173,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
             <div><label class="label">Cor de fundo</label><input type="color" class="h-10 w-full rounded" name="corFundo" value="${esc(cfg.corFundo || '#ffffff')}"></div></div>
             <div><label class="label">WhatsApp (com DDD)</label><input class="input" name="whatsapp" value="${esc(cfg.whatsapp)}" placeholder="5511999999999"></div>` : ''}
           <div><label class="label">Depoimentos escritos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => !depoimentoGerido(d)).map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
-            <p class="hint">Use depoimentos reais. Os gerados por IA são apenas modelos. Os depoimentos puxados de criativos e de prints de prova social (abaixo) não aparecem aqui — são geridos à parte.</p></div>
+            <p class="hint">Use depoimentos reais. Os que começam com "[MODELO" foram escritos pela IA só porque o cliente ainda não tinha prova social: troque por reais. Os depoimentos puxados de criativos e de prints de prova social (abaixo) não aparecem aqui — são geridos à parte.</p></div>
           ${custom ? `<div><label class="label">Perguntas frequentes (uma por linha: pergunta | resposta)</label><textarea class="input" rows="4" name="faq" placeholder="E se não servir? | A troca é grátis em até 30 dias.">${esc(faqParaTexto(c.faq || []))}</textarea>
             <p class="hint">Vira a seção "Perguntas frequentes" do site. Pergunta sem resposta não aparece. ${objecoesDe(cliente).length ? `Base: as ${objecoesDe(cliente).length} objeção(ões) do perfil de marca.` : 'Sem objeções no perfil de marca: com o campo vazio, a seção não aparece no site.'}</p>
             ${objecoesDe(cliente).length ? `<div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ia btn-sm" data-faq-ia title="Só a FAQ: não mexe no resto do conteúdo"><i class="fa-solid fa-wand-magic-sparkles"></i> Escrever FAQ com IA a partir das objeções</button>
@@ -226,7 +229,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   on(root, 'click', '[data-salvar-provas-site]', (b) => ocupado(b, async () => {
     const novos = provas.map((m) => depoimentoDeProva(m, $(`[data-exibir-prova="${m.id}"]`, root)?.value || ''));
     const depoimentos = mesclarProvasNoSite(c.depoimentos, novos);
-    await salvarEVersionar({ conteudo: { ...c, depoimentos } }, 'Depoimentos a partir de prints de prova social');
+    const provasOcultas = provas.filter((m, i) => !novos[i]).map((m) => m.id); // "Não usar": nem o print, nem o texto dele
+    await salvarEVersionar({ conteudo: { ...c, depoimentos, provasOcultas } }, 'Depoimentos a partir de prints de prova social');
     toast(`Depoimentos atualizados: ${novos.filter(Boolean).length} print(s) no site. Confira em "Ver prévia".`); recarregar();
   }));
 
