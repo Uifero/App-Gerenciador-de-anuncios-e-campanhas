@@ -15,6 +15,7 @@ import * as campanhas from './modules/campanhas.js';
 import * as resultados from './modules/resultados.js';
 import * as produtos from './modules/produtos.js';
 import * as sites from './modules/sites.js';
+import * as aprovacoesSite from './modules/aprovacoes-site.js';
 import * as relatorios from './modules/relatorios.js';
 import * as playbooks from './modules/playbooks.js';
 import * as modelosPrompt from './modules/modelos-prompt.js';
@@ -29,7 +30,7 @@ ativarCamposArquivo();
 // Registro das abas do cliente (id do escopo -> renderizador).
 const ABAS = {
   criativos: criativos.view, hooks: hooks.view, referencias: referencias.view, campanhas: campanhas.view,
-  resultados: resultados.view, produtos: produtos.view, site: sites.view, relatorio: relatorios.view,
+  resultados: resultados.view, produtos: produtos.view, site: sites.view, aprovacoes: aprovacoesSite.view, relatorio: relatorios.view,
 };
 
 const app = document.getElementById('app');

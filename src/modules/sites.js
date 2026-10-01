@@ -9,6 +9,7 @@ import { criarPdf } from '../lib/pdf.js';
 import { rastreamentoDe, passosRastreamentoPacote, passosExtrasPacote, indicadorPixel } from '../lib/rastreamento.js';
 import { temCustom, temPacote, baseDoCustom, baseDoPacote, aplicarBaseNoPacote, aplicarBaseNoCustom, divergencias, baseParaGerar, AVISO_MODOS } from '../lib/site-modos.js';
 import { criarZip } from '../lib/zip.js';
+import { etiquetaSite } from '../lib/aprovacao-site.js';
 import { estadoDoSite, registrarVersao, versoesDoModo } from '../lib/site-blocos.js';
 import { montarAjusteSite } from './ajuste-site.js';
 import { montarPainelMaterial } from './material-site.js';
@@ -38,10 +39,11 @@ export const textoParaFaq = (txt) => listaDeLinhas(txt).map((l) => { const [p, .
 export const perguntasDasObjecoes = (cliente) => objecoesDe(cliente).map((o) => `${/[?？]$/.test(o) ? o : o.charAt(0).toUpperCase() + o.slice(1) + '?'} | `).join('\n');
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [produtos, sites, criativos, materiais] = await Promise.all([
+  const [produtos, sites, criativos, materiais, aprovacoes, respostasAprov] = await Promise.all([
     db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
-    db.listar(COL.materiais, { clienteId: cliente.id }),
+    db.listar(COL.materiais, { clienteId: cliente.id }), db.listar(COL.aprovacoes, { clienteId: cliente.id }).catch(() => []), db.listar(COL.respostas, { clienteId: cliente.id }).catch(() => []),
   ]);
+  const etiquetaAprov = etiquetaSite(aprovacoes, respostasAprov); // "Aprovado v3", "Ajuste pedido v3"... (leva à aba Aprovações do site)
   let site = sites[0] || null;
   // Criativos aprovados marcados "usar como prova social" (toggle na aba Criativos) — candidatos a depoimento do site.
   const marcados = criativos.filter((c) => c.provaSocial && ['aprovado', 'em_uso', 'pausado'].includes(c.status));
@@ -152,6 +154,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     ${semProdutos ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">Você ainda não cadastrou produtos. <a class="font-semibold underline" href="#/c/${cliente.id}/produtos">Cadastrar agora</a> — o site e o CSV usam essa lista.</div>` : ''}
     <div class="mb-4 flex flex-wrap gap-1">${tag(STATUS_SITE.find(([k]) => k === site.status)?.[1] || site.status, site.status === 'rascunho' ? '' : 'tag-ok')}${tag(produtos.length + ' produto(s)')}
       ${site.plataforma ? tag(nomePlat(site.plataforma), 'tag-info') : ''}${site.versaoManual ? tag('manual v' + site.versaoManual) : ''}${site.exportadoEm ? tag('exportado em ' + dataBR(site.exportadoEm)) : ''}
+      <a class="tag ${etiquetaAprov ? { aprovado: 'tag-ok', ajuste: 'tag-bad', aguardando: 'tag-info' }[etiquetaAprov.tipo] || 'tag-warn' : ''}" href="#/c/${cliente.id}/aprovacoes" data-etiqueta-aprovacao title="Ver os links de aprovação do site"><i class="fa-solid fa-circle-check mr-1"></i>${esc(etiquetaAprov ? etiquetaAprov.texto : 'Pedir aprovação do cliente')}</a>
       ${cliente.siteReferencia ? `<a class="tag tag-info" href="${esc(cliente.siteReferencia)}" target="_blank" rel="noopener">site de referência</a>` : ''}</div>
     <div class="-mt-2 mb-4">${indicadorPixel(cliente)} ${tag(rastro.hotjarId ? 'Hotjar configurado' : 'Hotjar: não usado', rastro.hotjarId ? 'tag-ok' : '')} ${tag(rastro.tawkPropertyId ? 'Chat Tawk.to configurado' : 'Chat ao vivo: não usado', rastro.tawkPropertyId ? 'tag-ok' : '')}
       <p class="hint mt-1">${custom ? 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) entram sozinhos no site gerado e só carregam depois que o visitante aceita os cookies.' : 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) vão para o manual, com o passo a passo para colar na loja.'}</p></div>
@@ -381,7 +384,7 @@ function pacoteHTML(p) {
     <p class="mt-1 flex gap-1">${(t.paletaSugerida || []).map((h) => `<span class="inline-block h-6 w-6 rounded border" style="background:${esc(h)}" title="${esc(h)}"></span>`).join('')}</p>
     <p class="text-sm">Seções da home: ${esc((t.secoesHome || []).join(' → '))}</p><p class="text-sm">${esc(t.observacoes)}</p></div></div>`;
 }
-function pacoteTexto(p) {
+export function pacoteTexto(p) {
   const t = p.briefingTema || {};
   return ['BANNERS', ...(p.banners || []).map((b) => `- ${b.titulo} | ${b.subtitulo} | CTA: ${b.cta} | ${b.uso}`), '', 'BRIEFING DO TEMA',
     `Estilo: ${t.estilo}`, `Tipografia: ${t.tipografia}`, `Paleta: ${(t.paletaSugerida || []).join(', ')}`, `Seções: ${(t.secoesHome || []).join(' > ')}`, `Obs.: ${t.observacoes}`, '',

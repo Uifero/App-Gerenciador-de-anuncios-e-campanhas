@@ -19,7 +19,8 @@ service cloud.firestore {
     }
 
     // 2) A resposta do cliente final: pode ler a própria resposta (por id) e gravar/alterar SÓ os campos abaixo,
-    //    com valores válidos, para um link existente, não expirado, e uma peça que pertence a esse link.
+    //    com valores válidos, para um link existente, não expirado, NÃO substituído por um link mais novo (aprovação do
+    //    site: o cliente nunca aprova uma versão desatualizada) e uma peça que pertence a esse link (o site usa 'site').
     match /gcc_aprovacao_respostas/{rid} {
       allow get: if true;
       allow create, update: if request.resource.data.keys().hasOnly(['token', 'clienteId', 'criativoId', 'status', 'comentario', 'em'])
@@ -31,6 +32,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token))
         && get(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token)).data.expiraMs > request.time.toMillis()
         && get(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token)).data.clienteId == request.resource.data.clienteId
+        && !get(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token)).data.keys().hasAny(['substituidoEm'])
         && request.resource.data.criativoId in get(/databases/$(database)/documents/gcc_aprovacoes/$(request.resource.data.token)).data.itensIds;
     }
   }

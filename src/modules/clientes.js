@@ -55,7 +55,9 @@ async function buscaInicial(c) {
 const etiquetaAuto = (c, campo) => (c?.autoPreenchido?.[campo] ? `<span class="tag tag-warn font-normal">${esc(textoMarca(c.autoPreenchido[campo]))}</span>
   <label class="ml-1 inline-flex items-center gap-1 text-xs font-normal text-slate-600"><input type="checkbox" name="confirmar_${campo}"> Está certo</label>` : '');
 
-export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]);
+// "Aprovações do site" não é um módulo do escopo: aparece logo depois de Site/Loja sempre que o cliente tem site.
+const ABA_APROVACOES = { id: 'aprovacoes', nome: 'Aprovações do site', icone: 'circle-check', legenda: 'Links de aprovação do site para o cliente.' };
+export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]).flatMap((m) => (m.id === 'site' ? [m, ABA_APROVACOES] : [m]));
 
 const camposRastreamento = (v) => ({ metaPixelId: v.metaPixelId, googleAdsId: v.googleAdsId, hotjarId: v.hotjarId, tawkPropertyId: v.tawkPropertyId, tawkWidgetId: v.tawkWidgetId });
 

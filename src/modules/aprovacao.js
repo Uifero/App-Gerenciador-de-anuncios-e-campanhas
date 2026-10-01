@@ -149,7 +149,7 @@ export function abrirEnvio(cliente, criativos, { preSelecionar = [], aoMudar } =
   const alvo = $('#env', m.el);
 
   async function desenhar(novo = null) {
-    const links = (await db.listar(COL.aprovacoes, { clienteId: cliente.id })).filter((l) => l.expiraMs > Date.now());
+    const links = (await db.listar(COL.aprovacoes, { clienteId: cliente.id })).filter((l) => l.expiraMs > Date.now() && l.tipo !== 'site'); // os do site ficam na aba "Aprovações do site"
     const respostas = links.length ? await db.listar(COL.respostas, { clienteId: cliente.id }) : [];
     alvo.innerHTML = `
       ${novo ? `<div class="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800"><b>Link criado.</b> Envie ao cliente; ele abre sem login e só vê as peças selecionadas.
@@ -228,6 +228,7 @@ export async function viewPublica(host, token) {
     app.innerHTML = '<div class="mx-auto max-w-2xl p-6"><div class="card text-center"><div class="mb-2 text-3xl text-slate-300"><i class="fa-solid fa-link-slash"></i></div><p class="font-semibold">Este link de aprovação não funciona mais.</p><p class="caption mt-1">Por segurança, cada link vale só por alguns dias (ou quem enviou pode ter cancelado, por exemplo porque a peça mudou). Se você já tinha respondido, sua resposta foi guardada.</p><p class="caption mt-1"><b>O que fazer:</b> peça um link novo para quem te enviou este.</p></div></div>';
     return;
   }
+  if (doc.tipo === 'site') { const { viewPublicaSite } = await import('./aprovacoes-site.js'); return viewPublicaSite(app, token, doc); }
   const estado = {}; // criativoId -> resposta
   await Promise.all(doc.itens.map(async (i) => { try { estado[i.id] = await db.obter(COL.respostas, `${token}_${i.id}`); } catch { estado[i.id] = null; } }));
 

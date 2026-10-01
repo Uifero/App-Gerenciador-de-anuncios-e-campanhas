@@ -9,9 +9,9 @@ import { registrarBackup } from './configuracoes.js';
 export async function montarBackup(cliente = null) {
   const f = cliente ? { clienteId: cliente.id } : undefined;
   const ler = (col) => db.listar(col, f);
-  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, usoApi, respostas, materiais] = await Promise.all([
+  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, usoApi, respostas, materiais, aprovacoes] = await Promise.all([
     ler(COL.criativos), ler(COL.hooks), ler(COL.referencias), ler(COL.campanhas), ler(COL.resultados), ler(COL.produtos), ler(COL.sites), ler(COL.usoApi), ler(COL.respostas),
-    ler(COL.materiais),
+    ler(COL.materiais), ler(COL.aprovacoes),
   ]);
   const colecoes = {
     [COL.clientes]: cliente ? [cliente] : await db.listar(COL.clientes),
@@ -20,6 +20,9 @@ export async function montarBackup(cliente = null) {
     [COL.resultados]: resultados, [COL.produtos]: produtos, [COL.sites]: sites, [COL.usoApi]: usoApi,
     // Materiais (fotos salvas, prints de prova social e o logo): o registro com o link do arquivo no Storage.
     [COL.materiais]: materiais,
+    // Links de aprovação (site e criativos): datas, versão, status e a resposta copiada no link. O id é o token (segredo de
+    // acesso), então fica de fora, como nas respostas — por isso estes registros são só para consulta, não se restauram.
+    [COL.aprovacoes]: aprovacoes.map(({ id, substituidoPor, ...resto }) => resto),
     // O token do link também está na resposta e no id dela ("<token>_<criativo>"): ambos ficam de fora do arquivo.
     [COL.respostas]: respostas.map(({ token, id, ...resto }) => resto),
   };
@@ -71,7 +74,7 @@ export async function lerArquivoBackup(file) {
 /** [coleção, quantos documentos seriam gravados] — para mostrar antes de confirmar. Respostas de aprovação não
  * entram: o backup não guarda o token/id delas (por segurança), então não dá para restaurá-las corretamente. */
 export function resumoRestauracao(dados) {
-  return Object.entries(dados.colecoes).filter(([col]) => col !== COL.respostas).map(([col, itens]) => [col, (itens || []).length]).filter(([, n]) => n > 0);
+  return Object.entries(dados.colecoes).filter(([col]) => col !== COL.respostas && col !== COL.aprovacoes).map(([col, itens]) => [col, (itens || []).length]).filter(([, n]) => n > 0);
 }
 
 /**
