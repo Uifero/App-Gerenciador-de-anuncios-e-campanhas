@@ -11,6 +11,8 @@ import {
 } from '../lib/aprovacao-site.js';
 import { novoToken, linkDe, linkSoLocal } from './aprovacao.js';
 import { pacoteTexto } from './sites.js';
+import { dadosDoPacote, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
+import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
 import { esc, $, on, montar, cabecalho, tag, toast, copiar, ocupado, confirmar, vazio } from '../core/ui.js';
 
 const COR = { aprovado: 'tag-ok', ajuste: 'tag-bad', aguardando: 'tag-info', substituido: '', expirado: 'tag-warn', desativado: '' };
@@ -28,18 +30,33 @@ const versaoDoLink = (site, anteriores, conteudo) => {
   return Math.max(versaoAtual(site, site.modo), (ult?.versao || 0) + (mudou ? 1 : 0));
 };
 
+/**
+ * O que o link mostra do site como está agora: { html } no personalizado; { texto, previa } no pacote (previa = loja
+ * aproximada, lib/pacote-loja.js; o texto continua sendo a base de comparação da versão, como antes).
+ */
+export function conteudoDoLink(cliente, site, produtos) {
+  const custom = site?.modo === 'custom';
+  if (custom) return { html: gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '' }), texto: '', previa: '' };
+  return { html: '', texto: pacoteTexto(site.pacote || {}), previa: gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos })) };
+}
+
+/** Versão do site agora (a mesma que o próximo link de aprovação vai mostrar). `links` = links do cliente. */
+export function versaoDoSite(cliente, site, produtos, links = []) {
+  const { html, texto } = conteudoDoLink(cliente, site, produtos);
+  return versaoDoLink(site, ordenarLinks(links), html || texto);
+}
+
 /** Cria o link a partir do site COMO ESTÁ AGORA e marca os anteriores ativos como substituídos. */
 export async function gerarLinkSite(cliente, site, produtos) {
   const custom = site?.modo === 'custom';
   if (!site?.modo || (custom ? !site.conteudo : !site.pacote)) throw new Error(custom ? 'Monte o site primeiro (aba Site/Loja: conteúdo da loja).' : 'Gere o pacote primeiro (aba Site/Loja).');
-  const html = custom ? gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '' }) : '';
-  const texto = custom ? '' : pacoteTexto(site.pacote);
-  if ((html || texto).length > LIMITE_SNAPSHOT) throw new Error('O site ficou grande demais para o link (fotos coladas dentro do texto?). Use fotos enviadas pela aba Produtos.');
+  const { html, texto, previa } = conteudoDoLink(cliente, site, produtos);
+  if ((html || texto).length + previa.length > LIMITE_SNAPSHOT) throw new Error('O site ficou grande demais para o link (fotos coladas dentro do texto?). Use fotos enviadas pela aba Produtos.');
   const anteriores = ordenarLinks(await db.listar(COL.aprovacoes, { clienteId: cliente.id }));
   const token = novoToken();
   const novo = await db.criar(COL.aprovacoes, {
     tipo: 'site', clienteId: cliente.id, clienteNome: cliente.nome, itensIds: ['site'], expiraMs: novaValidade(),
-    modo: custom ? 'custom' : 'pacote', plataforma: custom ? null : site.plataforma || null, versao: versaoDoLink(site, anteriores, html || texto), html, texto,
+    modo: custom ? 'custom' : 'pacote', plataforma: custom ? null : site.plataforma || null, versao: versaoDoLink(site, anteriores, html || texto), html, texto, ...(previa ? { previa } : {}),
   }, token);
   const criadoEm = novo?.criadoEm || new Date().toISOString();
   for (const l of aSubstituir(anteriores, token)) await db.atualizar(COL.aprovacoes, l.id, { substituidoEm: criadoEm, substituidoPorEm: criadoEm, substituidoPor: token });
@@ -108,8 +125,10 @@ export async function viewPublicaSite(app, token, doc) {
   let editando = false;
   const ativo = linkAtivo(doc);
 
+  // Personalizado: o site de verdade. Pacote com prévia (links novos): a loja aproximada. Pacote antigo: só os textos.
   const corpo = doc.modo === 'custom'
     ? `<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[75vh] w-full rounded-lg border border-slate-200 bg-white" data-site-previa></iframe>`
+    : doc.previa ? `<div data-site-previa>${previaLojaHtml()}</div>`
     : `<pre class="max-h-[75vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-3 text-sm" data-site-previa>${esc(doc.texto || '')}</pre>`;
 
   const blocoResposta = () => {
@@ -135,12 +154,13 @@ export async function viewPublicaSite(app, token, doc) {
   app.innerHTML = `<div class="mx-auto max-w-5xl p-4 sm:p-6">
     <header class="mb-4"><p class="caption">${esc(doc.clienteNome)}</p><h1 class="text-2xl font-bold">Prévia do seu site</h1>
       <p class="mt-1 inline-block rounded bg-indigo-50 px-2 py-1 text-sm font-semibold text-indigo-800" data-versao-publica>Versão de ${esc(dataHoraBR(doc.criadoEm))}</p>
-      <p class="caption mt-1">Navegue pela prévia abaixo e, no fim da página, clique em <b>Aprovar</b> ou <b>Pedir ajuste</b>.${doc.modo === 'custom' ? '' : ' Este é o conteúdo (textos e banners) que vai para a sua loja na plataforma.'}</p></header>
+      <p class="caption mt-1">Navegue pela prévia abaixo e, no fim da página, clique em <b>Aprovar</b> ou <b>Pedir ajuste</b>.${doc.modo === 'custom' ? '' : doc.previa ? ' Clique num produto para ver a página dele.' : ' Este é o conteúdo (textos e banners) que vai para a sua loja na plataforma.'}</p></header>
     ${ativo ? '' : '<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-aviso-topo><b>Existe uma versão mais nova deste site. Peça o link atualizado.</b></div>'}
     ${corpo}
     <section class="card mt-4" data-bloco-resposta>${blocoResposta()}</section>
     <p class="hint mt-3 text-center">Este link é pessoal. Ele permite apenas ver esta prévia e responder sobre ela.</p></div>`;
   const ifr = $('iframe[data-site-previa]', app); if (ifr) ifr.srcdoc = doc.html || '';
+  if (doc.modo !== 'custom' && doc.previa) ligarPreviaLoja(app, doc.previa);
 
   const redesenhar = () => { $('[data-bloco-resposta]', app).innerHTML = blocoResposta(); };
   on(app, 'click', '[data-alterar]', () => { editando = true; redesenhar(); });

@@ -1,0 +1,140 @@
+// Pacote Nuvemshop/Shopify: (1) o que colocar em cada lugar da plataforma, com o caminho de menu do manual de entrega,
+// e (2) uma PRÉVIA com cara de loja (tema neutro) para o operador e para o link de aprovação.
+// A prévia é só HTML + CSS, SEM NENHUM script (o <base href="about:srcdoc"> mantém as âncoras dentro do iframe; sem ele,
+// "#produto-1" iria para o endereço do painel): não tem carrinho nem checkout funcionando, não carrega Pixel, Google Ads,
+// Hotjar, Tawk.to nem qualquer rastreador, e é noindex/nofollow. A navegação (home <-> página do produto) é por âncora.
+import { comTextosDoPacote } from './csv.js';
+
+const txt = (v) => String(v ?? '').trim();
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const HEX = /^#[0-9a-f]{6}$/i;
+const moeda = (n) => (Number(n) > 0 ? `R$ ${Number(n).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}` : '');
+
+export const LEGENDA_PREVIA_PACOTE = 'Prévia aproximada. O visual final depende do tema escolhido na Nuvemshop/Shopify; textos, fotos, preços e ordem das seções são os que vão para a loja.';
+export const TEXTO_COMPRA_DESATIVADA = 'Prévia, compra desativada';
+
+/** Junta o que vai para a loja: textos do pacote, conteúdo/políticas do formulário, produtos reais (com SEO do pacote), logo e cores. */
+export function dadosDoPacote({ cliente = {}, site = {}, produtos = [] }) {
+  const p = site.pacote || {}, c = site.conteudo || {};
+  const paleta = (p.briefingTema?.paletaSugerida || []).filter((h) => HEX.test(h || ''));
+  const cor = paleta[0] || (HEX.test(site.config?.corPrimaria || '') ? site.config.corPrimaria : '#111827');
+  const banners = (p.banners || []).filter((b) => txt(b?.titulo));
+  return {
+    plataforma: site.plataforma === 'shopify' ? 'shopify' : 'nuvemshop',
+    nomeLoja: txt(cliente.nome) || 'Loja',
+    logoUrl: cliente.logoArquivo?.url || '',
+    cor, paleta,
+    tipografia: txt(p.briefingTema?.tipografia),
+    banner: banners[0] || { titulo: txt(c.heroTitulo), subtitulo: txt(c.heroSubtitulo), cta: txt(c.heroCta) },
+    banners,
+    secoesHome: (p.briefingTema?.secoesHome || []).map(txt).filter(Boolean),
+    sobre: txt(p.textosPagina?.sobre) || txt(c.storytelling),
+    faq: (p.textosPagina?.faq || []).filter((f) => txt(f?.p) && txt(f?.r)),
+    politicas: { trocas: txt(c.politicas?.trocas), envio: txt(c.politicas?.envio), privacidade: txt(c.politicas?.privacidade) },
+    depoimentos: (p.depoimentos?.length ? p.depoimentos : c.depoimentos || []).filter((d) => txt(d?.texto)),
+    produtos: comTextosDoPacote(produtos, p).filter((x) => txt(x?.nome)).map((x) => ({
+      nome: txt(x.nome), descricao: txt(x.descricao), preco: Number(x.preco) || null, precoPromocional: Number(x.precoPromocional) || null,
+      variacoes: (x.variacoes || []).filter((v) => v?.nome && v.valores?.length), fotos: (x.fotos || []).map((f) => f?.url).filter(Boolean),
+      seoTitulo: txt(x.seoTitulo), seoDescricao: txt(x.seoDescricao), categoria: txt(x.categoria),
+    })),
+  };
+}
+
+// Caminhos de menu: as mesmas instruções do manual de entrega (sites.js, manualPacote).
+const CAMINHOS = {
+  shopify: {
+    loja: 'Na criação da conta da Shopify (nome da loja); depois, nas configurações da loja',
+    logo: 'Loja virtual > Temas > Personalizar (cabeçalho do tema)',
+    banner: 'Loja virtual > Temas: bloco de imagem/slideshow da home',
+    cores: 'Loja virtual > Temas: aplique a paleta e a tipografia do briefing',
+    produtos: 'Produtos > Importar (o CSV já leva estes textos); para conferir, abra o produto em Produtos',
+    paginas: 'Crie as páginas Sobre e FAQ com os textos abaixo (manual, passo 3)',
+    politicas: 'Configurações > Políticas',
+  },
+  nuvemshop: {
+    loja: 'Na criação da conta da Nuvemshop (nome da loja); depois, nas configurações da loja',
+    logo: 'Design > Personalizar (logo no cabeçalho do tema)',
+    banner: 'Design > Personalizar: carrossel/banner principal',
+    cores: 'Design > Personalizar: aplique a paleta e a tipografia do briefing',
+    produtos: 'Produtos > Importar/Exportar (o CSV já leva estes textos); para conferir, abra o produto em Produtos',
+    paginas: 'Crie as páginas Sobre e FAQ com os textos abaixo (manual, passo 3)',
+    politicas: 'Cadastre as políticas de trocas, envio e privacidade (manual, passo 3)',
+  },
+};
+
+const variacoesTexto = (vs = []) => vs.map((v) => `${v.nome}: ${v.valores.join(', ')}`).join(' · ');
+
+/**
+ * "O que colocar na plataforma": [{ id, titulo, caminho, itens: [{ rotulo, valor, tipo? }] }]. Item vazio fica de fora;
+ * grupo sem nenhum item também (nada de campo em branco para copiar).
+ */
+export function gruposPlataforma(d) {
+  const cam = CAMINHOS[d.plataforma] || CAMINHOS.nuvemshop;
+  const item = (rotulo, valor, tipo) => (txt(valor) ? { rotulo, valor: txt(valor), ...(tipo ? { tipo } : {}) } : null);
+  const g = (id, titulo, caminho, itens) => ({ id, titulo, caminho, itens: itens.filter(Boolean) });
+  const grupos = [
+    g('loja', 'Nome da loja', cam.loja, [item('Nome da loja', d.nomeLoja)]),
+    g('logo', 'Logo', cam.logo, [d.logoUrl ? item('Arquivo do logo (baixe em "Baixar pacote")', d.logoUrl, 'imagem') : item('Logo', 'Sem logo salvo: envie na pergunta 9 ou no painel "Material para montar o site".')]),
+    g('banner', 'Banner', cam.banner, (d.banners.length ? d.banners : [d.banner]).flatMap((b, i) => [
+      item(`${b.uso || `Banner ${i + 1}`}: título`, b.titulo), item(`${b.uso || `Banner ${i + 1}`}: subtítulo`, b.subtitulo), item(`${b.uso || `Banner ${i + 1}`}: botão`, b.cta)])),
+    g('home', 'Textos da home', cam.cores, [item('Ordem das seções da home', d.secoesHome.join(' > ')), item('Texto "Sobre a marca" (bloco de texto da home)', d.sobre)]),
+    ...d.produtos.map((x, i) => g(`produto-${i}`, `Produto: ${x.nome}`, cam.produtos, [
+      item('Título', x.nome), item('Descrição', x.descricao), item('Preço', moeda(x.preco)), item('Preço promocional', moeda(x.precoPromocional)),
+      item('Variações', variacoesTexto(x.variacoes)), item('Título para SEO', x.seoTitulo), item('Descrição para SEO', x.seoDescricao)])),
+    g('paginas', 'Páginas institucionais', cam.paginas, [item('Página "Sobre"', d.sobre), item('Página "Perguntas frequentes"', d.faq.map((f) => `${f.p}\n${f.r}`).join('\n\n'))]),
+    g('politicas', 'Políticas', cam.politicas, [item('Trocas e devoluções', d.politicas.trocas), item('Envio', d.politicas.envio), item('Privacidade', d.politicas.privacidade)]),
+    g('cores', 'Cores e tipografia', cam.cores, [item('Paleta (cor principal primeiro)', d.paleta.join(', ') || d.cor), item('Tipografia', d.tipografia)]),
+  ];
+  return grupos.filter((x) => x.itens.length);
+}
+
+/** HTML completo da prévia (documento próprio, para o iframe isolado). Sem script nenhum. */
+export function gerarPreviaLojaHTML(d) {
+  const cor = HEX.test(d.cor) ? d.cor : '#111827';
+  const fonte = /^[A-Za-zÀ-ÿ ]{2,40}$/.test(d.tipografia.split(/[,;(]/)[0].trim()) ? d.tipografia.split(/[,;(]/)[0].trim() : ''; // só nome simples de fonte
+  const preco = (x) => (x.precoPromocional && x.preco && x.precoPromocional < x.preco
+    ? `<span class="de">${esc(moeda(x.preco))}</span> <b>${esc(moeda(x.precoPromocional))}</b>` : x.preco || x.precoPromocional ? `<b>${esc(moeda(x.preco || x.precoPromocional))}</b>` : '<b>Sob consulta</b>');
+  const foto = (x, cls = '') => (x.fotos[0] ? `<img src="${esc(x.fotos[0])}" alt="${esc(x.nome)}" class="${cls}">` : `<div class="semfoto ${cls}">sem foto</div>`);
+  const marca = d.logoUrl ? `<img src="${esc(d.logoUrl)}" alt="${esc(d.nomeLoja)}" class="logo">` : `<span class="nome">${esc(d.nomeLoja)}</span>`;
+  const cabecalho = `<header><div class="wrap"><a href="#inicio" class="marca">${marca}</a><nav><a href="#inicio">Início</a><a href="#produtos">Produtos</a>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Dúvidas</a>' : ''}</nav><span class="sacola" title="${esc(TEXTO_COMPRA_DESATIVADA)}">Carrinho (0)</span></div></header>`;
+  const rodape = `<footer><div class="wrap"><div>${marca}</div><div><b>Institucional</b>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Perguntas frequentes</a>' : ''}${d.politicas.trocas ? '<span>Trocas e devoluções</span>' : ''}${d.politicas.envio ? '<span>Envio</span>' : ''}${d.politicas.privacidade ? '<span>Privacidade</span>' : ''}</div><div><b>Compra segura</b><span>Pagamento e frete configurados na plataforma</span></div></div><p class="aviso">${esc(LEGENDA_PREVIA_PACOTE)}</p></footer>`;
+  const paginasProduto = d.produtos.map((x, i) => `<section id="produto-${i}" class="pagina"><div class="wrap"><a href="#produtos" class="voltar">&larr; Voltar aos produtos</a>
+    <div class="pdp"><div class="galeria">${foto(x, 'principal')}${x.fotos.length > 1 ? `<div class="miniaturas">${x.fotos.slice(1, 5).map((u) => `<img src="${esc(u)}" alt="">`).join('')}</div>` : ''}</div>
+    <div><h1>${esc(x.nome)}</h1><p class="preco">${preco(x)}</p>
+      ${x.variacoes.map((v) => `<div class="var"><span>${esc(v.nome)}</span><div>${v.valores.map((val) => `<span class="chip">${esc(val)}</span>`).join('')}</div></div>`).join('')}
+      <button type="button" class="comprar" disabled data-compra-desativada>${esc(TEXTO_COMPRA_DESATIVADA)}</button>
+      ${x.descricao ? `<div class="desc">${esc(x.descricao).replace(/\n/g, '<br>')}</div>` : ''}</div></div></div></section>`).join('');
+  const grade = d.produtos.length ? d.produtos.map((x, i) => `<a class="card" href="#produto-${i}">${foto(x)}<span class="nomep">${esc(x.nome)}</span><span class="preco">${preco(x)}</span></a>`).join('') : '<p>Nenhum produto cadastrado.</p>';
+  const home = `<section id="inicio" class="home">
+    <div class="banner"><div class="wrap"><h1>${esc(d.banner.titulo || d.nomeLoja)}</h1>${d.banner.subtitulo ? `<p>${esc(d.banner.subtitulo)}</p>` : ''}${d.banner.cta ? `<a href="#produtos" class="cta">${esc(d.banner.cta)}</a>` : ''}</div></div>
+    <div class="wrap"><h2 id="produtos">Produtos</h2><div class="grade">${grade}</div>
+    <div class="confianca"><div><b>Compra segura</b><span>Pagamento pela plataforma</span></div><div><b>Entrega</b><span>${esc(d.politicas.envio ? d.politicas.envio.slice(0, 90) : 'Frete calculado no carrinho')}</span></div><div><b>Trocas</b><span>${esc(d.politicas.trocas ? d.politicas.trocas.slice(0, 90) : 'Política de trocas da loja')}</span></div></div>
+    ${d.depoimentos.length ? `<h2>Quem já comprou</h2><div class="depos">${d.depoimentos.slice(0, 6).map((x) => `<blockquote>“${esc(x.texto)}”<cite>${esc(x.nome || 'Cliente')}</cite></blockquote>`).join('')}</div>` : ''}
+    ${d.sobre ? `<h2 id="sobre">Sobre a marca</h2><p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p>` : ''}
+    ${d.faq.length ? `<h2 id="faq">Perguntas frequentes</h2>${d.faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}` : ''}</div></section>`;
+  // Página de produto: aparece pelo :target; a home some enquanto um produto está aberto.
+  const css = `*{box-sizing:border-box}body{margin:0;font-family:${fonte ? `"${fonte}",` : ''}system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#111827;background:#fff}
+a{color:inherit}.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+header{border-bottom:1px solid #e5e7eb;position:sticky;top:0;background:#fff;z-index:2}header .wrap{display:flex;align-items:center;gap:16px;min-height:64px;flex-wrap:wrap}
+.marca{text-decoration:none;display:flex;align-items:center}.logo{max-height:44px;max-width:160px;display:block}.nome{font-weight:800;font-size:20px}
+nav{display:flex;gap:16px;flex:1;flex-wrap:wrap}nav a{text-decoration:none;font-size:14px}.sacola{font-size:13px;border:1px solid #d1d5db;border-radius:999px;padding:6px 12px;color:#6b7280}
+.banner{background:${cor};color:#fff;padding:56px 0;text-align:center}.banner h1{margin:0 0 8px;font-size:clamp(24px,4vw,40px)}.banner p{margin:0 0 18px;opacity:.92}
+.cta{display:inline-block;background:#fff;color:${cor};padding:12px 22px;border-radius:6px;font-weight:700;text-decoration:none}
+h2{margin:36px 0 14px;font-size:22px}.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+.card{text-decoration:none;display:flex;flex-direction:column;gap:6px}.card img,.card .semfoto{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#f3f4f6}
+.semfoto{display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px}.nomep{font-size:14px}.preco b{color:${cor}}.de{text-decoration:line-through;color:#9ca3af;font-size:13px}
+.confianca{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:32px}.confianca div{border:1px solid #e5e7eb;border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.depos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}blockquote{margin:0;border:1px solid #e5e7eb;border-radius:6px;padding:12px;font-size:14px}cite{display:block;margin-top:6px;color:#6b7280;font-style:normal;font-size:12px}
+.sobre{line-height:1.6}details{border-bottom:1px solid #e5e7eb;padding:10px 0}summary{cursor:pointer;font-weight:600}
+.pagina{display:none;padding:20px 0 40px}.pagina:target{display:block}.pagina:target~.home{display:none}.voltar{font-size:14px}
+.pdp{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:14px}.principal{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f3f4f6}
+.miniaturas{display:flex;gap:8px;margin-top:8px}.miniaturas img{width:64px;height:64px;object-fit:cover;border-radius:4px}
+.pdp h1{margin:0 0 8px;font-size:26px}.pdp .preco{font-size:22px;margin:0 0 16px}.var{margin:10px 0}.var>span{font-size:13px;color:#6b7280;display:block;margin-bottom:6px}
+.chip{display:inline-block;border:1px solid #d1d5db;border-radius:4px;padding:6px 10px;margin:0 6px 6px 0;font-size:13px}
+.comprar{width:100%;margin:16px 0;padding:14px;border:0;border-radius:6px;background:#9ca3af;color:#fff;font-weight:700;font-size:15px;cursor:not-allowed}
+.desc{line-height:1.6;font-size:15px}footer{margin-top:48px;border-top:1px solid #e5e7eb;background:#f9fafb;padding:24px 0;font-size:13px}
+footer .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}footer .wrap div{display:flex;flex-direction:column;gap:6px}footer a{text-decoration:none}
+.aviso{text-align:center;color:#6b7280;margin:18px 16px 0}@media(max-width:640px){.pdp{grid-template-columns:1fr}.banner{padding:36px 0}}`;
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<base href="about:srcdoc"><title>${esc(d.nomeLoja)} — prévia</title><style>${css}</style></head><body>${cabecalho}${paginasProduto}${home}${rodape}</body></html>`;
+}

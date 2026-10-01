@@ -15,7 +15,12 @@ import { montarAjusteSite } from './ajuste-site.js';
 import { montarPainelMaterial } from './material-site.js';
 import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal } from '../lib/prova-social.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
-import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas } from '../core/ui.js';
+import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar } from '../core/ui.js';
+import { dadosDoPacote, gruposPlataforma, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
+import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
+
+// Painel "Site gerado": abre sozinho depois de qualquer "Gerar site" (a aba é redesenhada; o pedido sobrevive aqui).
+const abrirResultadoDepois = new Set();
 
 const nomePlat = (v) => (PLATAFORMAS.find(([k]) => k === v) || [, v])[1];
 
@@ -81,8 +86,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     } else {
       const gerado = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base });
       await salvarEVersionar({ pacote: base ? aplicarBaseNoPacote(gerado, base) : gerado, ...reaproveitou }, 'Pacote gerado de novo pela IA');
-      toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado. Revise abaixo.' : 'Banners, briefing do tema e textos gerados. Revise abaixo.');
+      toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado. Confira no painel "Site gerado".' : 'Banners, briefing do tema e textos gerados. Confira no painel "Site gerado".');
     }
+    abrirResultadoDepois.add(cliente.id);
     recarregar();
   });
   const ctxPerguntas = { cliente, produtos, salvarSite, recarregar, gerar: gerarComIa, get site() { return site; } };
@@ -158,6 +164,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ${cliente.siteReferencia ? `<a class="tag tag-info" href="${esc(cliente.siteReferencia)}" target="_blank" rel="noopener">site de referência</a>` : ''}</div>
     <div class="-mt-2 mb-4">${indicadorPixel(cliente)} ${tag(rastro.hotjarId ? 'Hotjar configurado' : 'Hotjar: não usado', rastro.hotjarId ? 'tag-ok' : '')} ${tag(rastro.tawkPropertyId ? 'Chat Tawk.to configurado' : 'Chat ao vivo: não usado', rastro.tawkPropertyId ? 'tag-ok' : '')}
       <p class="hint mt-1">${custom ? 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) entram sozinhos no site gerado e só carregam depois que o visitante aceita os cookies.' : 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) vão para o manual, com o passo a passo para colar na loja.'}</p></div>
+    ${(custom ? temCustom(site) : temPacote(site)) ? '<div class="mb-3"><button class="btn-primary btn-sm" data-ver-resultado><i class="fa-solid fa-store"></i> Ver último site gerado</button></div>' : ''}
+    <div data-resultado-site></div>
     <div data-painel></div>
     ${avisoModosHTML}${divergenciaHTML}
     <div class="mb-4" data-perguntas></div>
@@ -229,6 +237,52 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   on(root, 'click', '[data-trocar]', async () => { await salvarSite({ modo: null }); recarregar(); });
   painelMaterial();
+
+  // ---------- painel "Site gerado (versão N)": prévia, link de aprovação, o que colocar na plataforma, baixar ----------
+  let gruposCopiar = [];
+  const abrirResultado = async () => {
+    const alvoR = $('[data-resultado-site]', root); if (!alvoR) return;
+    const { versaoDoSite } = await import('./aprovacoes-site.js');
+    const n = versaoDoSite(cliente, site, produtos, aprovacoes);
+    const d = custom ? null : dadosDoPacote({ cliente, site, produtos });
+    gruposCopiar = d ? gruposPlataforma(d) : [];
+    const plat = nomePlat(site.plataforma);
+    const grupoHTML = (g, gi) => `<details class="rounded-lg border border-slate-200 p-2" ${gi < 3 ? 'open' : ''} data-grupo-plataforma="${esc(g.id)}"><summary class="cursor-pointer text-sm font-semibold">${esc(g.titulo)}</summary>
+      <p class="hint mt-1"><i class="fa-solid fa-location-arrow"></i> Onde colocar na ${esc(plat)}: <b data-caminho>${esc(g.caminho)}</b></p>
+      <ul class="mt-1 space-y-1">${g.itens.map((it, ii) => `<li class="flex items-start justify-between gap-2 rounded bg-slate-50 p-2 text-sm"><div class="min-w-0"><p class="text-xs text-slate-500">${esc(it.rotulo)}</p>
+        ${it.tipo === 'imagem' ? `<img src="${esc(it.valor)}" alt="Logo" class="mt-1 max-h-12" style="background:repeating-conic-gradient(#cbd5e1 0% 25%,#fff 0% 50%) 50%/12px 12px">` : `<p class="whitespace-pre-wrap">${esc(it.valor.length > 400 ? it.valor.slice(0, 400) + '…' : it.valor)}</p>`}</div>
+        ${it.tipo === 'imagem' ? '' : `<button type="button" class="btn-ghost btn-sm shrink-0" data-copiar-item="${gi}-${ii}"><i class="fa-solid fa-copy"></i> Copiar</button>`}</li>`).join('')}</ul></details>`;
+    alvoR.innerHTML = `<section class="card mb-4 border-2 border-emerald-300" data-painel-resultado>
+      <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="text-lg font-semibold"><i class="fa-solid fa-circle-check text-emerald-600"></i> Site gerado (versão ${n})</h3>
+        <button type="button" class="btn-ghost btn-sm" data-fechar-resultado>Fechar</button></div>
+      <p class="caption">${custom ? 'Site personalizado' : `Pacote ${esc(plat)}`}. Tudo o que foi gerado está aqui, nesta ordem: ver, mandar para o cliente aprovar, montar na plataforma e baixar.</p>
+      <h4 class="mt-4 font-semibold">1. Ver prévia</h4>
+      ${custom ? '<button type="button" class="btn-ghost" data-preview><i class="fa-solid fa-eye"></i> Ver prévia do site em nova aba</button>'
+        : `<button type="button" class="btn-ghost" data-mostrar-previa-loja><i class="fa-solid fa-eye"></i> Ver prévia</button><div class="mt-2 hidden" data-area-previa-loja>${previaLojaHtml()}</div>`}
+      <h4 class="mt-4 font-semibold">2. Gerar link de aprovação</h4>
+      <button type="button" class="btn-primary" data-link-resultado><i class="fa-solid fa-link"></i> Gerar link de aprovação</button>
+      <p class="hint">Cria o link desta versão e abre a aba "Aprovações do site", onde você copia o link e a mensagem para o cliente.</p>
+      <h4 class="mt-4 font-semibold">3. O que colocar na plataforma</h4>
+      ${custom ? '<p class="text-sm">No site personalizado não há plataforma: baixe a pasta (passo 4) e siga "Como publicar este site", no fim desta página.</p>'
+        : `<p class="hint mb-2">Cada conteúdo, agrupado pelo lugar onde entra na ${esc(plat)}, com o caminho do manual de entrega. Os produtos também vão no CSV.</p><div class="space-y-2" data-o-que-colocar>${gruposCopiar.map(grupoHTML).join('')}</div>`}
+      <h4 class="mt-4 font-semibold">4. Baixar pacote</h4>
+      <div class="flex flex-wrap gap-2">${custom ? '<button type="button" class="btn-primary" data-baixar-zip><i class="fa-solid fa-file-zipper"></i> Baixar pasta do site (.zip)</button>'
+        : `<button type="button" class="btn-primary" data-csv><i class="fa-solid fa-file-csv"></i> Catálogo (CSV)</button>${site.pacote ? '<button type="button" class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Banners e briefing (.txt)</button>' : ''}${cliente.logoArquivo ? '<button type="button" class="btn-ghost" data-baixar-logo><i class="fa-solid fa-copyright"></i> Logo (original)</button>' : ''}`}
+        <button type="button" class="btn-ghost" data-manual><i class="fa-solid fa-file-pdf"></i> Manual de entrega (PDF)</button></div></section>`;
+    if (d) ligarPreviaLoja(alvoR, gerarPreviaLojaHTML(d));
+    $('[data-painel-resultado]', alvoR).scrollIntoView({ block: 'start' });
+  };
+  on(root, 'click', '[data-ver-resultado]', (b) => ocupado(b, abrirResultado));
+  on(root, 'click', '[data-fechar-resultado]', () => { $('[data-resultado-site]', root).innerHTML = ''; });
+  on(root, 'click', '[data-mostrar-previa-loja]', (b) => { const a = $('[data-area-previa-loja]', root); a.classList.toggle('hidden'); b.innerHTML = a.classList.contains('hidden') ? '<i class="fa-solid fa-eye"></i> Ver prévia' : '<i class="fa-solid fa-eye-slash"></i> Esconder prévia'; });
+  on(root, 'click', '[data-copiar-item]', (b) => { const [gi, ii] = b.dataset.copiarItem.split('-').map(Number); const it = gruposCopiar[gi]?.itens[ii]; if (it) copiar(it.valor); });
+  on(root, 'click', '[data-link-resultado]', (b) => ocupado(b, async () => {
+    const { gerarLinkSite } = await import('./aprovacoes-site.js');
+    await gerarLinkSite(cliente, site, produtos);
+    toast('Link de aprovação criado. Copie o link ou a mensagem para o cliente.');
+    location.hash = `#/c/${cliente.id}/aprovacoes`;
+  }));
+  if (abrirResultadoDepois.has(cliente.id)) { abrirResultadoDepois.delete(cliente.id); abrirResultado(); }
 
   on(root, 'click', '[data-salvar-provas-site]', (b) => ocupado(b, async () => {
     const novos = provas.map((m) => depoimentoDeProva(m, $(`[data-exibir-prova="${m.id}"]`, root)?.value || ''));
