@@ -70,7 +70,7 @@ export function montarDadosCliente(v, escopo) {
     rastreamento: normalizarRastreamento(camposRastreamento(v)).valor,
     historico: v.estagio === 'rodando' ? { cpaMedio: num(v.cpaMedio), orcamentoDiario: num(v.orcamentoDiario), publicos: v.publicosHist || '' } : {},
     marca: {
-      tomDeVoz: v.tomDeVoz || '', linguagemDor: v.linguagemDor || '', objecoes: v.objecoes || '', provasSociais: v.provasSociais || '',
+      tomDeVoz: v.tomDeVoz || '', linguagemDor: v.linguagemDor || '', objecoes: v.objecoes || '', crencas: v.crencas || '', provasSociais: v.provasSociais || '',
       usp: v.usp || '', idioma: v.idioma || 'pt-BR', termosProibidos: v.termosProibidos || '', estetica: v.estetica || '',
       // Questionário único (lib/questionario.js): o que vende e para quem, quem mais compra, oferta ativa, link das fotos e do logo.
       negocio: v.negocio || '', publicoCompra: v.publicoCompra || '', ofertaAtiva: v.ofertaAtiva || '', materiaisOriginais: v.materiaisOriginais || '', logo: v.logo || '',
@@ -189,9 +189,11 @@ export async function viewForm(el, id, { baseId = null } = {}) {
       <div><label class="label">O que vende e para quem ${etiquetaAuto(c, 'negocio')}</label><input class="input" name="negocio" value="${esc(m.negocio)}" placeholder="Ex.: roupas de academia para mulheres de 25 a 45 anos"></div>
       <div><label class="label">Como o público descreve a própria dor ${etiquetaAuto(c, 'linguagemDor')}</label><textarea class="input" rows="2" name="linguagemDor" placeholder="Nas palavras deles: 'minha roupa nunca serve direito'">${esc(m.linguagemDor)}</textarea></div>
       <div><label class="label">Diferencial (USP) ${etiquetaAuto(c, 'usp')}</label><input class="input" name="usp" value="${esc(m.usp)}"></div>
-      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (objeções, provas, termos proibidos, site de referência)</summary>
+      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (objeções, crenças do público, provas, termos proibidos, site de referência)</summary>
         <div class="mt-3 space-y-4">
           <div><label class="label">Objeções comuns ${etiquetaAuto(c, 'objecoes')}</label><textarea class="input" rows="2" name="objecoes">${esc(m.objecoes)}</textarea></div>
+          <div><label class="label">Crenças do público (opcional) ${etiquetaAuto(c, 'crencas')}</label><textarea class="input" rows="2" name="crencas" placeholder="Ex.: 'colágeno não funciona'">${esc(m.crencas)}</textarea>
+            <p class="hint">O que o público acredita, inclusive crenças erradas sobre o produto. Ex: 'colágeno não funciona'</p></div>
           <div><label class="label">Provas sociais disponíveis (reais) ${etiquetaAuto(c, 'provasSociais')}</label><textarea class="input" rows="2" name="provasSociais">${esc(m.provasSociais)}</textarea></div>
           <div><label class="label">Estética / paleta de cor ${etiquetaAuto(c, 'estetica')}</label><textarea class="input" rows="2" name="estetica" placeholder="Ex.: tons terrosos, fundo claro, luz natural">${esc(m.estetica)}</textarea></div>
           <div><label class="label">Termos proibidos/restritos do nicho ${etiquetaAuto(c, 'termosProibidos')}</label><textarea class="input" rows="2" name="termosProibidos" placeholder="Separe por vírgula. Ex.: cura, garantido, emagreça">${esc(m.termosProibidos)}</textarea>

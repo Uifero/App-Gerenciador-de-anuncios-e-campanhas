@@ -11,6 +11,7 @@ import { apagarCriativoEmCascata } from '../lib/cascata.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
 import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '../lib/previa.js';
 import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
+import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../lib/narrativas.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -101,7 +102,7 @@ function cartao(c, cfg) {
     <div class="flex items-start justify-between gap-2"><h3 class="font-semibold leading-tight">${esc(c.nome)}</h3>${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}</div>
     <p class="caption mt-1 line-clamp-2">“${esc(c.hook)}”</p>
     <div class="mt-3 flex flex-wrap gap-1">
-      ${tagAprovacao(c)}${c.framework ? tag(c.framework, 'tag-info') : ''}${c.angulo ? tag(c.angulo) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma || 'pt-BR')}
+      ${tagAprovacao(c)}${c.framework ? tag(c.framework, 'tag-info') : ''}${c.angulo ? tag(c.angulo) : ''}${tagNarrativa(c)}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma || 'pt-BR')}
       ${c.arquivoUrl ? tag('com arquivo', 'tag-ok') : tag('sem arquivo', 'tag-warn')}
       ${(c.versoes?.length || 1) > 1 ? tag(`v${c.versoes.length}`) : ''}${c.referenciaId ? tag('de referência', 'tag-info') : ''}
       ${fadiga ? tag(`fadiga: ${dias}d no ar`, 'tag-bad') : ''}</div>
@@ -129,11 +130,13 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
         ${sugestaoInsight ? `<div class="mt-2 flex flex-wrap items-center gap-1" title="${esc(`Insights: ${sugestaoInsight.rotulo} "${sugestaoInsight.grupo.valor}" teve ROAS médio ${sugestaoInsight.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x em ${sugestaoInsight.grupo.amostras} resultado(s) de clientes de nicho semelhante — e este cliente ainda não testou.`)}">
           <span class="hint !mt-0"><i class="fa-solid fa-chart-simple"></i> Insights sugere (ainda não testado aqui):</span>
           <button type="button" class="tag tag-info hover:bg-indigo-100" data-insight="${esc(sugestaoInsight.grupo.valor)}" data-insight-campo="${sugestaoInsight.campo}">${esc(sugestaoInsight.rotulo)}: ${esc(sugestaoInsight.grupo.valor)} (ROAS ${sugestaoInsight.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x)</button></div>` : ''}</div>
-      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, variações, referência)</summary>
+      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, narrativa, variações, referência)</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           <div><label class="label">Modelo pronto</label><select class="input" name="modelo">${opcoes(MODELOS_CRIATIVO, '')}</select></div>
           <div><label class="label">Framework de copy</label><select class="input" name="framework">${opcoes(FRAMEWORKS, 'livre')}</select><p class="hint">A estrutura do texto (ex.: problema → solução). Na dúvida, deixe "livre".</p></div>
           <div><label class="label">Formato</label><select class="input" name="formato">${opcoes(FORMATOS, 'video_curto')}</select></div>
+          <div><label class="label">Narrativa (opcional)</label><select class="input" name="narrativa"><option value="">A IA escolhe</option>${Object.entries(ETAPAS_FUNIL).map(([e, nome]) => `<optgroup label="${nome} do funil">${NARRATIVAS.filter((n) => n.etapa === e).map((n) => `<option value="${n.id}">${esc(n.nome)}</option>`).join('')}</optgroup>`).join('')}</select>
+            <p class="hint" data-aviso-narrativa>Referência da Metodologia Vortex. Na dúvida, deixe "A IA escolhe".</p></div>
           <div><label class="label">Variações a gerar</label><select class="input" name="quantidade" title="Menos variações = menos custo de IA nesta geração">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === (Number(cfg.variacoesPadrao) || 4) ? 'selected' : ''}>${n}</option>`).join('')}</select><p class="hint">Menos variações = menos custo nesta geração.</p></div>
           <div><label class="label">Partir de uma referência salva</label><select class="input" name="referenciaId">
             <option value="">Nenhuma</option>${referencias.map((r) => `<option value="${r.id}" ${base?.id === r.id ? 'selected' : ''}>${esc(r.titulo || 'Referência')}${r.sinal ? ' · ' + r.sinal : ''}</option>`).join('')}</select></div>
@@ -147,6 +150,11 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     <div id="saida"></div></div>`;
   const form = $('#fg', alvo), saida = $('#saida', alvo);
   on(alvo, 'click', '[data-x]', () => { alvo.innerHTML = ''; });
+  on(alvo, 'change', '[name=narrativa]', (s) => {
+    $('[data-aviso-narrativa]', alvo).textContent = linhaNarrativa(s.value, cliente).bloqueada
+      ? 'Este cliente não tem prova social real no perfil: a IA vai escolher outra abordagem, sem inventar resultado.'
+      : 'Referência da Metodologia Vortex. Na dúvida, deixe "A IA escolhe".';
+  });
   on(alvo, 'change', '[name=quantidade]', (s) => { alvo.querySelectorAll('[data-qtd]').forEach((e) => { e.textContent = s.value; }); });
   on(alvo, 'click', '[data-ang]', (b) => { const t = form.elements.briefing; t.value = (t.value ? t.value + '\n' : '') + 'Ângulo: ' + b.dataset.ang; t.focus(); });
   on(alvo, 'click', '[data-insight]', (b) => {
@@ -188,7 +196,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     if (!v.briefing && !v.modelo && !ref) return toast('Escreva um briefing curto, escolha um modelo, um produto ou uma referência.', 'erro');
     await ocupado(form.querySelector('.btn-ia'), async () => {
       const vars = await gerarCriativos({
-        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref, produto, quantidade: Number(v.quantidade) || cfg.variacoesPadrao || 4,
+        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref, produto, quantidade: Number(v.quantidade) || cfg.variacoesPadrao || 4, narrativa: v.narrativa || '',
         referencias: referencias.filter((r) => r.analise), resultados, catalogo: produtos, // produtos reais (alguns lidos do site do cliente)
       });
       if (!vars.length) throw new Error('A IA não devolveu variações. Tente reescrever o briefing.');
@@ -215,7 +223,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
 function variacao(x, i, cliente) {
   const proibidos = acharTermosProibidos(`${x.hook} ${x.copy} ${x.cta}`, cliente);
   return `<div class="rounded-lg border border-slate-200 p-3">
-    <div class="flex flex-wrap items-center gap-1">${tag(x.angulo || 'ângulo', 'tag-info')}${x.gatilho ? tag('gatilho: ' + x.gatilho) : ''}${tag(x.framework)}${tag(rotulo(FORMATOS, x.formato))}
+    <div class="flex flex-wrap items-center gap-1">${tag(x.angulo || 'ângulo', 'tag-info')}${tagNarrativa(x)}${x.gatilho ? tag('gatilho: ' + x.gatilho) : ''}${tag(x.framework)}${tag(rotulo(FORMATOS, x.formato))}
       ${proibidos.length ? tag('termos proibidos: ' + proibidos.join(', '), 'tag-bad') : ''}</div>
     <p class="mt-2 font-semibold">“${esc(x.hook)}”</p>
     <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700">${esc(x.copy)}</p>
@@ -225,6 +233,9 @@ function variacao(x, i, cliente) {
       <button class="btn-ghost btn-sm" data-copiar-var="${i}"><i class="fa-solid fa-copy"></i> Copiar texto</button></div></div>`;
 }
 
+/** Etiqueta pequena com a narrativa e a etapa do funil — só quando o criativo segue uma das narrativas. */
+const tagNarrativa = (c) => (c.narrativa && rotuloNarrativa(c.narrativa) ? tag(rotuloNarrativa(c.narrativa)) : '');
+
 async function salvarNovo(cliente, x, ctx) {
   const angulo = x.angulo || '', framework = x.framework || 'livre', gatilho = x.gatilho || '', formato = x.formato || 'video_curto';
   // A versão já nasce com ângulo/framework/gatilho/formato: é o que permite, mais tarde, saber com QUAL ângulo/framework
@@ -232,7 +243,7 @@ async function salvarNovo(cliente, x, ctx) {
   const snap = { n: 1, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo, framework, gatilho, formato, nota: 'Versão inicial', quando: new Date().toISOString() };
   return db.criar(COL.criativos, {
     clienteId: cliente.id, nome: x.nome, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo, gatilho,
-    framework, formato, idioma: cliente.marca?.idioma || 'pt-BR',
+    framework, formato, idioma: cliente.marca?.idioma || 'pt-BR', ...(x.narrativa ? { narrativa: x.narrativa } : {}),
     status: 'rascunho', checklist: {}, versoes: [snap], referenciaId: ctx.referenciaId || null, modeloUsado: ctx.modelo || null,
     origem: ctx.referenciaId || ctx.modelo || x.porque ? 'ia' : 'manual', produtoId: ctx.produtoId || null,
     arquivoUrl: null, arquivoPath: null, arquivoNome: null, emUsoDesde: null, provaSocial: false,
@@ -252,7 +263,7 @@ function detalhe(c, cliente, cfg, recarregar) {
     const tudoOk = CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k]);
     alvo.innerHTML = `
     <div class="mb-3 flex flex-wrap gap-1">${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}${c.framework ? tag(c.framework, 'tag-info') : ''}
-      ${c.angulo ? tag(c.angulo) : ''}${c.gatilho ? tag('gatilho: ' + c.gatilho) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma)}
+      ${c.angulo ? tag(c.angulo) : ''}${tagNarrativa(c)}${c.gatilho ? tag('gatilho: ' + c.gatilho) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma)}
       ${c.emUsoDesde ? tag(`em uso desde ${dataBR(c.emUsoDesde)}`, 'tag-ok') : ''}${tagAprovacao(c)}</div>
     ${c.status === 'reaprovacao' ? `<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-aviso-reaprovacao><b><i class="fa-solid fa-rotate"></i> Aguardando nova aprovação</b>
       <p class="mt-1">${esc(legendaReaprovacao(c))}</p>

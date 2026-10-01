@@ -4,7 +4,7 @@
 // preencheu à mão NUNCA é sobrescrito (vira sugestão para ela decidir); tudo que entra fica marcado com a origem
 // (cliente.autoPreenchido / produto.origemAuto) até a pessoa confirmar ou editar.
 
-export const CAMPOS_AUTO = [['tomDeVoz', 'Tom de voz'], ['usp', 'Diferencial (USP)'], ['provasSociais', 'Provas sociais'], ['estetica', 'Estética / paleta de cor']];
+export const CAMPOS_AUTO = [['tomDeVoz', 'Tom de voz'], ['usp', 'Diferencial (USP)'], ['provasSociais', 'Provas sociais'], ['estetica', 'Estética / paleta de cor'], ['crencas', 'Crenças do público']];
 export const LEGENDA_PRINTS = 'O Instagram não permite leitura automática, por isso funciona por print: tire foto da bio, do grid de posts, e de 2-3 posts que representem bem a marca';
 export const MAX_PRINTS = 6; // mesmo limite de imagens por chamada do servidor (diagnóstico)
 

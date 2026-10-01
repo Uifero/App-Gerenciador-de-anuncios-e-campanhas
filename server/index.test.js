@@ -1,6 +1,7 @@
 // Testes da lógica de custo e roteamento de modelo/tarefa do servidor de IA (sem rede: só as funções puras exportadas).
 import { describe, it, expect } from 'vitest';
-import { TAREFAS, calcularCusto, paramsDoModelo, validarImagens, blocosComImagens, lerSaidaCli, MAX_IMAGENS } from './index.js';
+import { TAREFAS, calcularCusto, paramsDoModelo, validarImagens, blocosComImagens, lerSaidaCli, MAX_IMAGENS, comMetodologia } from './index.js';
+import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
 
 describe('TAREFAS', () => {
   it('toda tarefa tem modelo e limite de tokens de saída', () => {
@@ -21,6 +22,17 @@ describe('TAREFAS', () => {
     for (const n of ['hooks', 'refino', 'narracao', 'faq', 'leitura_respostas']) expect(TAREFAS[n].semRaciocinio).toBeFalsy(); // pioravam sem raciocínio
     for (const t of Object.values(TAREFAS).filter((x) => x.semRaciocinio)) expect(t.modelo).toBe(TAREFAS.hooks.modelo);
     expect(TAREFAS.modelo_prompt.modelo).toBe(TAREFAS.hooks.modelo); // modelo leve, como as tarefas simples
+  });
+
+  it('metodologia (referência opcional) só em criativos, campanha e site; nas outras o contexto fica igual', () => {
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.metodologia).map(([n]) => n).sort()).toEqual(['campanha', 'criativos', 'discussao_campanha', 'site']);
+    expect(comMetodologia(TAREFAS.criativos, 'PERFIL')).toBe(`PERFIL
+
+${METODOLOGIA_VORTEX}`);
+    expect(comMetodologia(TAREFAS.hooks, 'PERFIL')).toBe('PERFIL');
+    expect(comMetodologia(TAREFAS.hooks, undefined)).toBeUndefined();
+    expect(METODOLOGIA_VORTEX).toMatch(/uma referência entre outras/i);
+    expect(METODOLOGIA_VORTEX.length).toBeLessThan(1600); // curta: ~400 tokens
   });
 
   it('só busca de mercado, leitura de site pela busca e diagnóstico pedem busca web', () => {

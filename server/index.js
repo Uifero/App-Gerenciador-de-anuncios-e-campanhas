@@ -7,6 +7,7 @@ import { gerarImagem, statusImagens } from './imagens.js';
 import { animarImagem, statusVideo } from './videos.js';
 import { buscarBroll, baixarBroll, statusBroll } from './broll.js';
 import { lerSite, baixarImagemSite } from './leitura-site.js';
+import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
 import 'dotenv/config';
 import express from 'express';
 import helmet from 'helmet';
@@ -47,18 +48,19 @@ const MODELO_COMPLEXO = process.env.ANTHROPIC_MODEL_COMPLEXO || 'claude-sonnet-5
  * MEDIDO que a qualidade não cai (2026-09-30). Ficaram COM raciocínio, de propósito: hooks (sem ele inventava promessa de
  * saúde), refino (inventava prazo/número), narracao (falas não cabiam no tempo da cena), faq (inventava garantia de
  * segurança) e leitura_respostas (deixou de ler uma resposta). Na API, o Haiku já roda sem raciocínio.
+ * metodologia = acrescenta a referência opcional server/referencias/metodologia-vortex.js ao contexto estável da tarefa.
  */
 export const TAREFAS = {
   hooks:       { modelo: MODELO_LEVE,     max: 2000 },
   refino:      { modelo: MODELO_LEVE,     max: 3000 },
   checklist:   { modelo: MODELO_LEVE,     max: 1200, semRaciocinio: true }, // medido: 31 s -> 8 s, mesma avaliação
   imagem:      { modelo: MODELO_LEVE,     max: 1800, semRaciocinio: true }, // "Sugerir prompts": 35 s -> 16 s, prompts equivalentes
-  criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium' },
-  campanha:    { modelo: MODELO_COMPLEXO, max: 7000,  effort: 'medium' },
-  discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium' }, // chat do rascunho de campanha
+  criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', metodologia: true },
+  campanha:    { modelo: MODELO_COMPLEXO, max: 7000,  effort: 'medium', metodologia: true },
+  discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium', metodologia: true }, // chat do rascunho de campanha
   referencias: { modelo: MODELO_COMPLEXO, max: 10000, effort: 'medium', web: true },
   analise:     { modelo: MODELO_COMPLEXO, max: 2500,  effort: 'low' },
-  site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low' },
+  site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low', metodologia: true },
   pacote:      { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'low' },
   playbook:    { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'low' },
   insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low' },
@@ -76,6 +78,9 @@ export const TAREFAS = {
   leitura_produtos:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low' }, // lista de produtos da resposta do cliente
   reparo:      { modelo: MODELO_LEVE,     max: 12000, semRaciocinio: true }, // corrige JSON inválido de outra resposta (sem refazer a tarefa); 8 s -> 5 s, resultado idêntico
 };
+
+/** Contexto estável da tarefa + a referência opcional da metodologia (só nas tarefas com `metodologia: true`). */
+export const comMetodologia = (t, estavel) => (t?.metodologia ? [estavel, METODOLOGIA_VORTEX].filter(Boolean).join('\n\n') : estavel);
 
 // ---------- imagens anexadas (só tarefas com `imagens: true`, hoje o diagnóstico) ----------
 export const MAX_IMAGENS = 6;
@@ -299,11 +304,12 @@ app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), a
   if (!cliDisponivel() && !process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ erro: 'IA indisponível: ANTHROPIC_API_KEY não configurada no servidor. Use a opção manual.' });
   }
-  const { tarefa, estavel, system, messages, maxTokens, webSearch } = req.body || {};
+  const { tarefa, system, messages, maxTokens, webSearch } = req.body || {};
   const t = TAREFAS[tarefa];
   if (!t) return res.status(400).json({ erro: 'Tipo de tarefa de IA desconhecido.' });
   if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ erro: 'messages é obrigatório.' });
-  for (const campo of [estavel, system]) if (typeof campo !== 'undefined' && typeof campo !== 'string') return res.status(400).json({ erro: 'Campo de sistema inválido.' });
+  for (const campo of [req.body.estavel, system]) if (typeof campo !== 'undefined' && typeof campo !== 'string') return res.status(400).json({ erro: 'Campo de sistema inválido.' });
+  const estavel = comMetodologia(t, req.body.estavel);
   let imagens;
   try { imagens = validarImagens(req.body?.imagens); } catch (e) { return res.status(400).json({ erro: e.message }); }
   if (imagens.length && !t.imagens) return res.status(400).json({ erro: 'Esta tarefa não aceita imagens.' });

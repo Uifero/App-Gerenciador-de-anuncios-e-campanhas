@@ -90,12 +90,25 @@ export function abrirEditor(rascunho, aoSalvar, titulo = 'Playbook') {
 }
 
 // ---------------- página da biblioteca ----------------
+/** Entrada fixa, só de leitura: resumo da referência que a IA usa (server/referencias/metodologia-vortex.js). */
+const METODOLOGIA_HTML = `<details class="card mb-4" data-metodologia><summary class="cursor-pointer font-semibold"><i class="fa-solid fa-book-open mr-1 text-indigo-500"></i> Metodologia Vortex (referência)</summary>
+  <p class="hint mt-1">Material do curso Vortex, uso interno, resumido com palavras nossas. A IA usa como UMA referência entre outras ao criar criativos, campanhas e o site, quando combina com o cliente. Não é método obrigatório: política do Meta, "não inventar dados" e o perfil de marca vêm antes.</p>
+  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">
+    <li><b>Dor x desejo:</b> o produto resolve uma dor, atende um desejo ou os dois (em geral o desejo está apoiado numa dor).</li>
+    <li><b>Consciência do público:</b> quem nem sabe do problema ou só sabe do problema = topo; quem já sabe da solução = meio; quem já conhece o produto = fundo.</li>
+    <li><b>Narrativas:</b> topo = Dor vs Solução, Quebra de Crença; meio = Nós vs Eles, Por que usar / Por que funciona; fundo = Antes e Depois, Resultado/Depoimento, Oferta. As de prova só com prova real do cliente.</li>
+    <li><b>Formatos:</b> React, Owner, Meia tela, UGC, Estático + oferta, Caixinha de pergunta, Cinema. Conceito = narrativa + formato.</li>
+    <li><b>Multiplicar:</b> a narrativa que vence pode ser refeita em outros formatos, mantendo a mesma narrativa.</li>
+    <li><b>Regra prática:</b> um conjunto equilibrado cobre topo, meio e fundo.</li></ul>
+  <p class="hint mt-2">Na tela de criativo, em "Mais opções", o campo "Narrativa (opcional)" fixa uma delas; em "A IA escolhe", ela decide.</p></details>`;
+
 export const view = (el) => montar(el, async (root, recarregar) => {
   const pbs = await db.listar(COL.playbooks);
   root.innerHTML = `${cabecalho('Playbooks', 'Receitas reaproveitáveis por tipo de produto: a sequência de ângulos e hooks que costuma funcionar. Para usar num cliente: escolha o playbook ao cadastrar o cliente, ou dentro dele em "Mais ações" > "Aplicar playbook" — os hooks vão para a aba Hooks e os ângulos aparecem como sugestão ao criar criativos.',
     `<button class="btn-ia" data-ia title="A IA sugere um playbook a partir do tipo de produto"><i class="fa-solid fa-wand-magic-sparkles"></i> Sugerir playbook com IA</button>
      <button class="btn-primary" data-novo title="Escreva um playbook você mesmo"><i class="fa-solid fa-plus"></i> Novo playbook</button>`)}
     <div id="painel"></div>
+    ${METODOLOGIA_HTML}
     ${pbs.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${pbs.map((p) => `<button data-abrir="${p.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <h3 class="font-semibold leading-tight">${esc(p.nome)}</h3><p class="caption mt-1">${esc(p.tipoProduto)}</p>
       <div class="mt-3 flex flex-wrap gap-1">${tag((p.angulos || []).length + ' ângulos', 'tag-info')}${(p.angulos || []).slice(0, 3).map((a) => tag(a.angulo)).join('')}${p.origemClienteId ? tag('de um cliente', 'tag-ok') : ''}</div>

@@ -3,6 +3,7 @@
 import { tokenAtual } from './auth.js';
 import { IDIOMA_NOME, MODELO_DESCRICAO, CENAS_UNBOXING } from '../lib/constantes.js';
 import { paisDoCliente, infoPais, descreverMercado, simboloDoCliente } from '../lib/pais.js';
+import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloNarrativa } from '../lib/narrativas.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
 
@@ -140,6 +141,7 @@ export function contextoCliente(c) {
     m.tomDeVoz && `Tom de voz${auto('tomDeVoz')}: ${m.tomDeVoz}`,
     m.linguagemDor && `Como o público descreve a própria dor (palavras reais): ${m.linguagemDor}`,
     m.objecoes && `Objeções comuns: ${m.objecoes}`,
+    m.crencas && `Crenças do público (inclusive crenças erradas sobre o produto)${auto('crencas')}: ${m.crencas}`,
     m.provasSociais && `Provas sociais disponíveis (únicas que podem ser citadas)${auto('provasSociais')}: ${m.provasSociais}`,
     m.usp && `Diferencial (USP)${auto('usp')}: ${m.usp}`,
     m.estetica && `Estética visual / paleta de cor${auto('estetica')}: ${m.estetica}`,
@@ -190,7 +192,7 @@ function contextoProduto(p) {
   return `\nPRODUTO SELECIONADO (dados exatos do catálogo — use-os, não invente outros): "${p.nome}"${p.categoria ? `, categoria ${p.categoria}` : ''}${p.preco ? `, preço R$ ${p.preco}` : ''}${p.precoPromocional ? ` (promocional R$ ${p.precoPromocional})` : ''}.${p.descricao ? ` Descrição: ${p.descricao}` : ''}`;
 }
 
-export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base, produto, catalogo = [] }) {
+export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base, produto, catalogo = [], narrativa = '' }) {
   const n = Math.min(5, Math.max(1, Number(quantidade) || 4));
   const system = `Você é um copywriter e estrategista de tráfego pago sênior. Cria anúncios que parecem conteúdo orgânico.${contextoReferencias(referencias)}${contextoResultados(resultados)}${contextoProduto(produto)}${produto ? '' : contextoCatalogo(catalogo)}`;
   const pedido = [
@@ -199,13 +201,15 @@ export async function gerarCriativos({ cliente, briefing, modelo, framework, for
     modelo && `Modelo de criativo: ${modelo.replace('_', ' ')} — ${MODELO_DESCRICAO[modelo] || ''}`,
     framework && framework !== 'livre' && `Framework de copy obrigatório: ${framework}`,
     formato && `Formato: ${formato}`,
+    linhaNarrativa(narrativa, cliente).linha,
     base && `Ponto de partida — anúncio de referência de mercado (adapte o ÂNGULO ao cliente, sem copiar o texto): ${base.titulo || ''}\n${base.texto || ''}\nAnálise: ${JSON.stringify(base.analise || {})}`,
-    `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação).`,
+    `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação), "narrativa" (só se a variação seguir uma das narrativas da referência de metodologia: ${NARRATIVAS.map((x) => x.id).join('|')}; senão null).`,
     idiomaLinha(cliente),
     SO_JSON,
   ].filter(Boolean).join('\n');
   const { dados } = await gerarJSON({ tarefa: 'criativos', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
-  return (Array.isArray(dados) ? dados : dados.variacoes || []).map(normalizarCriativo);
+  const escolhida = linhaNarrativa(narrativa, cliente).bloqueada ? null : narrativaPorId(narrativa)?.id || null;
+  return (Array.isArray(dados) ? dados : dados.variacoes || []).map((c) => ({ ...normalizarCriativo(c), narrativa: narrativaDevolvida(c.narrativa, cliente) || escolhida }));
 }
 
 function normalizarCriativo(c) {
@@ -293,6 +297,7 @@ const REGRAS_ESTRUTURA = `REGRAS DA ESTRUTURA:
 - HONESTIDADE: quando não houver dado para uma decisão, diga isso claramente no raciocínio (ex.: "orçamento dividido igualmente porque ainda não há dado de performance deste cliente para pesar a divisão de outro jeito") e use "base": "sem_dados". Nunca cite histórico, nicho ou referência que não esteja nas fontes disponíveis.
 - Se NÃO houver criativos aprovados suficientes (menos de 1 por conjunto), não force uma escolha fraca: deixe o conjunto só com os que valem a pena e explique em "avisoCriativos" o que falta produzir (ângulo/formato). Senão, "avisoCriativos" é null.
 - "checklistMeta" = passos práticos, na ordem, para configurar no Gerenciador de Anúncios do Meta ESTA estrutura (nome e orçamento de cada conjunto, público, criativos de cada um).
+- Cobertura de funil (opcional): se ajudar, comente no raciocínio se os criativos cobrem topo, meio e fundo, como SUGESTÃO; nunca como bloqueio nem como aviso em "avisoCriativos".
 - Textos em português do Brasil (é para o gestor de tráfego). Use EXATAMENTE as chaves JSON pedidas, sem traduzi-las.`;
 
 /**
@@ -304,7 +309,7 @@ export async function gerarEstruturaCampanha({ cliente, criativos = [], criativo
   const system = 'Você é gestor de tráfego Meta Ads sênior. Estrutura testes enxutos e realistas, escolhe os criativos certos pra cada conjunto com base em dados reais — nunca por preferência estética — e explica cada decisão com franqueza, admitindo quando não há dado.';
   const pedido = `Monte a estrutura de campanha ${cliente.estagio === 'rodando' ? 'de ESCALA/otimização usando o histórico do cliente' : 'de PRIMEIRO TESTE (cliente novo, sem histórico)'}.
 Objetivo: ${objetivo || 'vendas'}. Orçamento diário disponível: ${orcamentoDiario ? 'R$ ' + orcamentoDiario : 'não informado — sugira uma faixa coerente e diga que é estimativa'}.
-Criativos existentes (contexto geral): ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
+Criativos existentes (contexto geral): ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'}${c.narrativa ? `, narrativa ${rotuloNarrativa(c.narrativa)}` : ''})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
 
 ${contextoCampanha({ cliente, criativosAprovados, padroesLocais, padroesNicho, referenciasFortes, qtdResultados, resultadosPorCriativo })}
 
@@ -479,6 +484,7 @@ Devolva JSON: {"resumo": string (2-3 frases: como a marca se apresenta, só com 
 "tomDeVoz": ${LEITURA_ITEM} (descreva o tom em poucas palavras, ex.: "descontraído, usa 'você', emojis"; a evidência é um trecho que mostra esse tom),
 "usp": ${LEITURA_ITEM} (o diferencial que o próprio site afirma),
 "provasSociais": ${LEITURA_ITEM} (números, avaliações, depoimentos VISÍVEIS no texto; copie os números exatamente),
+"crencas": ${LEITURA_ITEM} (crenças do público que o próprio site rebate ou cita, ex.: "colágeno não funciona"; null se o texto não mostrar),
 "produtos": [{"nome", "descricao", "preco": number|null}] (só produtos cujo NOME aparece no texto e que não estão na lista acima; preço só se estiver escrito)}.
 Textos em português do Brasil. Use exatamente as chaves pedidas. ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'leitura_site', cliente, system, messages: [{ role: 'user', content: pedido }] });
@@ -589,6 +595,7 @@ const linhaBase = (base) => (base && (base.heroTitulo || base.storytelling)
 export async function gerarConteudoSite({ cliente, produtos, base = null, semDepoimentos = false }) {
   const system = 'Você é copywriter de e-commerce.';
   const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.${linhaBase(base)}
+Se couber neste cliente (opcional), organize o banner e a história como uma página de produto: título; prova social só se for real do perfil; uma frase de solução; 3 argumentos tirados das crenças e dores do público; texto curto.
 Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": ${semDepoimentos ? '[] (vazio: a loja já tem depoimentos reais, que o app coloca)' : '[{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais)'},"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)})}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
   return { ...textoPlano(d), faq: objecoesDe(cliente).length ? normalizarFaq(d?.faq) : [] };
