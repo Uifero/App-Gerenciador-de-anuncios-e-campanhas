@@ -18,7 +18,7 @@ export function provaSocialHtml(id = 'q') {
   return `<div class="mt-2 rounded-lg border border-dashed border-slate-300 p-2" data-prova-img="${id}" data-soltar>
     <p class="text-sm font-medium"><i class="fa-solid fa-star-half-stroke text-amber-500"></i> Prova social (imagem)</p>
     <p class="hint !mt-0 mb-1">${esc(LEGENDA_PROVAS)} Clique no botão ou arraste os prints para esta área. Até ${MAX_PROVAS} por vez.</p>
-    ${campoArquivo({ attrs: 'data-provas-arquivos', accept: 'image/png,image/jpeg,image/webp', multiple: true, icone: 'image', texto: 'Enviar prints de avaliações', destaque: false })}
+    ${campoArquivo({ attrs: 'data-provas-arquivos', accept: 'image/png,image/jpeg,image/webp', multiple: true, icone: 'image', texto: 'Enviar prints de avaliações (PNG, JPG ou WebP)', destaque: false })}
     <div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ia btn-sm" data-provas-ia><i class="fa-solid fa-wand-magic-sparkles"></i> Ler os prints com IA</button>
       <button type="button" class="btn-ghost btn-sm" data-provas-manual title="Você escreve o resumo de cada print; nada é lido automaticamente">Guardar sem IA (eu escrevo o resumo)</button></div>
     <p class="hint">Antes de gravar você revisa: o texto que vai para o perfil e as tarjas pretas sobre nomes, telefones e fotos de pessoas (o print guardado já sai com tarja). Com IA leva cerca de 1 min. Prefere digitar? Use o campo de texto acima.</p></div>`;

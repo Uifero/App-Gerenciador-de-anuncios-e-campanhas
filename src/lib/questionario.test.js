@@ -1,6 +1,6 @@
 // Questionário único: texto para o cliente, leitura local por numeração, dado sensível, interpretação e revisão.
 import { describe, it, expect } from 'vitest';
-import { PERGUNTAS, TOTAL_PERGUNTAS, textoParaCliente, lerRespostaLocal, protegerSensivel, interpretar, perguntaPorId, planoDeRevisao, respondidas, produtosLocais, ABERTURA, FECHO, precoDigitado } from './questionario.js';
+import { PERGUNTAS, TOTAL_PERGUNTAS, textoParaCliente, lerRespostaLocal, protegerSensivel, interpretar, perguntaPorId, planoDeRevisao, respondidas, produtosLocais, ABERTURA, FECHO, precoDigitado, tirarPergunta, limparRespostasIA } from './questionario.js';
 
 const clienteVazio = { id: 'c1', nome: 'Loja da Ana', marca: {} };
 
@@ -68,6 +68,27 @@ Responda mantendo os números das perguntas. O que não souber, pode deixar em b
   it('aceita "Pergunta 5:" e "5º"', () => {
     const r = lerRespostaLocal('Pergunta 5: "minha calça fica transparente"\n6º não prometer emagrecimento');
     expect(r.respostas).toEqual({ linguagemDor: '"minha calça fica transparente"', termosProibidos: 'não prometer emagrecimento' });
+  });
+});
+
+describe('pergunta repetida pelo cliente (eco)', () => {
+  const neg = perguntaPorId('negocio');
+  it('tira a pergunta e o rótulo "Resposta:" e mantém só a resposta', () => {
+    expect(tirarPergunta(neg, 'O que você vende e para quem?\n\nResposta:\nVendemos um produto encapsulado para emagrecimento.')).toBe('Vendemos um produto encapsulado para emagrecimento.');
+    expect(tirarPergunta(neg, 'O que vc vende e para quem?\nR: cápsulas')).toBe('cápsulas');
+    expect(tirarPergunta(neg, 'O que você vende e para quem? Resposta — cápsulas para mulheres')).toBe('cápsulas para mulheres');
+  });
+  it('sem eco, o texto continua igual', () => {
+    expect(tirarPergunta(neg, 'Vendemos cápsulas para mulheres.\nAtenção: confirmar as alegações antes de anunciar.')).toBe('Vendemos cápsulas para mulheres.\nAtenção: confirmar as alegações antes de anunciar.');
+  });
+  it('IA que devolveu só a pergunta: recupera a resposta que vem depois, até a próxima pergunta', () => {
+    const texto = 'O que você vende e para quem?\n\nResposta:\nVendemos cápsulas para emagrecimento, para mulheres de 30 a 50.\n\nO que faz o seu produto ou a sua loja ser diferente dos concorrentes?\nResposta: fórmula natural';
+    const r = limparRespostasIA({ negocio: 'O que você vende e para quem?', usp: 'fórmula natural' }, texto);
+    expect(r).toEqual({ negocio: 'Vendemos cápsulas para emagrecimento, para mulheres de 30 a 50.', usp: 'fórmula natural' });
+  });
+  it('trecho com a próxima pergunta no fim: corta a pergunta', () => {
+    const r = limparRespostasIA({ negocio: 'Vendemos cápsulas.\n\nO que faz o seu produto ou a sua loja ser diferente dos concorrentes?' }, '');
+    expect(r.negocio).toBe('Vendemos cápsulas.');
   });
 });
 

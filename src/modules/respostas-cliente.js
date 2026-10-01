@@ -11,7 +11,7 @@ import { db, COL } from '../core/storage.js';
 import { lerRespostaCliente, extrairProdutosResposta } from '../core/ia.js';
 import {
   PERGUNTAS, textoParaCliente, lerRespostaLocal, protegerSensivel, AVISO_SENSIVEL, LIMITE_TEXTO, planoDeRevisao, interpretar, mostrarValor,
-  PAGAMENTOS_PRETENDIDOS, FORMATOS_SITE, respondidas, precoDigitado,
+  PAGAMENTOS_PRETENDIDOS, FORMATOS_SITE, respondidas, precoDigitado, limparRespostasIA,
 } from '../lib/questionario.js';
 import { normalizarRastreamento } from '../lib/rastreamento.js';
 import { esc, $, $$, on, toast, ocupado, copiar, confirmar, dataBR } from '../core/ui.js';
@@ -245,9 +245,9 @@ export function montarRespostasCliente(alvo, ctx) {
       if (local.numerada && Object.keys(local.respostas).length) Object.assign(s, { respostas: local.respostas, via: 'local', manual: false });
       else {
         const r = await lerRespostaCliente({ cliente, texto, perguntas: PERGUNTAS.map(({ id, n, titulo }) => ({ id, n, titulo })) });
-        Object.assign(s, { respostas: r.respostas, via: 'ia', manual: false });
-        if (r.respostas.produtos) {
-          const lista = await extrairProdutosResposta({ cliente, trecho: r.respostas.produtos });
+        Object.assign(s, { respostas: limparRespostasIA(r.respostas, texto), via: 'ia', manual: false });
+        if (s.respostas.produtos) {
+          const lista = await extrairProdutosResposta({ cliente, trecho: s.respostas.produtos });
           if (lista.length) { s.entendidos.produtos = lista; s.via = 'ia-produtos'; }
         }
       }

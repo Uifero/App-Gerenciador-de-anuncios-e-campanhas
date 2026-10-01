@@ -289,15 +289,15 @@ function detalhe(c, cliente, cfg, recarregar) {
       <p class="hint mb-2">Gera a foto (PNG) e o vídeo prontos para subir no gerenciador de anúncios, a partir deste criativo.</p>
       <button class="btn-primary btn-sm" data-estudio><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar foto e vídeo</button></div>
 
-    <details class="mt-5 rounded-lg border border-slate-200 p-3" ${c.arquivoUrl ? 'open' : ''}><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (anexo e histórico)</summary>
+    <details class="mt-5 rounded-lg border border-slate-200 p-3" ${c.arquivoUrl ? 'open' : ''}><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (enviar a peça final e histórico)</summary>
     <div class="mt-3"><h4 class="mb-2 text-sm font-semibold">Peça final (arquivo)</h4>
-      ${c.arquivoUrl ? `<p class="mb-2 text-sm">${tag('com arquivo', 'tag-ok')} ${esc(c.arquivoNome || '')}</p>
+      ${c.arquivoUrl ? `<p class="mb-2 flex flex-wrap items-center gap-2 text-sm">${/.(jpe?g|png|webp|gif)$/i.test(c.arquivoNome || '') ? `<img src="${esc(c.arquivoUrl)}" alt="" class="h-12 w-12 rounded object-cover">` : ''}${tag('com arquivo', 'tag-ok')} ${esc(c.arquivoNome || '')}</p>
         ${tipoDaPeca(c.arquivoNome) ? `<p class="hint mb-2">${previaAtual(c) ? '<i class="fa-solid fa-circle-check text-emerald-600"></i> Prévia reduzida para o link de aprovação: pronta.' : '<i class="fa-solid fa-hourglass-half"></i> Prévia reduzida para o link de aprovação: é gerada sozinha nos bastidores (ou ao enviar para aprovação).'} O original fica em qualidade total.</p>` : ''}
         <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="${esc(c.arquivoUrl)}" target="_blank" rel="noopener" download="${esc(c.arquivoNome || 'criativo')}"><i class="fa-solid fa-download"></i> Baixar</a>
         <button class="btn-ghost btn-sm" data-link><i class="fa-solid fa-link"></i> Copiar link compartilhável</button>
         <button class="btn-danger btn-sm" data-rm-arq><i class="fa-solid fa-trash"></i> Remover</button></div>`
         : `<p class="caption mb-2">${tag('sem arquivo', 'tag-warn')} Envie o vídeo ou imagem finalizado.</p>`}
-      <div class="mt-2">${campoArquivo({ attrs: 'data-arq', accept: 'image/*,video/*,application/pdf', texto: c.arquivoUrl ? 'Substituir peça final (vídeo, imagem ou PDF)' : 'Enviar peça final (vídeo, imagem ou PDF)', destaque: !c.arquivoUrl, removivel: false })}</div></div>
+      <div class="mt-2">${campoArquivo({ attrs: 'data-arq', accept: 'image/*,video/*,application/pdf', texto: c.arquivoUrl ? 'Substituir peça final (vídeo, imagem ou PDF)' : 'Enviar peça final (vídeo, imagem ou PDF)', destaque: !c.arquivoUrl, removivel: false, dica: 'Envie o arquivo final do anúncio em qualidade original (MP4/MOV, JPG/PNG ou PDF, sem passar pelo WhatsApp). É ele que o cliente vê no link de aprovação e que você baixa para subir no Gerenciador de Anúncios.' })}</div></div>
 
     <div class="mt-5"><h4 class="mb-2 text-sm font-semibold">Histórico de versões (${versoes.length})</h4>
       <ol class="space-y-2">${[...versoes].reverse().map((v) => `<li class="rounded-lg bg-slate-50 p-2 text-sm"><div class="flex justify-between"><b>v${v.n} · ${esc(v.nota || '')}</b><span class="hint">${dataBR(v.quando)}</span></div>

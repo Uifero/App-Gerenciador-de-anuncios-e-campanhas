@@ -39,7 +39,7 @@ export function perguntaZeroHtml(cliente, numero = 11) {
     <div class="mt-2 rounded-lg border border-slate-200 bg-white p-2">
       <p class="text-sm font-medium"><i class="fa-brands fa-instagram text-pink-500"></i> O cliente já tem Instagram? Envie prints do perfil e de alguns posts</p>
       <p class="hint mb-1">${esc(LEGENDA_PRINTS)}. Até ${MAX_PRINTS} imagens.</p>
-      ${campoArquivo({ attrs: 'data-prints', accept: 'image/*', multiple: true, icone: 'camera', texto: 'Enviar prints do Instagram', destaque: false, lista: true })}
+      ${campoArquivo({ attrs: 'data-prints', accept: 'image/*', multiple: true, icone: 'camera', texto: 'Enviar prints do Instagram (PNG/JPG)', destaque: false })}
       <label class="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" data-prints-proprio> Confirmo que são prints do Instagram do próprio cliente</label>
       <button type="button" class="btn-ia btn-sm mt-1" data-analisar-prints><i class="fa-solid fa-wand-magic-sparkles"></i> Ler os prints e preencher o perfil com IA</button>
       <p class="hint">Leva cerca de 1 min. Os prints também ficam salvos em Materiais do cliente (Estúdio), para usar como referência visual ou prova social.</p>

@@ -729,6 +729,7 @@ ${texto}
 FIM>>>
 
 Para cada pergunta que o cliente respondeu, copie o TRECHO EXATO do texto que responde (sem reescrever, sem resumir, sem corrigir).
+Se o cliente repetiu a pergunta antes de responder (igual ou parecida, às vezes seguida de "Resposta:" ou "R:"), NÃO copie a pergunta nem o rótulo: copie só a resposta que vem depois.
 Pergunta sem resposta: NÃO inclua (nunca preencha por suposição). Um trecho pode responder só uma pergunta.
 Na pergunta "produtos", copie o trecho inteiro com a lista de produtos.
 Saída JSON: {"respostas": {"<id>": "trecho exato", ...}}

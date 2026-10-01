@@ -135,17 +135,59 @@ const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toL
 const VAZIAS = new Set(['', '-', '--', '.', 'x', 'n/a', 'na', 'nada', 'nao sei', 'não sei', 'sem resposta', '?', 'em branco', 'ok']);
 const semResposta = (s) => VAZIAS.has(norm(s).replace(/[.!]+$/, ''));
 
-/** Tira do começo da resposta a pergunta copiada de volta (o cliente costuma responder embaixo da própria pergunta). */
-function tirarPergunta(p, trecho) {
-  let t = String(trecho || '').trim();
-  const q = norm(p.cliente);
-  const [primeira, ...resto] = t.split('\n');
-  if (q && norm(primeira).startsWith(q.slice(0, Math.min(35, q.length)))) {
-    // Pergunta copiada inteira: corta ela; se a linha era só a pergunta (com o exemplo), descarta a linha toda.
-    t = t.startsWith(p.cliente) ? t.slice(p.cliente.length) : norm(primeira).length <= q.length + 3 ? resto.join('\n') : primeira.slice(p.cliente.length) + '\n' + resto.join('\n');
-    t = t.replace(/^[\s)\].:–-]+/, '');
+// ---------- pergunta copiada de volta ("eco") ----------
+const soPalavras = (s) => norm(s).replace(/\([^)]*\)/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const nucleo = (p) => soPalavras(p.cliente);
+const RE_ROTULO = /^\s*(?:resposta|resp|r)\s*(?:[:：]|\s[—–-])\s*/i;
+/** A linha é a pergunta repetida pelo cliente (igual ou quase igual, com ou sem o exemplo/numeração)? */
+function ehEco(p, linha) {
+  const l = soPalavras(String(linha).replace(/^[\s>*_-]*(?:pergunta\s*)?\d{1,2}\s*[.):\-–º°]\s*/i, ''));
+  const q = nucleo(p);
+  if (!l || !q) return false;
+  if (l === q || (q.startsWith(l) && l.length >= 15)) return true;
+  const ql = new Set(q.split(' ')), ws = l.split(' ');
+  return /\?\s*\**\s*$/.test(String(linha)) && ws.length >= 4 && ws.filter((w) => ql.has(w)).length / ws.length >= 0.8;
+}
+const ehEcoDeAlguma = (linha) => PERGUNTAS.some((q) => ehEco(q, linha));
+
+/**
+ * Tira do começo da resposta a pergunta copiada de volta (o cliente costuma responder embaixo da própria pergunta),
+ * o rótulo "Resposta:"/"R:"/"Resposta —" e, no fim, a próxima pergunta repetida. Sem eco, o texto volta igual.
+ */
+export function tirarPergunta(p, trecho) {
+  let linhas = String(trecho || '').replace(/\r\n/g, '\n').trim().split('\n');
+  const primeira = linhas[0] || '';
+  const ate = primeira.indexOf('?');
+  if (ehEco(p, primeira)) linhas = linhas.slice(1); // a linha toda é a pergunta
+  else if (ate > 0 && ehEco(p, primeira.slice(0, ate + 1))) linhas[0] = primeira.slice(ate + 1).replace(/^\s*\([^)]*\)/, ''); // pergunta + resposta na mesma linha
+  let t = linhas.join('\n').replace(/^\s+/, '').replace(RE_ROTULO, '');
+  const fim = t.split('\n');
+  while (fim.length > 1 && (!fim[fim.length - 1].trim() || ehEcoDeAlguma(fim[fim.length - 1]))) fim.pop();
+  t = fim.join('\n');
+  return t.replace(/^[\s)\].:–-]+/, '').replace(/^\*[^*\n]+\*\s*$/gm, '').trim(); // títulos de bloco (*SOBRE O NEGÓCIO*)
+}
+
+/**
+ * Leitura pela IA: a IA às vezes copia a pergunta repetida em vez da resposta. Limpa cada trecho e, se sobrar só a
+ * pergunta, pega no texto colado o que vem logo depois dela (até a próxima pergunta repetida). Nunca inventa texto.
+ */
+export function limparRespostasIA(respostas = {}, texto = '') {
+  const linhasTexto = String(texto).replace(/\r\n/g, '\n').split('\n');
+  const out = {};
+  for (const [id, trecho] of Object.entries(respostas)) {
+    const p = perguntaPorId(id); if (!p) continue;
+    let limpo = tirarPergunta(p, trecho);
+    if (!limpo || semResposta(limpo)) {
+      const i = linhasTexto.findIndex((l) => ehEco(p, l) || (l.includes('?') && ehEco(p, l.slice(0, l.indexOf('?') + 1))));
+      if (i >= 0) {
+        let j = i + 1;
+        while (j < linhasTexto.length && !ehEcoDeAlguma(linhasTexto[j])) j++;
+        limpo = tirarPergunta(p, linhasTexto.slice(i, j).join('\n'));
+      }
+    }
+    if (limpo && !semResposta(limpo)) out[id] = limpo;
   }
-  return t.replace(/^\*[^*\n]+\*\s*$/gm, '').trim(); // títulos de bloco (*SOBRE O NEGÓCIO*)
+  return out;
 }
 
 /**
