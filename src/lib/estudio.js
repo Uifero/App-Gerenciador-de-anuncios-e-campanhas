@@ -145,9 +145,11 @@ function pilula(ctx, { texto, x, yBase, tam, fundo, tinta, centro = false, alpha
 
 function logotipo(ctx, logo, x, y, maxW, maxH) {
   if (!logo) return;
-  const esc = Math.min(maxW / logo.naturalWidth, maxH / logo.naturalHeight);
+  // SVG sem largura/altura declaradas chega com tamanho natural 0: usa uma proporção de logo (3:1) para não sumir.
+  const lw = logo.naturalWidth || 300, lh = logo.naturalHeight || 100;
+  const esc = Math.min(maxW / lw, maxH / lh);
   ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 12;
-  ctx.drawImage(logo, x, y, logo.naturalWidth * esc, logo.naturalHeight * esc); ctx.restore();
+  ctx.drawImage(logo, x, y, lw * esc, lh * esc); ctx.restore();
 }
 
 /** Grade de 2 a 4 fotos dentro da área (x,y,w,h), com um respiro fino entre elas. */

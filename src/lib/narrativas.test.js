@@ -11,7 +11,7 @@ describe('narrativas (Metodologia Vortex)', () => {
     expect(rotuloNarrativa('quebra_crenca')).toBe('Quebra de Crença · Topo');
   });
   it('"A IA escolhe" não acrescenta nada ao pedido', () => {
-    expect(linhaNarrativa('', semProva)).toEqual({ linha: '', bloqueada: false });
+    expect(linhaNarrativa('', semProva)).toEqual({ linha: '', bloqueada: false, motivo: '' });
     expect(linhaNarrativa('inexistente', semProva).linha).toBe('');
   });
   it('narrativa de prova SEM prova real: bloqueada, pede outra abordagem e proíbe inventar', () => {

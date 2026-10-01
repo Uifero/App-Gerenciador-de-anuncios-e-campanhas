@@ -69,7 +69,7 @@ export function respondidas(cliente, site, produtos = [], materiais = 0) {
   const m = cliente?.marca || {}; const r = rastreamentoDe(cliente); const h = cliente?.historico || {};
   return {
     negocio: cheio(m.negocio), usp: cheio(m.usp), tom: cheio(m.tomDeVoz), objecoes: cheio(m.objecoes), linguagemDor: cheio(m.linguagemDor), termosProibidos: cheio(m.termosProibidos),
-    produtos: produtos.length > 0, materiais: cheio(m.materiaisOriginais) || materiais > 0, logo: cheio(m.logo),
+    produtos: produtos.length > 0, materiais: cheio(m.materiaisOriginais) || materiais > 0, logo: cheio(m.logo) || Boolean(cliente?.logoArquivo?.url),
     provas: cheio(m.provasSociais), presenca: cheio(cliente?.leituraSite?.url) || Boolean(cliente?.leituraInstagram), referencia: cheio(cliente?.siteReferencia),
     anuncios: cliente?.estagio === 'rodando' || m.jaAnuncia === 'nao', publicoCompra: cheio(m.publicoCompra) || cheio(h.publicos), oferta: cheio(m.ofertaAtiva),
     pixel: Boolean(r.metaPixelId || r.googleAdsId || site?.semPixel), pagamento: cheio(site?.pagamentoPreferido), formato: Boolean(site?.modo),

@@ -9,14 +9,17 @@ import { registrarBackup } from './configuracoes.js';
 export async function montarBackup(cliente = null) {
   const f = cliente ? { clienteId: cliente.id } : undefined;
   const ler = (col) => db.listar(col, f);
-  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, usoApi, respostas] = await Promise.all([
+  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, usoApi, respostas, materiais] = await Promise.all([
     ler(COL.criativos), ler(COL.hooks), ler(COL.referencias), ler(COL.campanhas), ler(COL.resultados), ler(COL.produtos), ler(COL.sites), ler(COL.usoApi), ler(COL.respostas),
+    ler(COL.materiais),
   ]);
   const colecoes = {
     [COL.clientes]: cliente ? [cliente] : await db.listar(COL.clientes),
     // O token do link de aprovação é um segredo de acesso (o criativo guarda uma cópia): fica de fora do arquivo.
     [COL.criativos]: criativos.map(({ aprovacaoToken, ...resto }) => resto), [COL.hooks]: hooks, [COL.referencias]: referencias, [COL.campanhas]: campanhas,
     [COL.resultados]: resultados, [COL.produtos]: produtos, [COL.sites]: sites, [COL.usoApi]: usoApi,
+    // Materiais (fotos salvas, prints de prova social e o logo): o registro com o link do arquivo no Storage.
+    [COL.materiais]: materiais,
     // O token do link também está na resposta e no id dela ("<token>_<criativo>"): ambos ficam de fora do arquivo.
     [COL.respostas]: respostas.map(({ token, id, ...resto }) => resto),
   };

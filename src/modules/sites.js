@@ -201,6 +201,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <button class="btn-primary" data-csv ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-file-csv"></i> Baixar catálogo de produtos para importar (CSV)</button>
           <button class="btn-ia" data-pacote ${semProdutos ? 'disabled' : ''} title="A IA escreve banners, briefing do tema e textos de página"><i class="fa-solid fa-wand-magic-sparkles"></i> ${site.pacote ? 'Gerar de novo banners, briefing e textos' : 'Gerar banners, briefing do tema e textos com IA'}</button>
           ${temCustom(site) && !temPacote(site) ? '<p class="hint">Como o site personalizado já existe, o título, a história, a FAQ e as cores dele serão mantidos; a IA só completa o resto (briefing do tema e descrições).</p>' : ''}
+          ${cliente.logoArquivo ? '<button class="btn-ghost" data-baixar-logo title="O arquivo original, sem compressão, para subir no tema da plataforma"><i class="fa-solid fa-copyright"></i> Baixar o logo (arquivo original)</button>' : '<p class="hint">Sem logo salvo: envie na pergunta 9 ou no painel "Material para montar o site".</p>'}
           ${site.pacote ? `<button class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Baixar banners e briefing em texto (.txt)</button>` : ''}`}
         <div><label class="label">Endereço do site já publicado (opcional)</label><input class="input" name="link" data-link value="${esc(site.linkPublicado)}" placeholder="https://…">
           <p class="hint">Depois de publicar, cole aqui o endereço. A aba Campanhas passa a sugerir este link como destino dos anúncios${custom ? ', e o site baixado de novo já sai com a prévia certa para o WhatsApp' : ''}.</p></div>
@@ -268,8 +269,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   }));
 
   // Sempre o estado ACEITO (conteúdo + cores + layout dos ajustes); uma mudança proposta em aberto nunca entra no download.
-  const htmlDe = (e) => gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site.linkPublicado || '' });
-  const html = () => htmlDe({ conteudo: site.conteudo, config: site.config, layout: site.layout });
+  const htmlDe = (e, extra = {}) => gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site.linkPublicado || '', ...extra });
+  const html = (extra) => htmlDe({ conteudo: site.conteudo, config: site.config, layout: site.layout }, extra);
   if (custom ? (temCustom(site) || produtos.length) : site.pacote) {
     montarAjusteSite($('[data-ajuste]', root), { cliente, produtos, modo: custom ? 'custom' : 'pacote', get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML })
       .catch((e) => { console.warn('[ajuste do site]', e); $('[data-ajuste]', root).innerHTML = '<p class="hint text-rose-600">Não consegui abrir "Ajustar este site". Recarregue a página.</p>'; });
@@ -281,7 +282,10 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   });
   on(root, 'click', '[data-baixar-zip]', async () => {
     const pasta = pastaDoSite(cliente);
-    baixarTexto(`${pasta}.zip`, criarZip([{ nome: `${pasta}/index.html`, conteudo: html() }]), 'application/zip');
+    // O logo vai DENTRO da pasta, com os bytes originais (sem converter), e o site aponta para ele.
+    const logo = await arquivoDoLogo(cliente);
+    if (cliente.logoArquivo && !logo) toast('Não consegui baixar o arquivo do logo agora: o site aponta para o endereço dele na internet.', 'info');
+    baixarTexto(`${pasta}.zip`, criarZip([{ nome: `${pasta}/index.html`, conteudo: html(logo ? { logoUrl: logo.nome } : {}) }, ...(logo ? [{ nome: `${pasta}/${logo.nome}`, conteudo: logo.bytes }] : [])]), 'application/zip');
     await marcarExportado();
     toast('Pasta do site baixada. Próximo passo: "Como publicar este site", logo abaixo.', 'info');
     recarregar();
@@ -321,6 +325,11 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     await salvarSite({ exportadoEm: new Date().toISOString() }); toast('CSV gerado. Confira as colunas no passo a passo do manual.'); recarregar();
   });
   on(root, 'click', '[data-pacote]', (b) => gerarComIa(b));
+  on(root, 'click', '[data-baixar-logo]', (b) => ocupado(b, async () => {
+    const logo = await arquivoDoLogo(cliente);
+    if (!logo) throw new Error('Não consegui baixar o logo agora. Tente de novo.');
+    baixarTexto(`${slug(cliente.nome) || 'loja'}-${logo.nome}`, logo.bytes, cliente.logoArquivo.tipo);
+  }));
   on(root, 'click', '[data-baixar-pacote]', () => baixarTexto(`pacote-${slug(cliente.nome)}.txt`, pacoteTexto(site.pacote), 'text/plain;charset=utf-8'));
 
   on(root, 'click', '[data-manual]', async () => {
@@ -332,6 +341,16 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
 /** Nome da pasta do site dentro do .zip (e do .zip em si). */
 const pastaDoSite = (cliente) => `site-${slug(cliente.nome) || 'loja'}`;
+
+/** Bytes ORIGINAIS do logo salvo (sem converter) e o nome do arquivo na pasta: { nome: 'logo.png', bytes } ou null. */
+async function arquivoDoLogo(cliente) {
+  const l = cliente.logoArquivo; if (!l?.url) return null;
+  try {
+    const r = await fetch(l.url); if (!r.ok) return null;
+    const ext = { 'image/svg+xml': 'svg', 'image/jpeg': 'jpg' }[l.tipo] || 'png';
+    return { nome: `logo.${ext}`, bytes: new Uint8Array(await r.arrayBuffer()) };
+  } catch { return null; }
+}
 
 /**
  * "Como publicar este site" (modo custom). Política: o site do CLIENTE nunca roda no servidor/VM nem no projeto

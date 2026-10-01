@@ -4,6 +4,7 @@ import { tokenAtual } from './auth.js';
 import { IDIOMA_NOME, MODELO_DESCRICAO, CENAS_UNBOXING } from '../lib/constantes.js';
 import { paisDoCliente, infoPais, descreverMercado, simboloDoCliente } from '../lib/pais.js';
 import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloNarrativa } from '../lib/narrativas.js';
+import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
 
@@ -113,10 +114,14 @@ export function termosProibidos(cliente) {
   return String(cliente.marca?.termosProibidos || '').split(/[\n,;]/).map((s) => s.trim()).filter(Boolean);
 }
 
-/** Verificação LOCAL (não depende da IA): devolve os termos proibidos encontrados no texto. */
+/**
+ * Verificação LOCAL (não depende da IA): devolve os termos proibidos encontrados no texto. Em cliente de
+ * saúde/emagrecimento, também resultado em kg/cm e "antes e depois" (política do Meta, lib/saude.js).
+ */
 export function acharTermosProibidos(texto, cliente) {
   const t = String(texto || '').toLowerCase();
-  return termosProibidos(cliente).filter((p) => t.includes(p.toLowerCase()));
+  const achados = termosProibidos(cliente).filter((p) => t.includes(p.toLowerCase()));
+  return ehProdutoSaude(cliente) ? [...new Set([...achados, ...achadosSaude(texto)])] : achados;
 }
 
 const REGRA_CRITICA = (cliente) => `REGRAS CRÍTICAS (valem para tudo que você escrever):
@@ -125,7 +130,8 @@ const REGRA_CRITICA = (cliente) => `REGRAS CRÍTICAS (valem para tudo que você 
 3. NUNCA use estes termos proibidos/restritos do nicho: ${termosProibidos(cliente).join(', ') || '(nenhum cadastrado — mesmo assim evite promessas de saúde, dinheiro ou resultado garantido)'}.
 4. Idioma: todo texto voltado ao PÚBLICO FINAL (hooks, copy, CTA, textos de loja) em ${IDIOMA_NOME[cliente.marca?.idioma] || IDIOMA_NOME['pt-BR']}. Análises, explicações, planos e checklists para o GESTOR, sempre em português do Brasil. As chaves dos JSONs pedidos NUNCA são traduzidas.
 5. Cada variação deve ter um gatilho mental identificável e um ângulo diferente das demais.
-6. Não invente dados, números, estudos, prêmios ou depoimentos de pessoas reais. Use só o que consta no perfil de marca.`;
+6. Não invente dados, números, estudos, prêmios ou depoimentos de pessoas reais. Use só o que consta no perfil de marca.${ehProdutoSaude(cliente) ? `
+7. ${REGRA_SAUDE}` : ''}`;
 
 export function contextoCliente(c) {
   const m = c.marca || {};

@@ -12,6 +12,8 @@ import { enviarArquivoOuAvisar } from '../lib/uploads.js';
 import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '../lib/previa.js';
 import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
 import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../lib/narrativas.js';
+import { abrirLogoCliente } from './logo-cliente.js';
+import { AVISO_META_SAUDE } from '../lib/saude.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -66,6 +68,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   root.innerHTML = `${cabecalho('Criativos', 'Caminho de cada anúncio: 1. gerar ou escrever → 2. abrir, revisar e completar o checklist → 3. enviar ao cliente aprovar → 4. "Gerar foto e vídeo" → 5. vincular na aba Campanhas. Cada ajuste vira uma versão.',
     `<select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
      <button class="btn-ghost" data-modelos-prompt title="Modelos prontos de prompt para editar ou gerar fotos de produto, preenchidos com os dados deste cliente"><i class="fa-solid fa-swatchbook"></i> Modelos de prompt</button>
+     <button class="btn-ghost" data-logo-cliente-btn title="Enviar ou trocar o logo do cliente (vai para as peças do Estúdio e para o site)"><i class="fa-solid fa-copyright"></i> Logo do cliente${cliente.logoArquivo ? '' : ' <span class="tag tag-warn">falta</span>'}</button>
      <button class="btn-ghost" data-enviar title="Gera um link para o cliente final ver as peças e aprovar ou pedir ajuste, sem login"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação</button>
      <button class="btn-primary" data-novo title="Gerar ou escrever um criativo novo"><i class="fa-solid fa-plus"></i> Novo criativo</button>`)}
     <div class="mb-4" data-questionario></div><div id="painel"></div><div id="lista">${lista()}</div>`;
@@ -78,6 +81,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   };
   on(root, 'change', '[data-filtro]', (s) => { filtro = s.value; $('#lista', root).innerHTML = lista(); });
   on(root, 'click', '[data-modelos-prompt]', (b) => ocupado(b, () => abrirBiblioteca({ cliente })));
+  on(root, 'click', '[data-logo-cliente-btn]', () => abrirLogoCliente(cliente, () => recarregar()));
   on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg, produtos, sugestaoInsight));
   on(root, 'click', '[data-enviar]', () => abrirEnvio(cliente, criativos, { preSelecionar: criativos.filter((c) => ['rascunho', 'reaprovacao'].includes(c.status)).map((c) => c.id), aoMudar: recarregar }));
 
@@ -151,9 +155,11 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
   const form = $('#fg', alvo), saida = $('#saida', alvo);
   on(alvo, 'click', '[data-x]', () => { alvo.innerHTML = ''; });
   on(alvo, 'change', '[name=narrativa]', (s) => {
-    $('[data-aviso-narrativa]', alvo).textContent = linhaNarrativa(s.value, cliente).bloqueada
-      ? 'Este cliente não tem prova social real no perfil: a IA vai escolher outra abordagem, sem inventar resultado.'
-      : 'Referência da Metodologia Vortex. Na dúvida, deixe "A IA escolhe".';
+    const { motivo } = linhaNarrativa(s.value, cliente);
+    $('[data-aviso-narrativa]', alvo).textContent = motivo === 'saude'
+      ? `${AVISO_META_SAUDE}. A IA usa um ângulo permitido (experiência, rotina, como é usar, número de clientes) e explica a troca.`
+      : motivo === 'prova' ? 'Este cliente não tem prova social real no perfil: a IA vai escolher outra abordagem, sem inventar resultado.'
+        : 'Referência da Metodologia Vortex. Na dúvida, deixe "A IA escolhe".';
   });
   on(alvo, 'change', '[name=quantidade]', (s) => { alvo.querySelectorAll('[data-qtd]').forEach((e) => { e.textContent = s.value; }); });
   on(alvo, 'click', '[data-ang]', (b) => { const t = form.elements.briefing; t.value = (t.value ? t.value + '\n' : '') + 'Ângulo: ' + b.dataset.ang; t.focus(); });

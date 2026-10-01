@@ -15,6 +15,7 @@ import { buscarExemplosMercado } from './referencias.js';
 import { marcasQueContinuam, textoMarca } from '../lib/leitura.js';
 import { normalizarRastreamento, indicadorPixel } from '../lib/rastreamento.js';
 import { PAISES, PAIS_PADRAO, paisDoCliente } from '../lib/pais.js';
+import { ehProdutoSaude, AVISO_META_SAUDE } from '../lib/saude.js';
 
 /**
  * Busca de exemplos de mercado do primeiro uso: roda sozinha na tela do cliente recém-cadastrado, mostra o que está
@@ -74,6 +75,8 @@ export function montarDadosCliente(v, escopo) {
       usp: v.usp || '', idioma: v.idioma || 'pt-BR', termosProibidos: v.termosProibidos || '', estetica: v.estetica || '',
       // Questionário único (lib/questionario.js): o que vende e para quem, quem mais compra, oferta ativa, link das fotos e do logo.
       negocio: v.negocio || '', publicoCompra: v.publicoCompra || '', ofertaAtiva: v.ofertaAtiva || '', materiaisOriginais: v.materiaisOriginais || '', logo: v.logo || '',
+      // Produto de saúde/emagrecimento: só grava quando a pessoa mexeu na chave; sem isso, vale a detecção automática.
+      ...(v.produtoSaude === 'sim' ? { produtoSaude: true } : v.produtoSaude === 'nao' ? { produtoSaude: false } : {}),
     },
   };
 }
@@ -189,6 +192,9 @@ export async function viewForm(el, id, { baseId = null } = {}) {
       <div><label class="label">O que vende e para quem ${etiquetaAuto(c, 'negocio')}</label><input class="input" name="negocio" value="${esc(m.negocio)}" placeholder="Ex.: roupas de academia para mulheres de 25 a 45 anos"></div>
       <div><label class="label">Como o público descreve a própria dor ${etiquetaAuto(c, 'linguagemDor')}</label><textarea class="input" rows="2" name="linguagemDor" placeholder="Nas palavras deles: 'minha roupa nunca serve direito'">${esc(m.linguagemDor)}</textarea></div>
       <div><label class="label">Diferencial (USP) ${etiquetaAuto(c, 'usp')}</label><input class="input" name="usp" value="${esc(m.usp)}"></div>
+      <div><label class="flex items-center gap-2 text-sm font-medium"><input type="checkbox" data-produto-saude ${ehProdutoSaude(c) ? 'checked' : ''}> Produto de saúde/emagrecimento</label>
+        <input type="hidden" name="produtoSaude" value="${typeof m.produtoSaude === 'boolean' ? (m.produtoSaude ? 'sim' : 'nao') : ''}">
+        <p class="hint">${esc(AVISO_META_SAUDE)}. Marcado, os criativos não usam antes e depois, kg/cm nem resultado no corpo (o site continua mostrando os depoimentos reais). ${typeof m.produtoSaude === 'boolean' ? 'Escolhido por você.' : 'Marcado sozinho quando o nicho, o negócio ou os produtos indicam; desmarque se não for o caso.'}</p></div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (objeções, crenças do público, provas, termos proibidos, site de referência)</summary>
         <div class="mt-3 space-y-4">
           <div><label class="label">Objeções comuns ${etiquetaAuto(c, 'objecoes')}</label><textarea class="input" rows="2" name="objecoes">${esc(m.objecoes)}</textarea></div>
@@ -245,6 +251,7 @@ export async function viewForm(el, id, { baseId = null } = {}) {
     toast(erros.join(' '), 'erro');
     return false;
   };
+  on(form, 'change', '[data-produto-saude]', (c) => { form.elements.produtoSaude.value = c.checked ? 'sim' : 'nao'; });
   on(form, 'change', '[name=estagio]', (s) => $('[data-rodando]', form).classList.toggle('hidden', s.value !== 'rodando'));
   on(form, 'click', '[data-voltar]', () => { passo = Math.max(0, passo - 1); mostrar(); });
   on(form, 'click', '[data-avancar]', () => {

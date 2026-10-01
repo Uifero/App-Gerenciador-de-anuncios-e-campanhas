@@ -3,7 +3,8 @@
 //    texto; se o site bloquear, cai na busca web (a mesma da busca de mercado).
 //  - Instagram: por PRINT (a plataforma não permite leitura automática) — a IA lê as imagens, como no Diagnóstico.
 // Regras de preenchimento/marcação em lib/leitura.js; prints e fotos do site viram Materiais do cliente (Estúdio).
-import { db, COL, enviarArquivo } from '../core/storage.js';
+import { db, COL } from '../core/storage.js';
+import { salvarMaterial } from '../lib/materiais.js';
 import { tokenAtual } from '../core/auth.js';
 import { interpretarSite, lerSitePelaBusca, analisarPrintsInstagram } from '../core/ia.js';
 import { tipoLink, sugestoesSite, sugestoesPrints, aplicarLeitura, CAMPOS_AUTO, LEGENDA_PRINTS, MAX_PRINTS, textoMarca } from '../lib/leitura.js';
@@ -125,13 +126,8 @@ async function salvarCliente(cliente, patch) {
   await db.atualizar(COL.clientes, cliente.id, patch);
 }
 
-/** Guarda uma imagem em Materiais do cliente (Storage + gcc_materiais), para o Estúdio. Também usada pela prova social. */
-export async function salvarMaterial(cliente, blob, origem, extra = {}) {
-  const ext = { 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif' }[blob.type] || 'jpg';
-  const nome = `${origem}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
-  const env = await enviarArquivo(`gcc/${cliente.id}/materiais/${nome}`, new File([blob], nome, { type: blob.type || 'image/jpeg' }));
-  await db.criar(COL.materiais, { clienteId: cliente.id, url: env.url, path: env.path, nome, origem, ...extra });
-}
+// Guarda uma imagem em Materiais do cliente: a função mora em lib/materiais.js (a mesma usada pelo logo).
+export { salvarMaterial };
 
 /** Aplica as sugestões (só em campo vazio), cria os produtos novos e grava o resumo em cliente[chave]. */
 async function aplicarEGravar(ctx, sug, meta, chave, extras) {

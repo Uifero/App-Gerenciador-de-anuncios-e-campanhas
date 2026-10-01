@@ -2,9 +2,11 @@
 // perfil de marca, provas sociais, produtos, site de referência, rastreamento, Materiais e o questionário — para
 // revisar antes de gerar. É só uma camada de LEITURA: cada linha aponta ("Editar") para o campo/tela real; o painel
 // nunca guarda cópia de nada. A exceção é o envio de prints de prova social, que grava no lugar de sempre
-// (campo "provas sociais" + Materiais), pelo mesmo componente da pergunta 10.
+// (campo "provas sociais" + Materiais), pelo mesmo componente da pergunta 10, e o envio do logo (mesmo componente da
+// pergunta 9), que aparece quando falta logo.
 import { resumoMaterialSite, provasEmImagem } from '../lib/prova-social.js';
 import { provaSocialHtml, ligarProvaSocial } from './prova-social.js';
+import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { esc, $, on, toast } from '../core/ui.js';
 
 const abertoPorCliente = new Map();
@@ -31,6 +33,7 @@ export function montarPainelMaterial(alvo, ctx) {
       ${campos(it) ? `<div class="mt-1">${campos(it)}</div>` : ''}
       ${it.chave === 'provas' && provas.length ? `<div class="mt-1 flex flex-wrap gap-1">${provas.slice(0, 8).map((p) => `<img src="${esc(p.url)}" alt="Print de prova social" title="${esc(p.descricao || '')}" class="h-10 w-10 rounded border object-cover" loading="lazy">`).join('')}${provas.length > 8 ? `<span class="hint self-center">+${provas.length - 8}</span>` : ''}</div>` : ''}
       ${it.avisos.map((a) => `<p class="mt-1 text-xs font-medium text-amber-700"><i class="fa-solid fa-circle-info"></i> ${esc(a)}</p>`).join('')}
+      ${it.chave === 'materiais' && it.avisos.includes('Sem logo') ? `<div class="mt-1" data-logo-painel>${logoHtml(ctx.cliente)}</div>` : ''}
       ${it.chave === 'provas' ? `<details class="mt-1"><summary class="cursor-pointer text-xs text-indigo-600">Chegou prova nova? Enviar prints aqui</summary>${provaSocialHtml('painel')}</details>` : ''}</li>`).join('')}</ul>
     <div class="mt-3 rounded-lg bg-slate-50 p-3"><p class="caption mb-2"><b>Gerar site com este material:</b> é o mesmo "Gerar textos com IA" do formulário abaixo, no modo deste cliente (${ctx.site?.modo === 'custom' ? 'site personalizado' : ctx.site?.modo ? 'pacote de plataforma' : 'modo ainda não escolhido'}), usando tudo o que está listado acima. Depois é só revisar e baixar.</p>
       <button type="button" class="btn-ia" data-gerar-material><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar site com este material</button></div>
@@ -38,6 +41,8 @@ export function montarPainelMaterial(alvo, ctx) {
 
   $('[data-painel-material]', alvo).addEventListener('toggle', (e) => abertoPorCliente.set(ctx.cliente.id, e.target.open));
   ligarProvaSocial($('[data-prova-img="painel"]', alvo), ctx);
+  const caixaLogo = $('[data-logo-painel]', alvo);
+  if (caixaLogo) ligarLogo(caixaLogo, ctx.cliente, () => ctx.recarregar());
   on(alvo, 'click', '[data-ir-pergunta]', (b) => ctx.irParaPergunta(b.dataset.irPergunta || null));
   on(alvo, 'click', '[data-gerar-material]', (b) => {
     if (!ctx.gerar) return toast('Escolha primeiro como a loja será entregue (site personalizado ou pacote), logo abaixo — ou responda a pergunta 18.', 'erro');

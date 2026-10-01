@@ -32,7 +32,8 @@ export function metaSeo({ cliente, produtos = [], conteudo: c = {}, url = '' }) 
 const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 const brl = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {}, url = '', layout: layoutBruto = null }) {
+/** `logoUrl`: endereço do logo no cabeçalho (padrão: o logo salvo do cliente; no .zip, o arquivo que vai na pasta). Sem logo, o nome em texto. */
+export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {}, url = '', layout: layoutBruto = null, logoUrl = cliente?.logoArquivo?.url || '' }) {
   // Ordem, blocos ocultos, títulos, variações e imagens ("Ajustar este site", lib/site-blocos.js). Sem layout = padrão de sempre.
   const L = normalizarLayout(layoutBruto || {});
   const visivel = (k) => !L.ocultos.includes(k);
@@ -94,7 +95,7 @@ ${head}<style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--txt);background:var(--fundo)}
 a{color:inherit}.wrap{max-width:1100px;margin:0 auto;padding:0 20px}
 header{position:sticky;top:0;background:var(--fundo);border-bottom:1px solid #e5e7eb;z-index:20}header .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
-.logo{font-weight:800;font-size:20px;text-decoration:none}nav a{margin-left:18px;text-decoration:none;font-size:14px}
+.logo{font-weight:800;font-size:20px;text-decoration:none}.logo img{display:block;max-height:44px;max-width:180px;width:auto}nav a{margin-left:18px;text-decoration:none;font-size:14px}
 .cartbtn{background:var(--cor);color:#fff;border:0;border-radius:999px;padding:8px 16px;cursor:pointer;font-weight:600}
 .hero{background:linear-gradient(135deg,var(--cor),#111827);color:#fff;padding:80px 0;text-align:center}.hero h1{font-size:clamp(28px,5vw,48px);margin:0 0 12px}.hero p{font-size:18px;opacity:.9;max-width:600px;margin:0 auto 24px}
 .hero a{display:inline-block;background:#fff;color:#111;padding:12px 28px;border-radius:999px;font-weight:700;text-decoration:none}
@@ -125,7 +126,7 @@ footer{background:#111827;color:#d1d5db;padding:40px 0;font-size:14px}footer h4{
 #cookies.on{display:flex;flex-wrap:wrap;align-items:center;gap:10px}#cookies p{margin:0;flex:1 1 260px}#cookies button{border:0;border-radius:999px;padding:8px 16px;font-weight:600;cursor:pointer}
 #cookies .ok{background:var(--cor);color:#fff}#cookies .nao{background:#374151;color:#fff}.linkcookies{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit}
 </style></head><body>
-<header><div class="wrap"><a class="logo" href="#topo">${esc(cliente.nome)}</a>
+<header><div class="wrap"><a class="logo" href="#topo">${logoUrl ? `<img src="${esc(logoUrl)}" alt="${esc(cliente.nome)}">` : esc(cliente.nome)}</a>
 <nav>${visivel('categorias') ? '<a href="#categorias">Categorias</a>' : ''}${visivel('vendidos') ? '<a href="#vendidos">Mais vendidos</a>' : ''}${promo.length && visivel('sale') ? '<a href="#sale">Sale</a>' : ''}${visivel('marca') ? '<a href="#marca">A marca</a>' : ''}${faq.length && visivel('faq') ? '<a href="#faq">Dúvidas</a>' : ''}</nav>
 <button class="cartbtn" id="abrirCarrinho">Carrinho (<span id="qtd">0</span>)</button></div></header>
 

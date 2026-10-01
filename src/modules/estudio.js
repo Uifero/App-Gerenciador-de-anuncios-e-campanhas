@@ -23,6 +23,7 @@ import { htmlFerramentas } from '../lib/ferramentas-ia.js';
 import { montarNarracao } from './narracao.js';
 import { montarBroll } from './broll.js';
 import { abrirBiblioteca } from './modelos-prompt.js';
+import { logoHtml, ligarLogo } from './logo-cliente.js';
 
 const COLE_AQUI = 'Cole esse prompt numa dessas ferramentas:';
 
@@ -70,7 +71,7 @@ export function abrirEstudio(criativo, cliente) {
     <div data-lista-midias class="mt-2 flex flex-wrap gap-2"></div>
     <div data-materiais-salvos class="mt-2"></div>
     <div class="mt-3 grid gap-3 sm:grid-cols-2">
-      <div><label class="label">Logo (opcional)</label>${campoArquivo({ attrs: 'data-logo', accept: 'image/*', icone: 'copyright', texto: 'Enviar logo (PNG transparente)', destaque: false })}</div>
+      <div><label class="label">Logo do cliente (opcional)</label><div data-logo-estudio>${logoHtml(cliente)}</div><p class="hint">Fica salvo no cliente (Materiais) e entra nas peças e no site.</p></div>
       <div><label class="label">Música do vídeo (opcional)</label>${campoArquivo({ attrs: 'data-musica', accept: 'audio/*', icone: 'music', texto: 'Enviar música (MP3/WAV)', destaque: false })}</div>
       <div><label class="label">Cor da marca</label><input type="color" data-cor value="${esc(est.cor)}" class="h-9 w-16 rounded border"></div>
       <div><label class="label">Cor do texto</label><input type="color" data-cor-texto value="${esc(est.corTexto)}" class="h-9 w-16 rounded border"></div>
@@ -301,7 +302,15 @@ export function abrirEstudio(criativo, cliente) {
     listarMidias();
   });
   on(raiz, 'change', '[data-cena-midia]', (s) => { est.cenas[Number(s.dataset.cenaMidia)].midiaIdx = s.value === '' ? null : Number(s.value); });
-  on(raiz, 'change', '[data-logo]', (i) => ocupado(i, async () => { est.logo = i.files[0] ? (await carregarMidia(i.files[0])).el : null; agendarPrevia(); }));
+  // Logo salvo do cliente: carregado pelo arquivo original (fetch -> File), igual a "Trazer para os materiais".
+  const carregarLogo = async () => {
+    const l = cliente.logoArquivo; if (!l?.url) { est.logo = null; return; }
+    try { const r = await fetch(l.url); if (!r.ok) throw new Error(); const bl = await r.blob(); est.logo = (await carregarMidia(new File([bl], l.nome || 'logo', { type: l.tipo || bl.type }))).el; }
+    catch { est.logo = null; toast('Não consegui abrir o logo salvo agora. As peças saem sem logo; tente de novo.', 'erro'); }
+    agendarPrevia();
+  };
+  carregarLogo();
+  ligarLogo($('[data-logo-estudio]', raiz), cliente, carregarLogo);
   on(raiz, 'change', '[data-musica]', (i) => { est.musica = i.files[0] || null; });
   on(raiz, 'input', '[data-cor]', (i) => { est.cor = i.value; gravarPref(cliente.id, { cor: est.cor, corTexto: est.corTexto }); agendarPrevia(); });
   on(raiz, 'input', '[data-cor-texto]', (i) => { est.corTexto = i.value; gravarPref(cliente.id, { cor: est.cor, corTexto: est.corTexto }); agendarPrevia(); });
