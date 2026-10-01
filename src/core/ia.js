@@ -597,14 +597,48 @@ const linhaBase = (base) => (base && (base.heroTitulo || base.storytelling)
   ? `\nEste cliente JÁ TEM textos aprovados em outra versão da loja. Mantenha o mesmo discurso e use exatamente estes textos: título do banner "${base.heroTitulo || ''}", subtítulo "${base.heroSubtitulo || ''}", botão "${base.heroCta || ''}", história da marca: "${String(base.storytelling || '').slice(0, 1200)}".`
   : '');
 
+/**
+ * "Como eu quero o site" + site de referência (painel "Material para montar o site"). Vale mais que os padrões da IA e
+ * fica abaixo das regras do app. Da referência, só estrutura e estilo: nunca texto, imagem, logo ou marca dela.
+ */
+export function contextoPreferencias(cliente) {
+  const p = cliente?.preferenciasSite || {};
+  const linhas = [
+    String(p.texto || '').trim() && `Como o operador quer o site (palavras dele): "${String(p.texto).trim().slice(0, 1500)}"`,
+    String(cliente?.siteReferencia || '').trim() && `Site de referência: ${String(cliente.siteReferencia).trim()}`,
+    String(p.gostei || '').trim() && `O que ele gostou nesse site: "${String(p.gostei).trim().slice(0, 800)}"`,
+    String(p.referenciaLeitura || '').trim() && `Estrutura e estilo lidos do print da referência: ${String(p.referenciaLeitura).trim().slice(0, 1200)}`,
+  ].filter(Boolean);
+  if (!linhas.length) return '';
+  return `\nPREFERÊNCIAS DO OPERADOR PARA O SITE (valem MAIS que os seus padrões; ficam ABAIXO das regras do app: não inventar prova/depoimento/dado, política de anúncios do Meta e perfil de marca):
+${linhas.join('\n')}
+Da referência use SÓ estrutura e estilo (ordem das seções, estilo do banner, densidade da grade, espaçamento, clima). NUNCA copie textos, imagens, logo ou marca dela.`;
+}
+
+/** Imagens dos Materiais do cliente que podem ir no banner (id: nome), para a IA escolher quando as preferências pedirem. */
+const linhaImagens = (materiais = []) => (materiais.length ? `\nImagens nos Materiais do cliente (id: nome): ${materiais.slice(0, 30).map((m) => `${m.id}: ${m.nomeOriginal || m.descricao || m.nome || 'imagem'}`).join(' | ')}` : '');
+/** Pedido opcional de escolhas visuais (só quando as preferências pedirem); o app valida cada uma como operação. */
+const PEDIDO_VISUAL = (chaves) => `"visual": SÓ se as preferências do operador pedirem algo disto (senão null): {"ajusteFotos": "contain" (fotos dos produtos inteiras, sem cortar) | "cover" (preenchendo) | null, "bannerMaterialId": id de uma das imagens dos Materiais listadas | null, "ordem": lista na ordem desejada com as chaves ${chaves} | null, "ocultar": [chaves] | null}`;
+
+/**
+ * Print do site de referência (sites costumam bloquear a leitura): descreve SÓ a estrutura e o estilo, nunca textos,
+ * nomes, logo ou imagens. Usa a mesma tarefa de leitura de prints com imagem (leitura_prints).
+ */
+export async function lerReferenciaPrint({ cliente, imagem }) {
+  const system = 'Você descreve a ESTRUTURA e o ESTILO visual de um site a partir de um print, para servir de inspiração. Nunca transcreve textos, nomes de marca, logos, preços nem descreve as fotos em detalhe.';
+  const pedido = `Descreva em até 6 linhas curtas, em português do Brasil: ordem das seções da página, estilo do banner (imagem grande? texto sobre a foto? fundo liso?), densidade da grade de produtos (quantas colunas, fotos inteiras ou cortadas), espaçamento (arejado/compacto), cores dominantes em termos gerais e o clima (minimalista, colorido, luxuoso...). NÃO copie nenhum texto do print. Saída JSON: {"estrutura": string}. ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'leitura_prints', cliente, system, messages: [{ role: 'user', content: pedido }], imagens: [imagem] });
+  return String(dados?.estrutura || '').trim();
+}
+
 /** `semDepoimentos`: o cliente já tem prova social real — a IA não escreve depoimento-modelo (lib/prova-social.js montarDepoimentos). */
-export async function gerarConteudoSite({ cliente, produtos, base = null, semDepoimentos = false }) {
+export async function gerarConteudoSite({ cliente, produtos, base = null, semDepoimentos = false, materiais = [] }) {
   const system = 'Você é copywriter de e-commerce.';
-  const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.${linhaBase(base)}
+  const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.${linhaBase(base)}${contextoPreferencias(cliente)}${linhaImagens(materiais)}
 Se couber neste cliente (opcional), organize o banner e a história como uma página de produto: título; prova social só se for real do perfil; uma frase de solução; 3 argumentos tirados das crenças e dores do público; texto curto.
-Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": ${semDepoimentos ? '[] (vazio: a loja já tem depoimentos reais, que o app coloca)' : '[{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais)'},"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)})}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": ${semDepoimentos ? '[] (vazio: a loja já tem depoimentos reais, que o app coloca)' : '[{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais)'},"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)}), ${PEDIDO_VISUAL('hero, provas, categorias, vendidos, sale, catalogo, marca, depoimentos, faq, newsletter')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
-  return { ...textoPlano(d), faq: objecoesDe(cliente).length ? normalizarFaq(d?.faq) : [] };
+  return { ...textoPlano(d), faq: objecoesDe(cliente).length ? normalizarFaq(d?.faq) : [], visual: d?.visual && typeof d.visual === 'object' ? d.visual : null };
 }
 
 // ---------- FAQ do site (a partir das objeções do perfil de marca) ----------
@@ -628,10 +662,10 @@ Saída: array JSON de {"p","r"}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   return normalizarFaq(Array.isArray(dados) ? dados : dados?.faq);
 }
 
-export async function gerarTextosPacote({ cliente, produtos, plataforma, base = null }) {
+export async function gerarTextosPacote({ cliente, produtos, plataforma, base = null, materiais = [] }) {
   const system = `Você prepara lojas para ${plataforma}.`;
-  const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})`).join(', ') || 'a definir'}.${linhaBase(base)}${base?.cores?.length ? ` Paleta já usada: ${base.cores.join(', ')} (comece a paletaSugerida por ela).` : ''}
-Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}]}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+  const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})`).join(', ') || 'a definir'}.${linhaBase(base)}${base?.cores?.length ? ` Paleta já usada: ${base.cores.join(', ')} (comece a paletaSugerida por ela).` : ''}${contextoPreferencias(cliente)}${linhaImagens(materiais)}
+Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}], ${PEDIDO_VISUAL('banner, provas, produtos, confianca, depoimentos, sobre, faq')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'pacote', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
@@ -650,8 +684,13 @@ const OPS_CUSTOM = `Operações permitidas (use exatamente estes formatos):
 - {"op":"paleta","corPrimaria":"#rrggbb","corFundo":"#rrggbb"}  (texto do site é cinza-escuro #1f2937 e os botões têm texto branco: escolha cores com contraste ≥ 4,5 — fundo claro, cor principal escura o bastante)
 - {"op":"variacao","bloco":"hero","opcao":"altura","valor":"curto"|"normal"|"alto"} / {"op":"variacao","bloco":"vendidos"|"sale"|"catalogo","opcao":"colunas","valor":2|3|4}
 - {"op":"imagem","bloco":"hero"|"marca","materialId":ID dos Materiais listados | null para tirar}
+- {"op":"fotos","ajuste":"contain"|"cover"}  (fotos dos produtos: inteiras, sem cortar | preenchendo o quadro)
+  Bloco "provas" = Clientes reais (prints reais de clientes): pode mover, ocultar e mostrar; o conteúdo dos prints NUNCA muda.
 Blocos (B): hero, categorias, vendidos, sale, catalogo, marca, depoimentos, faq, newsletter.`;
-const OPS_PACOTE = `Operações permitidas (só CONTEÚDO; o visual é do tema da plataforma):
+const OPS_PACOTE = `Operações permitidas (conteúdo do pacote e as escolhas da PRÉVIA, que depois viram configurações do tema em "O que colocar na plataforma"):
+- {"op":"imagem","bloco":"banner","materialId":ID dos Materiais listados | null para tirar}  (imagem do banner)
+- {"op":"fotos","ajuste":"contain"|"cover"}  (fotos dos produtos: inteiras, sem cortar | preenchendo o quadro)
+- {"op":"mover","bloco":S,"antesDe":S2|"depoisDe":S2} / {"op":"ocultar","bloco":S} / {"op":"mostrar","bloco":S}  (seções da prévia; S = banner, provas (Clientes reais: prints reais, conteúdo nunca muda), produtos, confianca, depoimentos, sobre, faq)
 - {"op":"texto","campo":"banner.<i>.titulo"|"banner.<i>.subtitulo"|"banner.<i>.cta"|"sobre"|"tema.estilo"|"tema.tipografia"|"tema.observacoes","valor":string}
 - {"op":"faq","acao":"editar"|"adicionar"|"remover","indice":n,"p":string,"r":string}
 - {"op":"paleta","cores":["#rrggbb", ...]}  (2 a 6 cores sugeridas para o tema)
@@ -667,7 +706,7 @@ export async function ajustarSite({ cliente, modo, estado, mensagem, conversa = 
   const custom = modo !== 'pacote';
   const system = custom
     ? 'Você ajusta um site de loja já pronto, montado em BLOCOS fixos. Você NÃO escreve HTML: responde só com operações do formato permitido. Fale com uma pessoa leiga, em frases curtas.'
-    : 'Você ajusta o CONTEÚDO de um pacote de loja para Nuvemshop/Shopify (textos, cores sugeridas, ordem sugerida das seções, descrições do CSV). Você NÃO mexe no visual: o layout é do tema da plataforma. Fale com uma pessoa leiga.';
+    : 'Você ajusta um pacote de loja para Nuvemshop/Shopify: o conteúdo (textos, cores sugeridas, descrições do CSV) e as escolhas da prévia (imagem do banner, fotos inteiras ou preenchendo, ordem e visibilidade das seções), que viram configurações do tema. Você NÃO escreve HTML: responde só com operações do formato permitido. Fale com uma pessoa leiga.';
   const historico = conversa.slice(-10).map((t) => `${t.role === 'user' ? 'PESSOA' : 'VOCÊ'}: ${t.content}`).join('\n') || '(início da conversa)';
   const tarefa = pedidoAmplo(mensagem) ? 'ajuste_site_amplo' : 'ajuste_site';
   const dadosAtuais = custom
@@ -676,21 +715,25 @@ Textos: ${JSON.stringify({ heroTitulo: estado.conteudo?.heroTitulo, heroSubtitul
 FAQ (índice: pergunta): ${(estado.conteudo?.faq || []).map((f, i) => `${i}: ${f.p}`).join(' | ') || '(vazia)'}
 Depoimentos (índice: nome): ${(estado.conteudo?.depoimentos || []).map((d, i) => `${i}: ${d.nome} — "${String(d.texto).slice(0, 60)}"`).join(' | ') || '(nenhum)'}
 Cores: principal ${estado.config?.corPrimaria || '#4f46e5'}, fundo ${estado.config?.corFundo || '#ffffff'}
-Materiais do cliente (imagens): ${materiais.map((m) => `${m.id}: ${m.nome || 'imagem'}`).join(' | ') || '(nenhum)'}`
+Materiais do cliente (imagens): ${materiais.map((m) => `${m.id}: ${m.nomeOriginal || m.nome || 'imagem'}`).join(' | ') || '(nenhum)'}
+Ajuste das fotos dos produtos: ${estado.layout?.ajusteFotos === 'contain' ? 'inteiras (contain)' : 'preenchendo (cover)'}`
     : `Banners: ${(estado.pacote?.banners || []).map((b, i) => `${i}: ${b.uso} — "${b.titulo}" / "${b.subtitulo}" [${b.cta}]`).join(' | ') || '(nenhum)'}
 Seções sugeridas da home (em ordem): ${(estado.pacote?.briefingTema?.secoesHome || []).join(' > ') || '(nenhuma)'}${(estado.pacote?.secoesOcultas || []).length ? ` · retiradas: ${estado.pacote.secoesOcultas.join(', ')}` : ''}
 Paleta sugerida: ${(estado.pacote?.briefingTema?.paletaSugerida || []).join(', ')}
+Prévia: ${JSON.stringify({ ordem: estado.pacote?.visual?.ordem || 'padrão (banner, provas, produtos, confianca, depoimentos, sobre, faq)', ocultas: estado.pacote?.visual?.ocultas || [], fotos: estado.pacote?.visual?.ajusteFotos || 'cover', banner: estado.pacote?.visual?.banner?.nome || 'sem imagem' })}
+Materiais do cliente (imagens): ${materiais.map((m) => `${m.id}: ${m.nomeOriginal || m.nome || 'imagem'}`).join(' | ') || '(nenhum)'}
 Página Sobre: "${String(estado.pacote?.textosPagina?.sobre || '').slice(0, 700)}"
 FAQ (índice: pergunta): ${(estado.pacote?.textosPagina?.faq || []).map((f, i) => `${i}: ${f.p}`).join(' | ') || '(vazia)'}
 Produtos com descrição no pacote: ${(estado.pacote?.descricoesProdutos || []).map((d) => d.nome).join(', ') || '(nenhum)'} (cadastrados: ${produtos.map((p) => p.nome).join(', ') || 'nenhum'})`;
   const pedido = `ESTADO ATUAL:
 ${dadosAtuais}
+${contextoPreferencias(cliente)}
 
 ${custom ? OPS_CUSTOM : OPS_PACOTE}
 
 ${NUNCA}
 
-Pedido fora do modelo (ex.: carrossel de vídeos, outra fonte, animação, página nova, formulário novo${custom ? '' : ', mudar layout/colunas/tamanho'}): responda em linguagem simples que isso não é possível ${custom ? 'neste site' : 'pelo pacote (é no editor de temas da plataforma: Nuvemshop em Design > Personalizar; Shopify em Loja virtual > Temas > Personalizar)'} e sugira a alternativa mais próxima que É possível (sem aplicar sozinho, a não ser que ela seja claramente o que a pessoa quer).
+Pedido fora do modelo (ex.: carrossel de vídeos, outra fonte, animação, página nova, formulário novo${custom ? '' : ', altura do banner, número de colunas'}): NUNCA responda só "não pode". Em UMA frase diga por quê, ofereça a opção MAIS PRÓXIMA que existe aqui (e proponha essa operação, se fizer sentido) e diga se dá para fazer ${custom ? 'de outro jeito' : 'no tema da plataforma (Nuvemshop: Design > Personalizar; Shopify: Loja virtual > Temas > Personalizar)'} e sugira a alternativa mais próxima que É possível (sem aplicar sozinho, a não ser que ela seja claramente o que a pessoa quer).
 Se só uma PARTE do pedido for possível: faça essa parte e liste em "naoFeito" o que não foi feito e por quê. Nunca apresente uma mudança parcial como se fosse completa.
 
 CONVERSA ATÉ AGORA:

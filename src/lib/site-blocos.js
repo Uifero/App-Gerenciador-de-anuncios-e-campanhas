@@ -1,3 +1,4 @@
+import { normalizarVisual, ORDEM_LOJA, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js';
 // "Ajustar este site": modelo de blocos do site personalizado + validador de operações + versões.
 // A IA (ou os controles manuais) NUNCA escreve HTML: ela devolve operações ({ op, ... }) sobre este modelo. O app confere
 // cada operação aqui, aplica numa CÓPIA do estado (rascunho) e só grava no site quando a pessoa aceita.
@@ -9,13 +10,13 @@
 
 /** Blocos móveis do site personalizado, na ordem padrão (a mesma de antes desta função existir). */
 export const BLOCOS = [
-  ['hero', 'Banner principal'], ['categorias', 'Categorias'], ['vendidos', 'Mais vendidos'], ['sale', 'Promoções (Sale)'],
+  ['hero', 'Banner principal'], ['provas', 'Clientes reais'], ['categorias', 'Categorias'], ['vendidos', 'Mais vendidos'], ['sale', 'Promoções (Sale)'],
   ['catalogo', 'Catálogo completo'], ['marca', 'Nossa história'], ['depoimentos', 'Depoimentos'], ['faq', 'Perguntas frequentes'], ['newsletter', 'Newsletter'],
 ];
 export const ORDEM_PADRAO = BLOCOS.map(([k]) => k);
 export const nomeBloco = (k) => (BLOCOS.find(([b]) => b === k) || [, k])[1];
 /** Título padrão da seção no site (editável por bloco). */
-export const TITULOS_PADRAO = { categorias: 'Categorias', vendidos: 'Mais vendidos', sale: 'Sale', catalogo: 'Catálogo completo', marca: 'Nossa história', depoimentos: 'Quem já usa', faq: 'Perguntas frequentes' };
+export const TITULOS_PADRAO = { provas: 'Clientes reais', categorias: 'Categorias', vendidos: 'Mais vendidos', sale: 'Sale', catalogo: 'Catálogo completo', marca: 'Nossa história', depoimentos: 'Quem já usa', faq: 'Perguntas frequentes' };
 /** Variações permitidas por bloco. */
 export const VARIACOES = {
   hero: { altura: ['curto', 'normal', 'alto'] },
@@ -57,9 +58,12 @@ export function problemaPaleta(corPrimaria, corFundo) {
 
 // ---------- layout ----------
 export function normalizarLayout(l = {}) {
-  const ordem = [...new Set([...(Array.isArray(l.ordem) ? l.ordem : []).filter((k) => ORDEM_PADRAO.includes(k)), ...ORDEM_PADRAO])];
+  const ordem = [...new Set((Array.isArray(l.ordem) ? l.ordem : []).filter((k) => ORDEM_PADRAO.includes(k)))];
+  // Bloco que ainda não estava na ordem salva (ex.: "Clientes reais", novo) entra logo depois do vizinho padrão.
+  ORDEM_PADRAO.forEach((k, i) => { if (!ordem.includes(k)) { const antes = ORDEM_PADRAO.slice(0, i).reverse().find((x) => ordem.includes(x)); ordem.splice(antes ? ordem.indexOf(antes) + 1 : 0, 0, k); } });
   return {
     ordem,
+    ajusteFotos: l.ajusteFotos === 'contain' ? 'contain' : 'cover',
     ocultos: [...new Set((l.ocultos || []).filter((k) => ORDEM_PADRAO.includes(k)))],
     titulos: Object.fromEntries(Object.entries(l.titulos || {}).filter(([k, v]) => TITULOS_PADRAO[k] && String(v || '').trim())),
     variacoes: Object.fromEntries(Object.entries(l.variacoes || {}).filter(([k]) => VARIACOES[k])),
@@ -214,6 +218,13 @@ function aplicarCustom(e, op, ctx) {
       L.variacoes = { ...L.variacoes, [bloco]: { ...(L.variacoes?.[bloco] || {}), [op.opcao]: valor } };
       return { mudanca: `Bloco ${nomeBloco(bloco)} (${ROTULO_VAR[op.opcao]}): ${antes} → ${valor}` };
     }
+    case 'fotos': {
+      const ajuste = op.ajuste === 'contain' ? 'contain' : op.ajuste === 'cover' ? 'cover' : null;
+      if (!ajuste) return { motivo: 'as fotos dos produtos podem ficar "inteiras" (contain) ou "preenchendo o espaço" (cover)' };
+      if ((L.ajusteFotos || 'cover') === ajuste) return { motivo: `as fotos dos produtos já estão "${AJUSTES_FOTO[ajuste]}"` };
+      const antes = AJUSTES_FOTO[L.ajusteFotos || 'cover']; L.ajusteFotos = ajuste;
+      return { mudanca: `Fotos dos produtos: ${antes} → ${AJUSTES_FOTO[ajuste]}` };
+    }
     case 'imagem': {
       if (!BLOCOS_COM_IMAGEM.includes(bloco)) return { motivo: `só ${BLOCOS_COM_IMAGEM.map(nomeBloco).join(' e ')} aceitam imagem` };
       if (op.materialId == null || op.materialId === '') {
@@ -231,15 +242,45 @@ function aplicarCustom(e, op, ctx) {
   }
 }
 
-/** Uma operação no pacote (só CONTEÚDO: textos, cores sugeridas, ordem sugerida das seções, textos do CSV). */
-function aplicarPacote(e, op) {
+/**
+ * Uma operação no pacote: conteúdo (textos, cores sugeridas, ordem sugerida das seções para o tema, textos do CSV) e as
+ * escolhas da prévia (imagem do banner, fotos inteiras/preenchendo, ordem e visibilidade das seções do molde), que o
+ * painel "O que colocar na plataforma" traduz para o tema.
+ */
+function aplicarPacote(e, op, ctx = {}) {
   const P = e.pacote;
   P.briefingTema = P.briefingTema || {}; P.textosPagina = P.textosPagina || {};
   const secoes = P.briefingTema.secoesHome || [];
-  const layoutMsg = 'no pacote, o visual (tamanho, colunas, fontes, imagens do layout) é do tema da plataforma: mude no editor de temas da Nuvemshop/Shopify';
+  const V = normalizarVisual(P.visual);
+  const salvarV = () => { P.visual = V; };
+  const blocoLoja = ORDEM_LOJA.includes(op.bloco) ? op.bloco : null;
   switch (op.op) {
-    case 'variacao': case 'imagem': return { motivo: layoutMsg };
+    case 'variacao': return { motivo: 'altura do banner e número de colunas dependem do tema escolhido na Nuvemshop/Shopify (o mais próximo aqui é mostrar as fotos inteiras ou preenchendo o espaço, e reordenar ou ocultar seções); no editor do tema dá para mudar' };
+    case 'imagem': {
+      if (op.bloco && op.bloco !== 'banner' && op.bloco !== 'hero') return { motivo: 'na prévia do pacote só o banner recebe imagem dos Materiais (as fotos dos produtos vêm da aba Produtos)' };
+      if (op.materialId == null || op.materialId === '') { if (!V.banner) return { motivo: 'o banner já está sem imagem' }; V.banner = null; salvarV(); return { mudanca: 'Banner: sai a imagem (volta ao fundo de cor)' }; }
+      const m = (ctx.materiais || []).find((x) => x.id === op.materialId);
+      if (!m?.url) return { motivo: 'a imagem do banner precisa ser uma das que estão em Materiais do cliente (envie lá primeiro)' };
+      const antes = V.banner?.nome || 'sem imagem'; V.banner = { materialId: m.id, url: m.url, nome: m.nomeOriginal || m.nome || 'imagem' }; salvarV();
+      return { mudanca: `Banner: imagem "${antes}" → "${V.banner.nome}"` };
+    }
+    case 'fotos': {
+      const ajuste = op.ajuste === 'contain' ? 'contain' : op.ajuste === 'cover' ? 'cover' : null;
+      if (!ajuste) return { motivo: 'as fotos dos produtos podem ficar "inteiras" (contain) ou "preenchendo o espaço" (cover)' };
+      if (V.ajusteFotos === ajuste) return { motivo: `as fotos dos produtos já estão "${AJUSTES_FOTO[ajuste]}"` };
+      const antes = AJUSTES_FOTO[V.ajusteFotos]; V.ajusteFotos = ajuste; salvarV();
+      return { mudanca: `Fotos dos produtos: ${antes} → ${AJUSTES_FOTO[ajuste]}` };
+    }
     case 'mover': {
+      if (blocoLoja) {
+        const ref = op.antesDe || op.depoisDe;
+        if (!ORDEM_LOJA.includes(ref) || ref === blocoLoja) return { motivo: `a seção de referência precisa ser uma destas: ${ORDEM_LOJA.map(nomeSecaoLoja).join(', ')}` };
+        const antes = V.ordem.indexOf(blocoLoja) + 1;
+        const nova = V.ordem.filter((x) => x !== blocoLoja); nova.splice(nova.indexOf(ref) + (op.depoisDe ? 1 : 0), 0, blocoLoja);
+        if (nova.join('|') === V.ordem.join('|')) return { motivo: 'a seção já está nessa posição' };
+        V.ordem = nova; salvarV();
+        return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": passa da posição ${antes} para a ${nova.indexOf(blocoLoja) + 1}` };
+      }
       const s = op.secao || op.bloco, ref = op.antesDe || op.depoisDe;
       if (!secoes.includes(s) || !secoes.includes(ref) || s === ref) return { motivo: 'essa seção não está na lista de seções sugeridas' };
       const antes = secoes.indexOf(s) + 1;
@@ -249,6 +290,12 @@ function aplicarPacote(e, op) {
       return { mudanca: `Seção sugerida "${s}": passa da posição ${antes} para a ${nova.indexOf(s) + 1}` };
     }
     case 'ocultar': {
+      if (blocoLoja) {
+        if (V.ocultas.includes(blocoLoja)) return { motivo: 'essa seção já está oculta' };
+        if (blocoLoja === 'produtos') return { motivo: 'a loja precisa mostrar os produtos em algum lugar para vender' };
+        V.ocultas = [...V.ocultas, blocoLoja]; salvarV();
+        return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": passa de visível para oculta` };
+      }
       const s = op.secao || op.bloco;
       if (!secoes.includes(s)) return { motivo: 'essa seção não está na lista de seções sugeridas' };
       if (secoes.length <= 1) return { motivo: 'a home precisa ter ao menos uma seção sugerida' };
@@ -256,6 +303,11 @@ function aplicarPacote(e, op) {
       return { mudanca: `Seção sugerida "${s}": sai da ordem sugerida da home` };
     }
     case 'mostrar': {
+      if (blocoLoja) {
+        if (!V.ocultas.includes(blocoLoja)) return { motivo: 'essa seção já aparece' };
+        V.ocultas = V.ocultas.filter((x) => x !== blocoLoja); salvarV();
+        return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": passa de oculta para visível` };
+      }
       const s = op.secao || op.bloco;
       if (!(P.secoesOcultas || []).includes(s)) return { motivo: 'essa seção não foi retirada antes' };
       P.briefingTema.secoesHome = [...secoes, s]; P.secoesOcultas = P.secoesOcultas.filter((x) => x !== s);
@@ -326,7 +378,7 @@ export function aplicarOperacoes(estado, operacoes, { modo = 'custom', materiais
     if (!op || typeof op !== 'object' || !op.op) { descartadas.push({ op, motivo: 'operação sem formato válido' }); continue; }
     const protegido = motivoProtegido(op);
     if (protegido) { descartadas.push({ op, motivo: protegido }); continue; }
-    const r = modo === 'custom' ? aplicarCustom(e, op, { materiais }) : aplicarPacote(e, op);
+    const r = modo === 'custom' ? aplicarCustom(e, op, { materiais }) : aplicarPacote(e, op, { materiais });
     if (r.mudanca) { mudancas.push(r.mudanca); aplicadas.push(op); } else descartadas.push({ op, motivo: r.motivo || 'operação inválida' });
   }
   return { estado: e, mudancas, aplicadas, descartadas };

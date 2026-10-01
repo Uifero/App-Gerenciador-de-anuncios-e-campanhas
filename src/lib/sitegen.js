@@ -32,8 +32,11 @@ export function metaSeo({ cliente, produtos = [], conteudo: c = {}, url = '' }) 
 const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 const brl = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-/** `logoUrl`: endereço do logo no cabeçalho (padrão: o logo salvo do cliente; no .zip, o arquivo que vai na pasta). Sem logo, o nome em texto. */
-export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {}, url = '', layout: layoutBruto = null, logoUrl = cliente?.logoArquivo?.url || '' }) {
+/**
+ * `logoUrl`: endereço do logo no cabeçalho (padrão: o logo salvo do cliente; no .zip, o arquivo que vai na pasta). Sem logo, o nome em texto.
+ * `provas`: prints reais de clientes (lib/visual-site.js printsDoCliente: a cópia borrada quando houver) para a seção "Clientes reais".
+ */
+export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {}, url = '', layout: layoutBruto = null, logoUrl = cliente?.logoArquivo?.url || '', provas = [] }) {
   // Ordem, blocos ocultos, títulos, variações e imagens ("Ajustar este site", lib/site-blocos.js). Sem layout = padrão de sempre.
   const L = normalizarLayout(layoutBruto || {});
   const visivel = (k) => !L.ocultos.includes(k);
@@ -67,7 +70,10 @@ export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg
   const imgHero = L.imagens.hero?.url, imgMarca = L.imagens.marca?.url;
 
   const destinoCta = visivel('vendidos') ? '#vendidos' : '#catalogo';
+  const prints = (provas || []).filter((p) => p?.url);
   const blocoHTML = {
+    // Prints reais de clientes: toque/clique abre a imagem inteira (legível no celular). Nunca editamos o conteúdo do print.
+    provas: () => (prints.length ? `<section id="clientes-reais" class="provas"><div class="wrap"><h2>${esc(tituloBloco(L, 'provas'))}</h2><div class="prints">${prints.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener" title="Toque para ampliar"><img src="${esc(p.url)}" alt="Print de cliente real${p.legenda ? ` (${esc(p.legenda)})` : ''}" loading="lazy"></a>`).join('')}</div><p class="dica-print">Toque no print para ampliar.</p></div></section>` : ''),
     hero: () => `<div id="topo" class="hero"${alturaHero || imgHero ? ` style="${alturaHero ? `padding:${alturaHero} 0;` : ''}${imgHero ? `background:linear-gradient(#0008,#0008),url('${esc(imgHero)}') center/cover;` : ''}"` : ''}><div class="wrap"><h1>${esc(c.heroTitulo || cliente.nome)}</h1><p>${esc(c.heroSubtitulo || cliente.nicho)}</p><a href="${destinoCta}">${esc(c.heroCta || 'Ver produtos')}</a></div></div>`,
     categorias: () => (categorias.length && visivel('catalogo') ? `<section id="categorias"><div class="wrap"><h2>${esc(tituloBloco(L, 'categorias'))}</h2><div class="cats"><button data-filtro="">Todas</button>${categorias.map((x) => `<button data-filtro="${esc(x)}">${esc(x)}</button>`).join('')}</div></div></section>` : ''),
     vendidos: () => `<section id="vendidos" class="alt"><div class="wrap"><h2>${esc(tituloBloco(L, 'vendidos'))}</h2>${produtos.length ? grade(maisVendidos, 'vendidos') : '<p>Cadastre produtos para exibi-los aqui.</p>'}</div></section>`,
@@ -102,7 +108,8 @@ header{position:sticky;top:0;background:var(--fundo);border-bottom:1px solid #e5
 section{padding:48px 0}section h2{font-size:26px;margin:0 0 20px}.alt{background:var(--suave)}
 .cats{display:flex;flex-wrap:wrap;gap:10px}.cats button{border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:8px 18px;cursor:pointer}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}.card{background:#fff;border-radius:14px;padding:12px;box-shadow:0 1px 4px #0001}
-.ph{position:relative;aspect-ratio:1;background:var(--suave);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#9ca3af}.ph img{width:100%;height:100%;object-fit:cover}
+.ph{position:relative;aspect-ratio:1;background:var(--suave);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#9ca3af}.ph img{width:100%;height:100%;object-fit:${L.ajusteFotos === 'contain' ? 'contain' : 'cover'}}
+.prints{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px}.prints a{flex:0 0 auto;scroll-snap-align:start}.prints img{height:min(420px,70vh);max-width:80vw;width:auto;object-fit:contain;border-radius:12px;border:1px solid #0001;background:#fff;display:block}.dica-print{font-size:13px;color:#6b7280;margin:8px 0 0}
 .badge{position:absolute;top:8px;left:8px;background:#dc2626;color:#fff;font-size:11px;padding:3px 8px;border-radius:999px}
 .card h3{font-size:15px;margin:10px 0 4px}.preco{margin:0 0 8px;font-weight:700}.preco s{color:#9ca3af;font-weight:400;margin-right:6px}
 select{width:100%;margin-bottom:6px;padding:6px;border:1px solid #d1d5db;border-radius:8px}

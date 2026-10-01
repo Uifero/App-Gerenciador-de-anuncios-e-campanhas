@@ -6,6 +6,7 @@
 // pergunta 9), que aparece quando falta logo.
 import { resumoMaterialSite, provasEmImagem } from '../lib/prova-social.js';
 import { abrirMateriais } from './materiais-cliente.js';
+import { preferenciasHtml, referenciaExtraHtml, ligarPreferencias } from './preferencias-site.js';
 import { provaSocialHtml, ligarProvaSocial } from './prova-social.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { esc, $, $$, on, toast, ocupado } from '../core/ui.js';
@@ -34,11 +35,13 @@ export function montarPainelMaterial(alvo, ctx) {
     <summary class="cursor-pointer"><span class="font-semibold"><i class="fa-solid fa-boxes-stacked mr-1 text-indigo-500"></i> Material para montar o site</span>
       <span class="ml-2 text-sm ${totalAvisos ? 'text-amber-700' : 'text-emerald-700'}">${totalAvisos ? `${totalAvisos} ponto(s) de atenção` : 'tudo certo'}</span></summary>
     <p class="caption mt-2">Tudo o que já temos deste cliente para montar o site. Revise antes de gerar. Nada aqui é uma cópia: "Editar" leva ao campo de verdade, e o que faltar não impede de gerar.</p>
+    ${preferenciasHtml(ctx.cliente)}
     <ul class="mt-3 divide-y divide-slate-100 text-sm" data-itens-material>${itens.map((it) => `<li class="py-2" data-item-material="${it.chave}">
       <div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0"><b>${esc(it.titulo)}</b>${it.linhas.length ? ` <span class="text-slate-600">· <span ${it.chave === 'materiais' ? 'data-linha-materiais' : ''}>${esc(it.linhas.join(' · '))}</span></span>` : ''}</div>${editar(it)}</div>
       ${campos(it) ? `<div class="mt-1">${campos(it)}</div>` : ''}
       ${it.chave === 'provas' && provas.length ? `<div class="mt-1 flex flex-wrap gap-1">${provas.slice(0, 8).map((p) => `<img src="${esc(p.url)}" alt="Print de prova social" title="${esc(p.descricao || '')}" class="h-10 w-10 rounded border object-cover" loading="lazy">`).join('')}${provas.length > 8 ? `<span class="hint self-center">+${provas.length - 8}</span>` : ''}</div>` : ''}
       ${it.avisos.map((a) => `<p class="mt-1 text-xs font-medium text-amber-700" data-aviso-material><i class="fa-solid fa-circle-info"></i> ${esc(a)}</p>`).join('')}
+      ${it.chave === 'referencia' ? referenciaExtraHtml(ctx.cliente) : ''}
       ${it.chave === 'materiais' && it.avisos.includes('Sem logo') ? `<div class="mt-1" data-logo-painel>${logoHtml(ctx.cliente)}</div>` : ''}
       ${it.chave === 'provas' ? `<details class="mt-1"><summary class="cursor-pointer text-xs text-indigo-600">Chegou prova nova? Enviar prints aqui</summary>${provaSocialHtml('painel')}</details>` : ''}</li>`).join('')}</ul>
     <div class="mt-3 rounded-lg bg-slate-50 p-3"><p class="caption mb-2"><b>Gerar site com este material:</b> é o mesmo "Gerar textos com IA" do formulário abaixo, no modo deste cliente (${ctx.site?.modo === 'custom' ? 'site personalizado' : ctx.site?.modo ? 'pacote de plataforma' : 'modo ainda não escolhido'}), usando tudo o que está listado acima. Depois é só revisar e baixar.</p>
@@ -47,6 +50,7 @@ export function montarPainelMaterial(alvo, ctx) {
 
   $('[data-painel-material]', alvo).addEventListener('toggle', (e) => abertoPorCliente.set(ctx.cliente.id, e.target.open));
   ligarProvaSocial($('[data-prova-img="painel"]', alvo), ctx);
+  ligarPreferencias(alvo, ctx.cliente, () => { const x = $('[data-referencia-extra]', alvo); if (x) x.outerHTML = referenciaExtraHtml(ctx.cliente); });
   on(alvo, 'click', '[data-abrir-materiais]', (b) => ocupado(b, () => abrirMateriais(ctx.cliente)));
   // Contadores sem recarregar: troca só o texto e os avisos da linha "Materiais gerais".
   atualizarMateriais = ({ clienteId, lista }) => {

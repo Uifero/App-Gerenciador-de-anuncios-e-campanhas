@@ -31,6 +31,11 @@ export function validarMaterial(file, limiteMB = limiteMaterialMB()) {
   return { tipo, video: tipo.startsWith('video/') };
 }
 
+/** Impressão digital do arquivo ORIGINAL (SHA-256), para reconhecer o mesmo print enviado em dois lugares. */
+export async function hashArquivo(file) {
+  try { const h = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer()); return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join(''); } catch { return null; }
+}
+
 /** Envia vários arquivos (o tipo é detectado sozinho). Devolve { salvos: [docs], falhas: [mensagem] }; um erro não para os outros. */
 export async function enviarMateriais(cliente, arquivos = [], aoProgresso = () => {}) {
   const salvos = [], falhas = [];
@@ -38,7 +43,8 @@ export async function enviarMateriais(cliente, arquivos = [], aoProgresso = () =
     aoProgresso(i, arquivos.length, file.name);
     try {
       const { tipo } = validarMaterial(file);
-      salvos.push(await salvarMaterial(cliente, new Blob([file], { type: tipo }), ORIGEM_ENVIO, { tipo, nomeOriginal: file.name, tamanho: file.size }));
+      const hash = await hashArquivo(file);
+      salvos.push(await salvarMaterial(cliente, new Blob([file], { type: tipo }), ORIGEM_ENVIO, { tipo, nomeOriginal: file.name, tamanho: file.size, ...(hash ? { hash } : {}) }));
     } catch (e) { falhas.push(e.message); }
   }
   return { salvos, falhas };
@@ -47,6 +53,7 @@ export async function enviarMateriais(cliente, arquivos = [], aoProgresso = () =
 /** Apaga um material (registro + arquivo no Storage). Se era o logo atual, o cliente fica sem logo. */
 export async function removerMaterial(cliente, m) {
   await removerArquivo(m.path);
+  if (m.borrada?.path) await removerArquivo(m.borrada.path); // cópia borrada do print (o site usa ela)
   await db.remover(COL.materiais, m.id);
   if (cliente.logoArquivo?.materialId === m.id) { await db.atualizar(COL.clientes, cliente.id, { logoArquivo: null }); cliente.logoArquivo = null; }
 }

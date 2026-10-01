@@ -36,7 +36,7 @@ export async function montarAjusteSite(alvo, ctx) {
   const { cliente, produtos, modo } = ctx;
   const custom = modo === 'custom';
   // Imagens dos Materiais do cliente (vídeo não serve como imagem do banner/história).
-  const materiais = custom ? (await db.listar(COL.materiais, { clienteId: cliente.id }).catch(() => [])).filter((m) => tipoMaterial(m) !== 'video') : [];
+  const materiais = (await db.listar(COL.materiais, { clienteId: cliente.id }).catch(() => [])).filter((m) => ['foto', 'logo', 'prova_social'].includes(tipoMaterial(m)));
   let aba = 'depois'; // prévia do rascunho: 'antes' (Atual) ou 'depois' (Com a mudança)
   const chave = `${cliente.id}:${modo}`;
 
@@ -120,7 +120,9 @@ Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de c
       const html = ctx.htmlDe(aba === 'antes' ? estadoAtual() : d.estado);
       return `<iframe sandbox="${SANDBOX}" srcdoc="${esc(html)}" class="h-[520px] w-full rounded-lg border border-slate-200 bg-white" title="Prévia do site: ${aba === 'antes' ? 'atual' : 'com a mudança'}" data-previa-rascunho></iframe>`;
     }
-    return `<div class="rounded-lg border border-slate-200 p-3" data-previa-rascunho>${ctx.pacoteHTML(aba === 'antes' ? estadoAtual().pacote : d.estado.pacote)}</div>`;
+    // Pacote: a prévia com cara de loja (mesmo molde do painel e do link de aprovação), sem script; o resumo em texto embaixo.
+    const pac = aba === 'antes' ? estadoAtual().pacote : d.estado.pacote;
+    return `<div data-previa-rascunho>${ctx.previaPacote ? `<iframe sandbox="" srcdoc="${esc(ctx.previaPacote(pac))}" class="h-[520px] w-full rounded-lg border border-slate-200 bg-white" title="Prévia da loja: ${aba === 'antes' ? 'atual' : 'com a mudança'}" data-previa-loja-ajuste></iframe>` : ''}<details class="mt-2 rounded-lg border border-slate-200 p-2"><summary class="cursor-pointer text-xs text-slate-600">Textos do pacote</summary>${ctx.pacoteHTML(pac)}</details></div>`;
   }
   function rascunhoHTML(d) {
     return `<div class="mt-4 rounded-lg border-2 border-emerald-300 bg-emerald-50/40 p-3" data-rascunho>

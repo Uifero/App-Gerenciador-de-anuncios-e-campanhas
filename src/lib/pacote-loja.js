@@ -4,6 +4,7 @@
 // "#produto-1" iria para o endereço do painel): não tem carrinho nem checkout funcionando, não carrega Pixel, Google Ads,
 // Hotjar, Tawk.to nem qualquer rastreador, e é noindex/nofollow. A navegação (home <-> página do produto) é por âncora.
 import { comTextosDoPacote } from './csv.js';
+import { normalizarVisual, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js';
 
 const txt = (v) => String(v ?? '').trim();
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -14,12 +15,15 @@ export const LEGENDA_PREVIA_PACOTE = 'Prévia aproximada. O visual final depende
 export const TEXTO_COMPRA_DESATIVADA = 'Prévia, compra desativada';
 
 /** Junta o que vai para a loja: textos do pacote, conteúdo/políticas do formulário, produtos reais (com SEO do pacote), logo e cores. */
-export function dadosDoPacote({ cliente = {}, site = {}, produtos = [] }) {
+/** `provas` = prints reais de clientes (lib/visual-site.js printsDoCliente), já na cópia borrada quando houver. */
+export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas = [] }) {
   const p = site.pacote || {}, c = site.conteudo || {};
   const paleta = (p.briefingTema?.paletaSugerida || []).filter((h) => HEX.test(h || ''));
   const cor = paleta[0] || (HEX.test(site.config?.corPrimaria || '') ? site.config.corPrimaria : '#111827');
   const banners = (p.banners || []).filter((b) => txt(b?.titulo));
   return {
+    visual: normalizarVisual(p.visual),
+    provas: (provas || []).filter((x) => x?.url),
     plataforma: site.plataforma === 'shopify' ? 'shopify' : 'nuvemshop',
     nomeLoja: txt(cliente.nome) || 'Loja',
     logoUrl: cliente.logoArquivo?.url || '',
@@ -50,6 +54,10 @@ const CAMINHOS = {
     produtos: 'Produtos > Importar (o CSV já leva estes textos); para conferir, abra o produto em Produtos',
     paginas: 'Crie as páginas Sobre e FAQ com os textos abaixo (manual, passo 3)',
     politicas: 'Configurações > Políticas',
+    fotos: 'Loja virtual > Temas > Personalizar (configurações de produto/coleção do tema)',
+    fotosAjuda: { contain: 'Procure "Proporção da imagem" e escolha "Adaptar à imagem"/"Original". Se o tema não tiver essa opção, não há equivalente: envie as fotos já no formato quadrado com fundo branco.', cover: 'Procure "Proporção da imagem" e escolha "Quadrado" (preencher/cortar). É o padrão da maioria dos temas.' },
+    secoes: 'Loja virtual > Temas > Personalizar: arraste as seções da página inicial nesta ordem; oculte as que não entram',
+    provas: 'Loja virtual > Temas > Personalizar > Adicionar seção: "Imagem com texto", "Galeria" ou "Slideshow" (o nome varia com o tema) e suba os prints',
   },
   nuvemshop: {
     loja: 'Na criação da conta da Nuvemshop (nome da loja); depois, nas configurações da loja',
@@ -59,6 +67,10 @@ const CAMINHOS = {
     produtos: 'Produtos > Importar/Exportar (o CSV já leva estes textos); para conferir, abra o produto em Produtos',
     paginas: 'Crie as páginas Sobre e FAQ com os textos abaixo (manual, passo 3)',
     politicas: 'Cadastre as políticas de trocas, envio e privacidade (manual, passo 3)',
+    fotos: 'Design > Personalizar (lista de produtos / página de produto do tema)',
+    fotosAjuda: { contain: 'Procure o formato das fotos e escolha a proporção original/sem corte. Se o tema não tiver essa opção, não há equivalente: envie as fotos já no formato quadrado com fundo branco.', cover: 'Procure o formato das fotos e escolha quadrado (preencher). É o padrão da maioria dos temas.' },
+    secoes: 'Design > Personalizar: arraste as seções da página inicial nesta ordem; desative as que não entram',
+    provas: 'Design > Personalizar: adicione um bloco de banners/imagens na página inicial (o nome varia com o tema) e suba os prints',
   },
 };
 
@@ -84,6 +96,12 @@ export function gruposPlataforma(d) {
     g('paginas', 'Páginas institucionais', cam.paginas, [item('Página "Sobre"', d.sobre), item('Página "Perguntas frequentes"', d.faq.map((f) => `${f.p}\n${f.r}`).join('\n\n'))]),
     g('politicas', 'Políticas', cam.politicas, [item('Trocas e devoluções', d.politicas.trocas), item('Envio', d.politicas.envio), item('Privacidade', d.politicas.privacidade)]),
     g('cores', 'Cores e tipografia', cam.cores, [item('Paleta (cor principal primeiro)', d.paleta.join(', ') || d.cor), item('Tipografia', d.tipografia)]),
+    // Escolhas feitas na prévia (painel "Site gerado" / "Ajustar este site"): o que fazer no tema para a loja ficar igual.
+    g('visual-banner', 'Imagem do banner (escolhida na prévia)', cam.banner, d.visual.banner ? [item('Imagem para subir no banner (baixe em "Baixar pacote")', d.visual.banner.url, 'imagem'), item('Arquivo', d.visual.banner.nome)] : []),
+    g('visual-fotos', 'Fotos dos produtos (como aparecem)', cam.fotos, [item('Escolha na prévia', `${AJUSTES_FOTO[d.visual.ajusteFotos]}: ${d.visual.ajusteFotos === 'contain' ? 'a foto aparece inteira, sem cortar' : 'a foto preenche o quadro (as bordas podem ser cortadas)'}`),
+      item('No tema', cam.fotosAjuda[d.visual.ajusteFotos])]),
+    g('visual-secoes', 'Ordem das seções da home (como aprovado na prévia)', cam.secoes, [item('Ordem', d.visual.ordem.filter((k) => !d.visual.ocultas.includes(k)).map(nomeSecaoLoja).join(' > ')), item('Não colocar na home', d.visual.ocultas.map(nomeSecaoLoja).join(', '))]),
+    g('provas', 'Clientes reais (prints)', cam.provas, d.provas.length ? [item('Prints para subir', `${d.provas.length} imagem(ns): baixe em "Baixar pacote" (Prints de clientes). São as cópias com dados pessoais borrados quando você borrou.`), item('Onde na home', `${d.visual.ocultas.includes('provas') ? 'Oculta na prévia: não colocar.' : `Posição ${d.visual.ordem.filter((k) => !d.visual.ocultas.includes(k)).indexOf('provas') + 1} da home (como na prévia).`}`)] : []),
   ];
   return grupos.filter((x) => x.itens.length);
 }
@@ -105,13 +123,18 @@ export function gerarPreviaLojaHTML(d) {
       <button type="button" class="comprar" disabled data-compra-desativada>${esc(TEXTO_COMPRA_DESATIVADA)}</button>
       ${x.descricao ? `<div class="desc">${esc(x.descricao).replace(/\n/g, '<br>')}</div>` : ''}</div></div></div></section>`).join('');
   const grade = d.produtos.length ? d.produtos.map((x, i) => `<a class="card" href="#produto-${i}">${foto(x)}<span class="nomep">${esc(x.nome)}</span><span class="preco">${preco(x)}</span></a>`).join('') : '<p>Nenhum produto cadastrado.</p>';
-  const home = `<section id="inicio" class="home">
-    <div class="banner"><div class="wrap"><h1>${esc(d.banner.titulo || d.nomeLoja)}</h1>${d.banner.subtitulo ? `<p>${esc(d.banner.subtitulo)}</p>` : ''}${d.banner.cta ? `<a href="#produtos" class="cta">${esc(d.banner.cta)}</a>` : ''}</div></div>
-    <div class="wrap"><h2 id="produtos">Produtos</h2><div class="grade">${grade}</div>
-    <div class="confianca"><div><b>Compra segura</b><span>Pagamento pela plataforma</span></div><div><b>Entrega</b><span>${esc(d.politicas.envio ? d.politicas.envio.slice(0, 90) : 'Frete calculado no carrinho')}</span></div><div><b>Trocas</b><span>${esc(d.politicas.trocas ? d.politicas.trocas.slice(0, 90) : 'Política de trocas da loja')}</span></div></div>
-    ${d.depoimentos.length ? `<h2>Quem já comprou</h2><div class="depos">${d.depoimentos.slice(0, 6).map((x) => `<blockquote>“${esc(x.texto)}”<cite>${esc(x.nome || 'Cliente')}</cite></blockquote>`).join('')}</div>` : ''}
-    ${d.sobre ? `<h2 id="sobre">Sobre a marca</h2><p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p>` : ''}
-    ${d.faq.length ? `<h2 id="faq">Perguntas frequentes</h2>${d.faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}` : ''}</div></section>`;
+  const V = d.visual;
+  const lightbox = d.provas.map((p, i) => `<div id="print-${i}" class="lightbox"><a href="#clientes-reais" class="fechar" aria-label="Fechar">×</a><img src="${esc(p.url)}" alt="Print de cliente real"></div>`).join('');
+  const secao = {
+    banner: () => `<div class="banner${V.banner ? ' com-img' : ''}"${V.banner ? ` style="background-image:linear-gradient(#0007,#0007),url('${esc(V.banner.url)}')"` : ''}><div class="wrap"><h1>${esc(d.banner.titulo || d.nomeLoja)}</h1>${d.banner.subtitulo ? `<p>${esc(d.banner.subtitulo)}</p>` : ''}${d.banner.cta ? `<a href="#produtos" class="cta">${esc(d.banner.cta)}</a>` : ''}</div></div>`,
+    provas: () => (d.provas.length ? `<div class="wrap"><h2 id="clientes-reais">Clientes reais</h2><div class="prints">${d.provas.map((p, i) => `<a href="#print-${i}" title="Toque para ampliar"><img src="${esc(p.url)}" alt="Print de cliente real" loading="lazy"></a>`).join('')}</div><p class="dica">Toque no print para ampliar.</p></div>` : ''),
+    produtos: () => `<div class="wrap"><h2 id="produtos">Produtos</h2><div class="grade">${grade}</div></div>`,
+    confianca: () => `<div class="wrap"><div class="confianca"><div><b>Compra segura</b><span>Pagamento pela plataforma</span></div><div><b>Entrega</b><span>${esc(d.politicas.envio ? d.politicas.envio.slice(0, 90) : 'Frete calculado no carrinho')}</span></div><div><b>Trocas</b><span>${esc(d.politicas.trocas ? d.politicas.trocas.slice(0, 90) : 'Política de trocas da loja')}</span></div></div></div>`,
+    depoimentos: () => (d.depoimentos.length ? `<div class="wrap"><h2>Quem já comprou</h2><div class="depos">${d.depoimentos.slice(0, 6).map((x) => `<blockquote>“${esc(x.texto)}”<cite>${esc(x.nome || 'Cliente')}</cite></blockquote>`).join('')}</div></div>` : ''),
+    sobre: () => (d.sobre ? `<div class="wrap"><h2 id="sobre">Sobre a marca</h2><p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p></div>` : ''),
+    faq: () => (d.faq.length ? `<div class="wrap"><h2 id="faq">Perguntas frequentes</h2>${d.faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div>` : ''),
+  };
+  const home = `<section id="inicio" class="home">${V.ordem.filter((k) => !V.ocultas.includes(k)).map((k) => secao[k]()).join('')}</section>`;
   // Página de produto: aparece pelo :target; a home some enquanto um produto está aberto.
   const css = `*{box-sizing:border-box}body{margin:0;font-family:${fonte ? `"${fonte}",` : ''}system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#111827;background:#fff}
 a{color:inherit}.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
@@ -121,20 +144,23 @@ nav{display:flex;gap:16px;flex:1;flex-wrap:wrap}nav a{text-decoration:none;font-
 .banner{background:${cor};color:#fff;padding:56px 0;text-align:center}.banner h1{margin:0 0 8px;font-size:clamp(24px,4vw,40px)}.banner p{margin:0 0 18px;opacity:.92}
 .cta{display:inline-block;background:#fff;color:${cor};padding:12px 22px;border-radius:6px;font-weight:700;text-decoration:none}
 h2{margin:36px 0 14px;font-size:22px}.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
-.card{text-decoration:none;display:flex;flex-direction:column;gap:6px}.card img,.card .semfoto{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#f3f4f6}
+.card{text-decoration:none;display:flex;flex-direction:column;gap:6px}.card img,.card .semfoto{width:100%;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:6px;background:#f3f4f6}
 .semfoto{display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px}.nomep{font-size:14px}.preco b{color:${cor}}.de{text-decoration:line-through;color:#9ca3af;font-size:13px}
 .confianca{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:32px}.confianca div{border:1px solid #e5e7eb;border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:4px;font-size:13px}
 .depos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}blockquote{margin:0;border:1px solid #e5e7eb;border-radius:6px;padding:12px;font-size:14px}cite{display:block;margin-top:6px;color:#6b7280;font-style:normal;font-size:12px}
 .sobre{line-height:1.6}details{border-bottom:1px solid #e5e7eb;padding:10px 0}summary{cursor:pointer;font-weight:600}
 .pagina{display:none;padding:20px 0 40px}.pagina:target{display:block}.pagina:target~.home{display:none}.voltar{font-size:14px}
-.pdp{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:14px}.principal{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f3f4f6}
-.miniaturas{display:flex;gap:8px;margin-top:8px}.miniaturas img{width:64px;height:64px;object-fit:cover;border-radius:4px}
+.pdp{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:14px}.principal{width:100%;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:8px;background:#f3f4f6}
+.miniaturas{display:flex;gap:8px;margin-top:8px}.miniaturas img{width:64px;height:64px;object-fit:${V.ajusteFotos};border-radius:4px}
 .pdp h1{margin:0 0 8px;font-size:26px}.pdp .preco{font-size:22px;margin:0 0 16px}.var{margin:10px 0}.var>span{font-size:13px;color:#6b7280;display:block;margin-bottom:6px}
 .chip{display:inline-block;border:1px solid #d1d5db;border-radius:4px;padding:6px 10px;margin:0 6px 6px 0;font-size:13px}
 .comprar{width:100%;margin:16px 0;padding:14px;border:0;border-radius:6px;background:#9ca3af;color:#fff;font-weight:700;font-size:15px;cursor:not-allowed}
 .desc{line-height:1.6;font-size:15px}footer{margin-top:48px;border-top:1px solid #e5e7eb;background:#f9fafb;padding:24px 0;font-size:13px}
 footer .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}footer .wrap div{display:flex;flex-direction:column;gap:6px}footer a{text-decoration:none}
-.aviso{text-align:center;color:#6b7280;margin:18px 16px 0}@media(max-width:640px){.pdp{grid-template-columns:1fr}.banner{padding:36px 0}}`;
+.aviso{text-align:center;color:#6b7280;margin:18px 16px 0}.card img,.principal,.miniaturas img{background:#fff}.banner.com-img{background-size:cover;background-position:center;padding:90px 0}
+.prints{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px}.prints a{flex:0 0 auto;scroll-snap-align:start}.prints img{height:min(380px,65vh);max-width:80vw;width:auto;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;background:#fff;display:block}.dica{font-size:12px;color:#6b7280}
+.lightbox{display:none;position:fixed;inset:0;z-index:9;background:#000d;align-items:center;justify-content:center;padding:16px}.lightbox:target{display:flex}.lightbox img{max-width:100%;max-height:100%;object-fit:contain}.lightbox .fechar{position:absolute;top:8px;right:16px;color:#fff;font-size:36px;text-decoration:none}
+@media(max-width:640px){.pdp{grid-template-columns:1fr}.banner{padding:36px 0}}`;
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
-<base href="about:srcdoc"><title>${esc(d.nomeLoja)} — prévia</title><style>${css}</style></head><body>${cabecalho}${paginasProduto}${home}${rodape}</body></html>`;
+<base href="about:srcdoc"><title>${esc(d.nomeLoja)} — prévia</title><style>${css}</style></head><body>${cabecalho}${paginasProduto}${home}${rodape}${lightbox}</body></html>`;
 }

@@ -57,7 +57,7 @@ describe('prévia do pacote com cara de loja', () => {
 
   it('"O que colocar na plataforma": grupos com o caminho do manual e itens para copiar', () => {
     const g = gruposPlataforma(d);
-    expect(g.map((x) => x.id)).toEqual(['loja', 'logo', 'banner', 'home', 'produto-0', 'produto-1', 'paginas', 'politicas', 'cores']);
+    expect(g.map((x) => x.id)).toEqual(['loja', 'logo', 'banner', 'home', 'produto-0', 'produto-1', 'paginas', 'politicas', 'cores', 'visual-fotos', 'visual-secoes']);
     expect(g.find((x) => x.id === 'politicas').caminho).toBe('Configurações > Políticas');
     expect(g.find((x) => x.id === 'cores').caminho).toMatch(/Loja virtual > Temas/);
     const p0 = g.find((x) => x.id === 'produto-0').itens;
@@ -65,5 +65,44 @@ describe('prévia do pacote com cara de loja', () => {
     const nuvem = gruposPlataforma(dadosDoPacote({ cliente, site: { ...site, plataforma: 'nuvemshop' }, produtos }));
     expect(nuvem.find((x) => x.id === 'banner').caminho).toMatch(/Design > Personalizar/);
     expect(nuvem.find((x) => x.id === 'produto-0').caminho).toMatch(/Produtos > Importar\/Exportar/);
+  });
+});
+
+describe('escolhas visuais no molde do pacote', () => {
+  const comVisual = (visual, provas = []) => dadosDoPacote({ cliente, site: { ...site, pacote: { ...site.pacote, visual } }, produtos, provas });
+
+  it('fotos dos produtos: "preencher" (cover) é o padrão; "inteiras" usa contain no grid e na página do produto', () => {
+    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos }))).toMatch(/.card img,.card .semfoto{[^}]*object-fit:cover/);
+    const h = gerarPreviaLojaHTML(comVisual({ ajusteFotos: 'contain' }));
+    expect(h).toMatch(/.card img,.card .semfoto{[^}]*object-fit:contain/);
+    expect(h).toMatch(/.principal{[^}]*object-fit:contain/);
+  });
+
+  it('imagem do banner vinda dos Materiais; sem escolha, banner de cor como antes', () => {
+    const h = gerarPreviaLojaHTML(comVisual({ banner: { materialId: 'm1', url: 'https://cdn.exemplo/banner.jpg', nome: 'banner.jpg' } }));
+    expect(h).toContain(`<div class="banner com-img" style="background-image:linear-gradient(#0007,#0007),url('https://cdn.exemplo/banner.jpg')">`);
+    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos }))).toContain('<div class="banner"><div class="wrap">');
+  });
+
+  it('seções na ordem escolhida e ocultas fora; "Clientes reais" logo depois do banner, com ampliação', () => {
+    const provas = [{ url: 'https://cdn.exemplo/print-borrado.jpg' }];
+    const padrao = gerarPreviaLojaHTML(comVisual({}, provas));
+    expect(padrao.indexOf('class="banner')).toBeLessThan(padrao.indexOf('id="clientes-reais"'));
+    expect(padrao.indexOf('id="clientes-reais"')).toBeLessThan(padrao.indexOf('id="produtos"'));
+    expect(padrao).toContain('<a href="#print-0" title="Toque para ampliar"><img src="https://cdn.exemplo/print-borrado.jpg"');
+    expect(padrao).toContain('<div id="print-0" class="lightbox">');
+    const acima = gerarPreviaLojaHTML(comVisual({ ordem: ['provas', 'banner', 'produtos', 'confianca', 'depoimentos', 'sobre', 'faq'], ocultas: ['faq'] }, provas));
+    expect(acima.indexOf('id="clientes-reais"')).toBeLessThan(acima.indexOf('class="banner'));
+    expect(acima).not.toContain('id="faq"');
+    expect(acima).not.toMatch(/<script/i);
+  });
+
+  it('"O que colocar na plataforma" leva as escolhas para o tema (e diz quando não há equivalente)', () => {
+    const g = gruposPlataforma(comVisual({ ajusteFotos: 'contain', banner: { url: 'https://cdn.exemplo/banner.jpg', nome: 'banner.jpg' }, ocultas: ['faq'] }, [{ url: 'p.jpg' }]));
+    const por = (id) => g.find((x) => x.id === id);
+    expect(por('visual-banner').itens[0]).toMatchObject({ valor: 'https://cdn.exemplo/banner.jpg', tipo: 'imagem' });
+    expect(por('visual-fotos').itens.map((i) => i.valor).join(' ')).toMatch(/Mostrar inteiras.*sem cortar.*Se o tema não tiver essa opção, não há equivalente/s);
+    expect(por('visual-secoes').itens.find((i) => i.rotulo === 'Não colocar na home').valor).toBe('Perguntas frequentes');
+    expect(por('provas').caminho).toMatch(/Adicionar seção/);
   });
 });

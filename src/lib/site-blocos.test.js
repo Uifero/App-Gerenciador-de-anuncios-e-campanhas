@@ -18,7 +18,7 @@ describe('operações no site personalizado', () => {
     const r = ap([{ op: 'mover', bloco: 'depoimentos', antesDe: 'vendidos' }]);
     expect(r.mudancas[0]).toBe('Bloco Depoimentos: passa de depois de "Nossa história" para depois de "Categorias"');
     expect(r.estado.layout.ordem.indexOf('depoimentos')).toBeLessThan(r.estado.layout.ordem.indexOf('vendidos'));
-    expect(e0.layout.ordem.indexOf('depoimentos')).toBe(6); // aplicar não mexe no estado original
+    expect(e0.layout.ordem.indexOf('depoimentos')).toBe(7); // aplicar não mexe no estado original ("Clientes reais" vem logo depois do banner)
   });
   it('ocultar/mostrar, e não deixa sumir com todos os produtos', () => {
     const r = ap([{ op: 'ocultar', bloco: 'newsletter' }, { op: 'ocultar', bloco: 'vendidos' }, { op: 'ocultar', bloco: 'catalogo' }]);
@@ -99,9 +99,11 @@ describe('pacote (só conteúdo)', () => {
     const csv = csvNuvemshop(comTextosDoPacote([{ nome: 'Legging', preco: 10, descricao: 'cadastro' }], r.estado.pacote), { nome: 'L' });
     expect(csv).toContain('Legging que não marca');
   });
-  it('mudança de layout no pacote é recusada explicando onde fazer', () => {
+  it('o que o molde não tem é recusado com o porquê, a opção mais próxima e onde fazer no tema', () => {
     const r = aplicarOperacoes(e, [{ op: 'variacao', bloco: 'hero', opcao: 'altura', valor: 'alto' }], { modo: 'pacote' });
-    expect(r.descartadas[0].motivo).toContain('editor de temas');
+    expect(r.descartadas[0].motivo).toMatch(/dependem do tema/);
+    expect(r.descartadas[0].motivo).toMatch(/mais próximo aqui/);
+    expect(r.descartadas[0].motivo).toMatch(/editor do tema/);
   });
 });
 
@@ -124,7 +126,11 @@ describe('versões', () => {
   });
   it('layout antigo/ausente vira o padrão', () => {
     expect(normalizarLayout(undefined).ordem[0]).toBe('hero');
-    expect(normalizarLayout({ ordem: ['faq', 'xxx'] }).ordem.slice(0, 2)).toEqual(['faq', 'hero']);
+    const antigo = ['hero', 'categorias', 'vendidos', 'sale', 'catalogo', 'marca', 'depoimentos', 'faq', 'newsletter'].reverse();
+    const n = normalizarLayout({ ordem: [...antigo, 'xxx'] }).ordem;
+    expect(n.filter((k) => k !== 'provas')).toEqual(antigo); // ordem salva continua igual
+    expect(n.indexOf('provas')).toBe(n.indexOf('hero') + 1); // bloco novo entra logo depois do banner
+    expect(normalizarLayout({}).ajusteFotos).toBe('cover');
     expect(resumoMudancas(['A: 1', 'B: 2'])).toBe('2 mudanças: A; B');
   });
 });

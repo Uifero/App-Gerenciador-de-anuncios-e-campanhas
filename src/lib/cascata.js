@@ -35,7 +35,7 @@ export async function apagarClienteEmCascata(clienteId) {
   const f = { clienteId };
   const criativos = await db.listar(COL.criativos, f);
   const materiais = await db.listar(COL.materiais, f);
-  await Promise.all([...criativos.flatMap((c) => [c.arquivoPath, c.previaPath]), ...materiais.map((m) => m.path)].filter(Boolean).map((p) => removerArquivo(p))); // peça final + prévia reduzida + fotos salvas
+  await Promise.all([...criativos.flatMap((c) => [c.arquivoPath, c.previaPath]), ...materiais.flatMap((m) => [m.path, m.borrada?.path])].filter(Boolean).map((p) => removerArquivo(p))); // peça final + prévia reduzida + fotos salvas (e a cópia borrada dos prints)
   await Promise.all([
     removerTodos(COL.criativos, f), removerTodos(COL.hooks, f), removerTodos(COL.referencias, f), removerTodos(COL.campanhas, f),
     removerTodos(COL.resultados, f), removerTodos(COL.produtos, f), removerTodos(COL.sites, f),

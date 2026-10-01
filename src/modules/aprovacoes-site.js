@@ -13,6 +13,8 @@ import { novoToken, linkDe, linkSoLocal } from './aprovacao.js';
 import { pacoteTexto } from './sites.js';
 import { dadosDoPacote, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
+import { printsDoCliente, semRepetirDepoimentos } from '../lib/visual-site.js';
+import { autorizarPrints } from './prints-clientes.js';
 import { esc, $, on, montar, cabecalho, tag, toast, copiar, ocupado, confirmar, vazio, mostrarResultado } from '../core/ui.js';
 
 const COR = { aprovado: 'tag-ok', ajuste: 'tag-bad', aguardando: 'tag-info', substituido: '', expirado: 'tag-warn', desativado: '' };
@@ -34,15 +36,15 @@ const versaoDoLink = (site, anteriores, conteudo) => {
  * O que o link mostra do site como está agora: { html } no personalizado; { texto, previa } no pacote (previa = loja
  * aproximada, lib/pacote-loja.js; o texto continua sendo a base de comparação da versão, como antes).
  */
-export function conteudoDoLink(cliente, site, produtos) {
+export function conteudoDoLink(cliente, site, produtos, provas = []) {
   const custom = site?.modo === 'custom';
-  if (custom) return { html: gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '' }), texto: '', previa: '' };
-  return { html: '', texto: pacoteTexto(site.pacote || {}), previa: gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos })) };
+  if (custom) return { html: gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(provas, site.conteudo?.depoimentos) }), texto: '', previa: '' };
+  return { html: '', texto: pacoteTexto(site.pacote || {}), previa: gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos, provas })) };
 }
 
 /** Versão do site agora (a mesma que o próximo link de aprovação vai mostrar). `links` = links do cliente. */
-export function versaoDoSite(cliente, site, produtos, links = []) {
-  const { html, texto } = conteudoDoLink(cliente, site, produtos);
+export function versaoDoSite(cliente, site, produtos, links = [], provas = []) {
+  const { html, texto } = conteudoDoLink(cliente, site, produtos, provas);
   return versaoDoLink(site, ordenarLinks(links), html || texto);
 }
 
@@ -50,7 +52,9 @@ export function versaoDoSite(cliente, site, produtos, links = []) {
 export async function gerarLinkSite(cliente, site, produtos) {
   const custom = site?.modo === 'custom';
   if (!site?.modo || (custom ? !site.conteudo : !site.pacote)) throw new Error(custom ? 'Monte o site primeiro (aba Site/Loja: conteúdo da loja).' : 'Gere o pacote primeiro (aba Site/Loja).');
-  const { html, texto, previa } = conteudoDoLink(cliente, site, produtos);
+  // Prints reais de clientes (a cópia borrada quando houver): a autorização dos sem borrar é pedida antes, na tela.
+  const provas = printsDoCliente(await db.listar(COL.materiais, { clienteId: cliente.id }));
+  const { html, texto, previa } = conteudoDoLink(cliente, site, produtos, provas);
   if ((html || texto).length + previa.length > LIMITE_SNAPSHOT) throw new Error('O site ficou grande demais para o link (fotos coladas dentro do texto?). Use fotos enviadas pela aba Produtos.');
   const anteriores = ordenarLinks(await db.listar(COL.aprovacoes, { clienteId: cliente.id }));
   const token = novoToken();
@@ -101,6 +105,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   const achar = (id) => links.find((l) => l.id === id);
   on(root, 'click', '[data-gerar-link-site]', (b) => ocupado(b, async () => {
+    if (!(await autorizarPrints(printsDoCliente(await db.listar(COL.materiais, { clienteId: cliente.id }))))) return;
     await gerarLinkSite(cliente, site, produtos);
     mostrarResultado('[data-link-site]', 'Pronto: link novo no topo da lista. Os anteriores passaram a "Substituído".'); recarregar();
   }));

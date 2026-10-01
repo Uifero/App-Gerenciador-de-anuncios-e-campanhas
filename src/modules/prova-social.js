@@ -10,6 +10,7 @@ import { db, COL } from '../core/storage.js';
 import { lerPrintsProvaSocial } from '../core/ia.js';
 import { prepararImagem } from './diagnostico.js';
 import { salvarMaterial } from './leitura-site.js';
+import { hashArquivo } from '../lib/materiais.js';
 import { MAX_PROVAS, LEGENDA_PROVAS, ORIGEM_PROVA, ETIQUETA_PROVA, lerRespostaProvas, linhaProva, acrescentarProvas, limparDadosPessoais } from '../lib/prova-social.js';
 import { $, esc, on, modal, toast, ocupado, campoArquivo } from '../core/ui.js';
 
@@ -39,6 +40,8 @@ export function ligarProvaSocial(alvo, ctx) {
 
 async function lerERevisar(arqs, comIa, ctx, limparEnvio) {
   const preparados = await Promise.all(arqs.map((f) => prepararImagem(f, 1568, 0.9)));
+  // Mesmo print enviado também em Materiais: a impressão digital do original evita que apareça duas vezes no site.
+  await Promise.all(preparados.map(async (pp, i) => { pp.original = { hashOriginal: await hashArquivo(arqs[i]), nomeOriginal: arqs[i].name, tamanho: arqs[i].size }; }));
   const leituras = comIa
     ? lerRespostaProvas(await lerPrintsProvaSocial({ cliente: ctx.cliente, imagens: preparados.map(({ media_type, data }) => ({ media_type, data })) }), arqs.length)
     : arqs.map((_, i) => ({ numero: i + 1, legivel: true, relevante: true, resumo: '', citacao: '', dadosPessoais: [], manual: true }));
@@ -132,6 +135,7 @@ function abrirRevisao(preparados, leituras, comIa, ctx, limparEnvio) {
         etiquetas: [ETIQUETA_PROVA], descricao: e.resumo || `Print de prova social enviado em ${new Date(em).toLocaleDateString('pt-BR')}`, citacao: e.l.citacao || '',
         fonteProva: e.l.origem ? (/whats/i.test(e.l.origem) ? 'Elogio pelo WhatsApp' : `Avaliação no ${e.l.origem}`) : 'Cliente', nota: e.l.nota || null, provaEm: em,
         tarjas: est[e.i].ia.length + est[e.i].mao.length, lidoPor: comIa ? 'ia' : 'manual',
+        ...Object.fromEntries(Object.entries(preparados[e.i].original || {}).filter(([, v]) => v)),
       });
       salvos++;
     }

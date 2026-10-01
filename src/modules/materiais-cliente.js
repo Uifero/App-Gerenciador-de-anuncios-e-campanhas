@@ -4,7 +4,7 @@
 // Criativos. O Estúdio (etapa 1) e o "Ajustar este site" já leem esta mesma lista.
 import { db, COL } from '../core/storage.js';
 import { enviarMateriais, removerMaterial, ACEITA_MATERIAL, limiteMaterialMB } from '../lib/materiais.js';
-import { tipoMaterial } from '../lib/prova-social.js';
+import { tipoMaterial, ETIQUETA_PROVA } from '../lib/prova-social.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { esc, $, on, modal, campoArquivo, toast, ocupado, confirmar, mostrarResultado } from '../core/ui.js';
 
@@ -35,7 +35,8 @@ export async function abrirMateriais(cliente, { aoMudar: aoMudarExtra = () => {}
     return `<div class="rounded-lg border border-slate-200 p-1 text-xs" data-material="${esc(x.id)}">${midia}
       <p class="mt-1 truncate" title="${esc(x.nomeOriginal || x.descricao || x.nome || '')}">${esc(x.nomeOriginal || x.descricao || x.nome || 'arquivo')}</p>
       <div class="flex items-center justify-between gap-1"><span class="text-slate-500">${esc(mb(x.tamanho))}</span>
-        <button type="button" class="btn-danger btn-sm !px-2 !py-0.5" data-apagar-material="${esc(x.id)}" title="Apagar este arquivo"><i class="fa-solid fa-trash"></i></button></div></div>`;
+        <button type="button" class="btn-danger btn-sm !px-2 !py-0.5" data-apagar-material="${esc(x.id)}" title="Apagar este arquivo"><i class="fa-solid fa-trash"></i></button></div>
+      ${x.origem === 'envio' && ['foto', 'prova_social'].includes(tipoMaterial(x)) ? `<button type="button" class="mt-1 w-full rounded border border-slate-200 px-1 py-0.5 text-[11px] ${tipoMaterial(x) === 'prova_social' ? 'bg-emerald-50 text-emerald-800' : ''}" data-print-cliente="${esc(x.id)}" title="Prints de clientes aparecem na seção Clientes reais do site">${tipoMaterial(x) === 'prova_social' ? '<i class="fa-solid fa-check"></i> Print de cliente' : 'É print de cliente?'}</button>` : ''}</div>`;
   };
   const desenharGrade = async () => {
     lista = await db.listar(COL.materiais, { clienteId: cliente.id });
@@ -60,6 +61,14 @@ export async function abrirMateriais(cliente, { aoMudar: aoMudarExtra = () => {}
         mostrarResultado($(`[data-grupo-material="${videos && !fotos ? 'video' : 'foto'}"]`, raiz), `Pronto: ${fotos} foto(s) e ${videos} vídeo(s) salvos nos materiais do cliente.`);
       }
     } finally { inp.value = ''; $('[data-upload-escolhido]', raiz)?.classList.add('hidden'); $('.upload-btn', raiz)?.classList.remove('hidden'); }
+  }));
+  on(raiz, 'click', '[data-print-cliente]', (b) => ocupado(b, async () => {
+    const x = lista.find((y) => y.id === b.dataset.printCliente); if (!x) return;
+    const eh = tipoMaterial(x) === 'prova_social';
+    const etiquetas = eh ? (x.etiquetas || []).filter((t) => t !== ETIQUETA_PROVA) : [...new Set([...(x.etiquetas || []), ETIQUETA_PROVA])];
+    await db.atualizar(COL.materiais, x.id, { etiquetas });
+    await desenharGrade(); aoMudar(lista);
+    toast(eh ? 'Não é mais print de cliente: sai da seção Clientes reais.' : 'Marcado como print de cliente: entra na seção Clientes reais do site. Borre nome e número antes de publicar.');
   }));
   on(raiz, 'click', '[data-apagar-material]', async (b) => {
     const x = lista.find((y) => y.id === b.dataset.apagarMaterial); if (!x) return;
