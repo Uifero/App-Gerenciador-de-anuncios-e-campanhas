@@ -10,8 +10,9 @@ import { perguntaZeroHtml, ligarPerguntaZero } from './leitura-site.js';
 import { montarRespostasCliente } from './respostas-cliente.js';
 import { provaSocialHtml, ligarProvaSocial } from './prova-social.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
+import { abrirMateriais } from './materiais-cliente.js';
 import { textoMarca } from '../lib/leitura.js';
-import { esc, $, on, tag, toast, moeda } from '../core/ui.js';
+import { esc, $, on, tag, toast, moeda, ocupado } from '../core/ui.js';
 
 export const PAGAMENTOS_PRETENDIDOS = PAGS;
 export const FORMATOS_SITE = FORMATOS;
@@ -58,6 +59,8 @@ const ROTULO = {
  */
 // Aberto/fechado escolhido pela pessoa, por cliente: responder algumas perguntas recarrega a aba e o card não pode fechar sozinho.
 const abertoPorCliente = new Map();
+let ouvirMateriais = null; // envio em "Materiais do cliente": atualiza a pergunta 8 da tela aberta
+if (typeof document !== 'undefined') document.addEventListener('gcc:materiais', (e) => ouvirMateriais?.(e.detail));
 
 export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } = {}) {
   const aberto = abertoPorCliente.has(ctx.cliente.id) ? abertoPorCliente.get(ctx.cliente.id) : abertoPadrao;
@@ -83,7 +86,8 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
     termosProibidos: () => `${area('termosProibidos', m.termosProibidos)}<p class="hint">A IA evita esses termos e o app avisa se algum aparecer num criativo.</p>`,
     produtos: () => `<div class="text-sm">${produtos.some((p) => p.origemAuto) ? `<p class="mb-1 flex flex-wrap items-center gap-2"><span class="tag tag-warn"><i class="fa-solid fa-robot mr-1"></i>${produtos.filter((p) => p.origemAuto).length} produto(s) ${esc(textoMarca(produtos.find((p) => p.origemAuto).origemAuto))}</span><button type="button" class="text-xs text-indigo-600 underline" data-confirmar-todos-prod>Confirmar todos</button><span class="hint">Clique no nome para conferir preço, variações e fotos.</span></p>` : ''}${produtos.length ? `<ul class="mb-2 space-y-0.5">${produtos.map((p) => `<li><button type="button" class="underline decoration-dotted" data-editar-prod="${p.id}">${esc(p.nome)}</button> <span class="hint">${p.preco ? moeda(p.precoPromocional || p.preco) : 'sem preço'}${p.fotos?.length ? ` · ${p.fotos.length} foto(s)` : ' · sem foto'}</span>${p.origemAuto ? ` <span class="tag tag-warn" title="${esc(textoMarca(p.origemAuto))}">${{ instagram: 'do Instagram', resposta: 'da resposta do cliente' }[p.origemAuto.origem] || 'do site'}</span> <button type="button" class="text-xs text-indigo-600 underline" data-confirmar-prod="${p.id}">Confirmar</button>` : ''}</li>`).join('')}</ul>` : '<p class="hint mb-2">Nenhum produto cadastrado ainda.</p>'}
       <button type="button" class="btn-ghost btn-sm" data-novo-prod><i class="fa-solid fa-plus"></i> Cadastrar produto</button></div>`,
-    materiais: () => `${area('materiaisOriginais', m.materiaisOriginais)}<p class="hint">Peça por Google Drive ou WeTransfer (pelo WhatsApp a qualidade cai). Depois de baixar, envie os arquivos em <b>Estúdio > Materiais</b> (botão "Gerar foto e vídeo" num criativo). <span data-qtd-materiais></span></p>`,
+    materiais: () => `${area('materiaisOriginais', m.materiaisOriginais)}<p class="hint">Peça por Google Drive ou WeTransfer (pelo WhatsApp a qualidade cai). Depois de baixar, envie os arquivos aqui: eles vão para os materiais do cliente (Estúdio e site). <span data-qtd-materiais></span></p>
+      <button type="button" class="btn-primary btn-sm mt-1" data-enviar-materiais-q8><i class="fa-solid fa-upload"></i> Enviar fotos e vídeos</button>`,
     logo: () => `${area('logo', m.logo)}<p class="hint">Recebeu o arquivo? Envie aqui: ele fica em Materiais do cliente e vai para o site e para as peças.</p><div class="mt-1" data-logo-q9>${logoHtml(cliente)}</div>`,
     provas: () => `${area('provasSociais', m.provasSociais)}<p class="hint">Digite à mão (uma prova por linha) ou envie prints logo abaixo.</p>${provaSocialHtml('q')}`,
     presenca: () => '',
@@ -124,6 +128,13 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
     qtdMateriais = lista.length; pintar();
     const s = $('[data-qtd-materiais]', alvo); if (s) s.textContent = lista.length ? `Já há ${lista.length} arquivo(s) em Materiais.` : '';
   }).catch(() => {});
+  on(alvo, 'click', '[data-enviar-materiais-q8]', (b) => ocupado(b, () => abrirMateriais(cliente)));
+  // Envio por qualquer tela: a pergunta 8 passa a contar como respondida na hora.
+  ouvirMateriais = ({ clienteId, lista }) => {
+    if (clienteId !== cliente.id || !alvo.isConnected) return;
+    qtdMateriais = lista.length; pintar();
+    const s = $('[data-qtd-materiais]', alvo); if (s) s.textContent = lista.length ? `Já há ${lista.length} arquivo(s) em Materiais.` : '';
+  };
   $('[data-perguntas-site]', alvo).addEventListener('toggle', (e) => abertoPorCliente.set(cliente.id, e.target.open));
   ligarPerguntaZero(alvo, ctx);
   ligarProvaSocial($('[data-pergunta="provas"]', alvo), ctx);

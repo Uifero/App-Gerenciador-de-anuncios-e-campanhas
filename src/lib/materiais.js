@@ -2,9 +2,10 @@
 // Uma única função de envio (salvarMaterial) para todos. O arquivo vai como veio: nada aqui converte nem recomprime
 // (o logo precisa manter o PNG/SVG original, com transparência).
 import { db, COL, removerArquivo } from '../core/storage.js';
+import { DEMO } from '../core/firebase.js';
 import { enviarArquivoOuAvisar } from './uploads.js';
 
-const EXTENSOES = { 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/svg+xml': 'svg', 'image/jpeg': 'jpg' };
+const EXTENSOES = { 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/svg+xml': 'svg', 'image/jpeg': 'jpg', 'video/mp4': 'mp4', 'video/quicktime': 'mov' };
 
 /** Guarda um arquivo em Materiais do cliente, exatamente com os bytes recebidos. Devolve o documento criado. */
 export async function salvarMaterial(cliente, blob, origem, extra = {}) {
@@ -12,6 +13,42 @@ export async function salvarMaterial(cliente, blob, origem, extra = {}) {
   const nome = `${origem}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
   const env = await enviarArquivoOuAvisar(`gcc/${cliente.id}/materiais/${nome}`, new File([blob], nome, { type: blob.type || 'image/jpeg' }));
   return db.criar(COL.materiais, { clienteId: cliente.id, url: env.url, path: env.path, nome, origem, ...extra });
+}
+
+// ---------- fotos e vídeos enviados pelo operador ("Materiais do cliente") ----------
+export const ORIGEM_ENVIO = 'envio';
+export const ACEITA_MATERIAL = 'image/png,image/jpeg,image/webp,video/mp4,video/quicktime,.png,.jpg,.jpeg,.webp,.mp4,.mov';
+const TIPO_POR_EXT = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', mp4: 'video/mp4', mov: 'video/quicktime' };
+/** Limite por arquivo: o mesmo de hoje (regra do Storage: 100 MB; no modo demo, 3 MB). */
+export const limiteMaterialMB = (demo = DEMO) => (demo ? 3 : 100);
+
+/** Foto (PNG/JPG/WEBP) ou vídeo (MP4/MOV), dentro do limite. Devolve { tipo, video } ou lança Error com o motivo. */
+export function validarMaterial(file, limiteMB = limiteMaterialMB()) {
+  const ext = String(file?.name || '').toLowerCase().split('.').pop();
+  const tipo = Object.values(TIPO_POR_EXT).includes(file?.type) ? file.type : TIPO_POR_EXT[ext];
+  if (!tipo) throw new Error(`"${file?.name || 'arquivo'}": formato não aceito. Envie foto (PNG, JPG, WEBP) ou vídeo (MP4, MOV).`);
+  if (file.size > limiteMB * 1024 * 1024) throw new Error(`"${file.name}" tem ${(file.size / 1048576).toFixed(1)} MB e passa do limite de ${limiteMB} MB por arquivo. Reduza o arquivo (ou envie o vídeo por link na pergunta 8).`);
+  return { tipo, video: tipo.startsWith('video/') };
+}
+
+/** Envia vários arquivos (o tipo é detectado sozinho). Devolve { salvos: [docs], falhas: [mensagem] }; um erro não para os outros. */
+export async function enviarMateriais(cliente, arquivos = [], aoProgresso = () => {}) {
+  const salvos = [], falhas = [];
+  for (const [i, file] of [...arquivos].entries()) {
+    aoProgresso(i, arquivos.length, file.name);
+    try {
+      const { tipo } = validarMaterial(file);
+      salvos.push(await salvarMaterial(cliente, new Blob([file], { type: tipo }), ORIGEM_ENVIO, { tipo, nomeOriginal: file.name, tamanho: file.size }));
+    } catch (e) { falhas.push(e.message); }
+  }
+  return { salvos, falhas };
+}
+
+/** Apaga um material (registro + arquivo no Storage). Se era o logo atual, o cliente fica sem logo. */
+export async function removerMaterial(cliente, m) {
+  await removerArquivo(m.path);
+  await db.remover(COL.materiais, m.id);
+  if (cliente.logoArquivo?.materialId === m.id) { await db.atualizar(COL.clientes, cliente.id, { logoArquivo: null }); cliente.logoArquivo = null; }
 }
 
 // ---------- logo (um atual por cliente) ----------

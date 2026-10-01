@@ -24,6 +24,7 @@ import { montarNarracao } from './narracao.js';
 import { montarBroll } from './broll.js';
 import { abrirBiblioteca } from './modelos-prompt.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
+import { tipoMaterial } from '../lib/prova-social.js';
 
 const COLE_AQUI = 'Cole esse prompt numa dessas ferramentas:';
 
@@ -274,9 +275,13 @@ export function abrirEstudio(criativo, cliente) {
     await editor.carregarVideo(m.arquivo);
   }));
 
+  // Um arquivo com problema não impede os outros: entra o que abriu e o resto aparece no aviso de erro.
   const adicionarArquivos = async (arqs) => {
-    for (const f of arqs) est.midias.push(await carregarMidia(f));
+    const falhas = [];
+    for (const f of arqs) { try { est.midias.push(await carregarMidia(f)); } catch (e) { falhas.push(e.message); } }
     listarMidias();
+    if (falhas.length) toast(falhas.join('\n'), 'erro');
+    return arqs.length - falhas.length;
   };
   on(raiz, 'change', '[data-midias]', (i) => ocupado(i, async () => { await adicionarArquivos([...i.files]); i.value = ''; }));
 
@@ -284,8 +289,8 @@ export function abrirEstudio(criativo, cliente) {
   db.listar(COL.materiais, { clienteId: cliente.id }).then((salvos) => {
     const alvo = $('[data-materiais-salvos]', raiz);
     if (!alvo || !salvos.length) return;
-    alvo.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><p><i class="fa-solid fa-folder-open text-emerald-600"></i> <b>${salvos.length} foto(s) salva(s) do cliente</b>${[salvos.some((m) => m.origem === 'site') && 'do site dele', salvos.some((m) => m.origem === 'instagram') && 'prints do Instagram dele', salvos.some((m) => m.origem === 'prova_social') && 'prints de prova social (com dados pessoais cobertos)'].filter(Boolean).map((x, i) => (i ? ' e ' : ' — ') + x).join('')}.</p>
-      <div class="my-1 flex flex-wrap gap-1">${salvos.slice(0, 12).map((m) => `<img src="${esc(m.url)}" alt="" class="h-10 w-10 rounded object-cover" loading="lazy">`).join('')}</div>
+    alvo.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><p><i class="fa-solid fa-folder-open text-emerald-600"></i> <b>${salvos.length} arquivo(s) salvo(s) do cliente (fotos e vídeos)</b>${[salvos.some((m) => m.origem === 'site') && 'do site dele', salvos.some((m) => m.origem === 'instagram') && 'prints do Instagram dele', salvos.some((m) => m.origem === 'prova_social') && 'prints de prova social (com dados pessoais cobertos)'].filter(Boolean).map((x, i) => (i ? ' e ' : ' — ') + x).join('')}.</p>
+      <div class="my-1 flex flex-wrap gap-1">${salvos.slice(0, 12).map((m) => (tipoMaterial(m) === 'video' ? `<video src="${esc(m.url)}#t=0.1" muted preload="metadata" class="h-10 w-10 rounded bg-black object-cover"></video>` : `<img src="${esc(m.url)}" alt="" class="h-10 w-10 rounded object-cover" loading="lazy">`)).join('')}</div>
       <button type="button" class="btn-ghost btn-sm" data-usar-salvos><i class="fa-solid fa-plus"></i> Trazer para os materiais</button></div>`;
     on(alvo, 'click', '[data-usar-salvos]', (b) => ocupado(b, async () => {
       const arqs = [];
@@ -293,7 +298,7 @@ export function abrirEstudio(criativo, cliente) {
         try { const r = await fetch(m.url); if (r.ok) { const bl = await r.blob(); arqs.push(new File([bl], m.nome || 'foto.jpg', { type: bl.type || 'image/jpeg' })); } } catch { /* segue com as outras */ }
       }
       if (!arqs.length) throw new Error('Não consegui abrir as fotos salvas agora. Tente de novo.');
-      await adicionarArquivos(arqs); toast(`${arqs.length} foto(s) adicionada(s) aos materiais.`);
+      const ok = await adicionarArquivos(arqs); if (ok) toast(`${ok} arquivo(s) adicionado(s) aos materiais.`);
     }));
   }).catch(() => { /* sem materiais salvos: nada a mostrar */ });
   on(raiz, 'click', '[data-rm-midia]', (b) => {

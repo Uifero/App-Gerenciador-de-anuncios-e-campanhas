@@ -3,6 +3,7 @@
 // sandbox) e só vai para o site ao clicar em "Aceitar mudança", criando uma versão (v1, v2...; as últimas 20 ficam).
 // O .zip e o manual de entrega usam sempre o estado aceito (site.conteudo/config/layout ou site.pacote).
 import { db, COL } from '../core/storage.js';
+import { tipoMaterial } from '../lib/prova-social.js';
 import { ajustarSite } from '../core/ia.js';
 import {
   nomeBloco, tituloBloco, TITULOS_PADRAO, VARIACOES, BLOCOS_COM_IMAGEM, PALETAS_PRONTAS, MAX_VERSOES,
@@ -34,7 +35,8 @@ export function abrirPreviaIsolada(html, titulo) {
 export async function montarAjusteSite(alvo, ctx) {
   const { cliente, produtos, modo } = ctx;
   const custom = modo === 'custom';
-  const materiais = custom ? await db.listar(COL.materiais, { clienteId: cliente.id }).catch(() => []) : [];
+  // Imagens dos Materiais do cliente (vídeo não serve como imagem do banner/história).
+  const materiais = custom ? (await db.listar(COL.materiais, { clienteId: cliente.id }).catch(() => [])).filter((m) => tipoMaterial(m) !== 'video') : [];
   let aba = 'depois'; // prévia do rascunho: 'antes' (Atual) ou 'depois' (Com a mudança)
   const chave = `${cliente.id}:${modo}`;
 
@@ -162,7 +164,7 @@ Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de c
           <button type="button" class="btn-ghost btn-sm" data-m="${oculto ? 'mostrar' : 'ocultar'}" data-b="${k}">${oculto ? 'Mostrar' : 'Ocultar'}</button>
           ${['hero', 'marca', 'newsletter'].includes(k) || TITULOS_PADRAO[k] ? `<button type="button" class="btn-ghost btn-sm" data-m="texto" data-b="${k}">Editar texto</button>` : ''}
           ${VARIACOES[k] ? Object.entries(VARIACOES[k]).map(([opc, vals]) => `<select class="input !w-auto !py-1 text-xs" data-m-var="${k}" data-opc="${opc}" title="${opc === 'altura' ? 'Altura do banner' : 'Colunas de produtos'}"><option value="">${opc === 'altura' ? 'Altura' : 'Colunas'}: ${esc(L.variacoes[k]?.[opc] ?? (opc === 'altura' ? 'normal' : 'automático'))}</option>${vals.map((v) => `<option value="${v}">${v}</option>`).join('')}</select>`).join('') : ''}
-          ${BLOCOS_COM_IMAGEM.includes(k) ? `<select class="input !w-auto !py-1 text-xs" data-m-img="${k}" title="Imagem dos Materiais do cliente"><option value="__">Imagem: ${esc(L.imagens[k]?.nome || 'nenhuma')}</option>${L.imagens[k] ? '<option value="">Tirar a imagem</option>' : ''}${materiais.map((m) => `<option value="${esc(m.id)}">${esc(m.nome || 'imagem')}</option>`).join('')}</select>` : ''}</li>`;
+          ${BLOCOS_COM_IMAGEM.includes(k) ? `<select class="input !w-auto !py-1 text-xs" data-m-img="${k}" title="Imagem dos Materiais do cliente"><option value="__">Imagem: ${esc(L.imagens[k]?.nome || 'nenhuma')}</option>${L.imagens[k] ? '<option value="">Tirar a imagem</option>' : ''}${materiais.map((m) => `<option value="${esc(m.id)}">${esc(m.nomeOriginal || m.descricao || m.nome || 'imagem')}</option>`).join('')}</select>` : ''}</li>`;
       }).join('')}</ol>
       ${materiais.length ? '' : '<p class="hint mb-2">Para usar imagem no banner ou na história, guarde fotos em Materiais do cliente (pergunta 0 acima, ou Estúdio).</p>'}
       <p class="text-sm font-medium">Cores</p>

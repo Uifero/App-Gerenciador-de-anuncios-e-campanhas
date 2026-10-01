@@ -13,11 +13,12 @@ vi.mock('../core/storage.js', () => ({
     atualizar: vi.fn(async (col, id, patch) => { clientes[id] = { ...(clientes[id] || {}), ...patch }; }),
   },
 }));
+vi.mock('../core/firebase.js', () => ({ DEMO: false }));
 vi.mock('./uploads.js', () => ({
   enviarArquivoOuAvisar: vi.fn(async (caminho, file) => { enviados.push({ caminho, file }); return { url: `https://x/${caminho}`, path: caminho }; }),
 }));
 
-const { salvarLogo, validarLogo, logoAtual, AVISO_JPG } = await import('./materiais.js');
+const { salvarLogo, validarLogo, logoAtual, AVISO_JPG, validarMaterial, enviarMateriais, removerMaterial, limiteMaterialMB } = await import('./materiais.js');
 const bytes = async (b) => new Uint8Array(await b.arrayBuffer());
 
 describe('logo do cliente', () => {
@@ -63,5 +64,29 @@ describe('logo do cliente', () => {
     expect(removidos).toContain(primeiro.path);
     expect(logoAtual([...docs.values()]).nomeOriginal).toBe('v2.png');
     expect(cliente.logoArquivo.nome).toBe('v2.png');
+  });
+
+  it('fotos e vídeos: tipo detectado sozinho (MOV sem tipo pela extensão), mesmos bytes, limite com mensagem clara', async () => {
+    expect(validarMaterial(new File(['x'], 'a.webp', { type: 'image/webp' }))).toEqual({ tipo: 'image/webp', video: false });
+    expect(validarMaterial(new File(['x'], 'clipe.MOV', { type: '' }))).toEqual({ tipo: 'video/quicktime', video: true });
+    expect(() => validarMaterial(new File(['x'], 'doc.pdf', { type: 'application/pdf' }))).toThrow(/formato não aceito/);
+    const grande = { name: 'video.mp4', type: 'video/mp4', size: 101 * 1024 * 1024 };
+    expect(() => validarMaterial(grande)).toThrow(/101.0 MB e passa do limite de 100 MB/);
+    expect(limiteMaterialMB(true)).toBe(3); expect(limiteMaterialMB(false)).toBe(100);
+    const mp4 = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]);
+    const r = await enviarMateriais({ id: 'c5' }, [new File([mp4], 'clipe.mp4', { type: 'video/mp4' }), new File(['p'], 'x.pdf', { type: 'application/pdf' })]);
+    expect(r.salvos).toHaveLength(1); expect(r.falhas[0]).toMatch(/x.pdf/);
+    expect(enviados[0].caminho).toMatch(/^gcc\/c5\/materiais\/envio-.*\.mp4$/);
+    expect(await bytes(enviados[0].file)).toEqual(mp4);
+    expect(r.salvos[0]).toMatchObject({ origem: 'envio', tipo: 'video/mp4', nomeOriginal: 'clipe.mp4' });
+  });
+
+  it('apagar material tira o arquivo do Storage; apagar o logo atual deixa o cliente sem logo', async () => {
+    const cliente = { id: 'c6' };
+    const logo = await salvarLogo(cliente, new File(['l'], 'logo.png', { type: 'image/png' }));
+    await removerMaterial(cliente, logo);
+    expect(removidos).toContain(logo.path);
+    expect([...docs.values()].some((d) => d.id === logo.id)).toBe(false);
+    expect(cliente.logoArquivo).toBeNull();
   });
 });
