@@ -20,10 +20,69 @@ export function on(root, evento, seletor, fn) {
 export function montar(el, fn) {
   const recarregar = async () => {
     const root = document.createElement('div');
+    // Segura a altura atual enquanto a aba é redesenhada: sem isso a página fica vazia por um instante e o navegador
+    // volta ao topo (o operador perdia de vista o que acabou de gerar).
+    const altura = el.offsetHeight; if (altura) el.style.minHeight = `${altura}px`;
     el.replaceChildren(root);
-    await fn(root, recarregar);
+    try { await fn(root, recarregar); } finally { el.style.minHeight = ''; aplicarResultadoPendente(); }
   };
   return recarregar();
+}
+
+// ---------- resultado visível e status que não some ----------
+// Regra do app: depois de qualquer geração ou leitura, o resultado fica visível sem o operador procurar — rolar até
+// ele, destacar, status que não some (até a pessoa mudar de tela ou fechar) e erro que não some (até fechar).
+let pendente = null;
+const DESTAQUE = ['ring-4', 'ring-emerald-300', 'ring-offset-2', 'transition-shadow'];
+
+function barraStatus(id) {
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = id;
+    el.className = 'fixed inset-x-4 bottom-4 z-[101] sm:inset-x-auto sm:right-4 sm:w-[28rem]';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+const fecharBarra = (id) => document.getElementById(id)?.replaceChildren();
+
+/** Rola até `alvo` (elemento ou seletor), destaca por 2,5 s e mostra "Pronto: resultado abaixo" com "Ver resultado". */
+export function mostrarResultado(alvo, texto = 'Pronto: resultado abaixo.') {
+  // Seletor = algo que a aba ainda vai redesenhar (recarregar): aplica quando o redesenho terminar (montar), ou em 1,5 s.
+  if (typeof alvo === 'string') { pendente = { alvo, texto }; setTimeout(aplicarResultadoPendente, 1500); return; }
+  if (alvo) aplicarResultado(alvo, texto);
+}
+function aplicarResultadoPendente() {
+  if (!pendente) return;
+  const el = document.querySelector(pendente.alvo); if (!el) return;
+  const { texto } = pendente; pendente = null;
+  aplicarResultado(el, texto);
+}
+function aplicarResultado(el, texto) {
+  el.scrollIntoView({ block: el.offsetHeight > window.innerHeight * 0.8 ? 'start' : 'center' });
+  el.classList.add(...DESTAQUE); setTimeout(() => el.classList.remove(...DESTAQUE), 2500);
+  const barra = barraStatus('status-resultado');
+  barra.innerHTML = `<div class="flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white shadow-lg" role="status" data-status-resultado>
+    <i class="fa-solid fa-circle-check"></i><span class="min-w-0 flex-1">${esc(texto)}</span>
+    <button type="button" class="rounded bg-white/20 px-2 py-1 text-xs font-semibold hover:bg-white/30" data-ver-resultado-status>Ver resultado</button>
+    <button type="button" class="px-1 text-lg leading-none" aria-label="Fechar" data-fechar-status>&times;</button></div>`;
+  barra.querySelector('[data-ver-resultado-status]').onclick = () => { if (el.isConnected) aplicarResultado(el, texto); else fecharBarra('status-resultado'); };
+  barra.querySelector('[data-fechar-status]').onclick = () => fecharBarra('status-resultado');
+}
+// O status de "pronto" vale para a tela atual: some quando o operador muda de tela.
+if (typeof window !== 'undefined') window.addEventListener('hashchange', () => { pendente = null; fecharBarra('status-resultado'); });
+
+const TEM_ORIENTACAO = /tente|use |usar|peça|pe[çc]a |verifique|confira|envie|selecione|escreva|cadastre|abra|escolha|preencha|marque|remova|adicione|defina|publique|aguarde|recarregue|clique|monte|gere|cole|ative|o que fazer/i;
+/** Erro que fica na tela até a pessoa fechar, com o motivo e o que fazer. */
+export function mostrarErro(msg) {
+  const texto = String(msg || 'Algo deu errado.');
+  const dica = TEM_ORIENTACAO.test(texto) ? '' : 'O que fazer: tente de novo em instantes. Se continuar, use o caminho sem IA desta tela.';
+  const barra = barraStatus('status-erro');
+  barra.innerHTML = `<div class="flex items-start gap-2 rounded-lg bg-rose-700 px-3 py-2 text-sm text-white shadow-lg" role="alert" data-status-erro>
+    <i class="fa-solid fa-triangle-exclamation mt-0.5"></i><div class="min-w-0 flex-1"><p class="whitespace-pre-wrap">${esc(texto)}</p>${dica ? `<p class="mt-1 text-rose-100">${esc(dica)}</p>` : ''}</div>
+    <button type="button" class="px-1 text-lg leading-none" aria-label="Fechar" data-fechar-erro>&times;</button></div>`;
+  barra.querySelector('[data-fechar-erro]').onclick = () => fecharBarra('status-erro');
 }
 
 export function dataBR(iso) {
@@ -62,6 +121,7 @@ export function vazio(icon, titulo, texto, acao = '') {
 }
 
 export function toast(msg, tipo = 'ok') {
+  if (tipo === 'erro') return mostrarErro(msg); // erro fica na tela até fechar (regra do app)
   const cor = { ok: 'bg-emerald-600', erro: 'bg-rose-600', info: 'bg-slate-800' }[tipo] || 'bg-slate-800';
   const el = document.createElement('div');
   el.className = `${cor} text-white text-sm rounded-lg px-4 py-2 shadow-lg max-w-sm`;

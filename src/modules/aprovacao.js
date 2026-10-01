@@ -8,7 +8,7 @@ import { db, COL } from '../core/storage.js';
 import { acharTermosProibidos } from '../core/ia.js';
 import { CHECKLIST_QUALIDADE, FORMATOS } from '../lib/constantes.js';
 import { garantirPrevia, previaAtual } from '../lib/previa.js';
-import { esc, $, on, modal, toast, copiar, ocupado, confirmar, dataBR, tag } from '../core/ui.js';
+import { esc, $, on, modal, toast, copiar, ocupado, confirmar, dataBR, tag, mostrarResultado } from '../core/ui.js';
 
 /** Dias de validade padrão do link e limite de segurança para não sincronizar respostas de links muito antigos. */
 const VALIDADE_MAX_DIAS = 60;
@@ -183,6 +183,7 @@ export function abrirEnvio(cliente, criativos, { preSelecionar = [], aoMudar } =
       const r = await criarLink(cliente, elegiveis.filter((c) => ids.includes(c.id)), dias);
       aoMudar?.();
       await desenhar({ ...r, dias });
+      mostrarResultado($('[data-link-novo]', alvo)?.closest('.mb-4'), 'Pronto: link criado. Copie e envie ao cliente.');
     });
   });
   on(alvo, 'click', '[data-copiar-novo]', () => copiar($('[data-link-novo]', alvo).value));

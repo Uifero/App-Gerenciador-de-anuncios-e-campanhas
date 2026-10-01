@@ -9,7 +9,7 @@ import { tokenAtual } from '../core/auth.js';
 import { interpretarSite, lerSitePelaBusca, analisarPrintsInstagram } from '../core/ia.js';
 import { tipoLink, sugestoesSite, sugestoesPrints, aplicarLeitura, CAMPOS_AUTO, LEGENDA_PRINTS, MAX_PRINTS, textoMarca } from '../lib/leitura.js';
 import { prepararImagem } from './diagnostico.js';
-import { esc, $, on, toast, ocupado, dataBR, campoArquivo } from '../core/ui.js';
+import { esc, $, on, toast, ocupado, dataBR, campoArquivo, mostrarResultado } from '../core/ui.js';
 
 const rotuloCampo = (k) => (CAMPOS_AUTO.find(([c]) => c === k) || [, k])[1];
 
@@ -141,7 +141,7 @@ async function aplicarEGravar(ctx, sug, meta, chave, extras) {
     [chave]: { em: meta.em, encontrado, resumo: sug.resumo || '', observacao: sug.observacao || '', preenchidos: ap.preenchidos, conflitos: ap.conflitos,
       descartados: sug.descartados || [], produtosCriados: ap.novosProdutos.length, ...extras },
   });
-  toast(!encontrado ? 'Nada relevante encontrado — nenhum campo foi preenchido.' : `Leitura pronta: ${ap.preenchidos.length} campo(s) e ${ap.novosProdutos.length} produto(s) preenchidos. Confira as marcas "automático".`, encontrado ? 'ok' : 'info');
+  mostrarResultado(chave === 'leituraInstagram' ? '[data-resultado-prints]' : '[data-resultado-leitura]', !encontrado ? 'Nada relevante encontrado — nenhum campo foi preenchido.' : `Leitura pronta: ${ap.preenchidos.length} campo(s) e ${ap.novosProdutos.length} produto(s) preenchidos. Confira as marcas "automático".`);
   ctx.recarregar();
 }
 

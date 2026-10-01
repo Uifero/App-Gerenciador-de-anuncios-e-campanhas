@@ -13,7 +13,7 @@ import { novoToken, linkDe, linkSoLocal } from './aprovacao.js';
 import { pacoteTexto } from './sites.js';
 import { dadosDoPacote, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
-import { esc, $, on, montar, cabecalho, tag, toast, copiar, ocupado, confirmar, vazio } from '../core/ui.js';
+import { esc, $, on, montar, cabecalho, tag, toast, copiar, ocupado, confirmar, vazio, mostrarResultado } from '../core/ui.js';
 
 const COR = { aprovado: 'tag-ok', ajuste: 'tag-bad', aguardando: 'tag-info', substituido: '', expirado: 'tag-warn', desativado: '' };
 const LIMITE_SNAPSHOT = 900 * 1024; // documento do Firestore: até 1 MB
@@ -102,7 +102,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const achar = (id) => links.find((l) => l.id === id);
   on(root, 'click', '[data-gerar-link-site]', (b) => ocupado(b, async () => {
     await gerarLinkSite(cliente, site, produtos);
-    toast('Link novo criado. Os anteriores passaram a "Substituído".'); recarregar();
+    mostrarResultado('[data-link-site]', 'Pronto: link novo no topo da lista. Os anteriores passaram a "Substituído".'); recarregar();
   }));
   on(root, 'click', '[data-copiar-link]', (b) => copiar(linkDe(b.dataset.copiarLink)));
   on(root, 'click', '[data-copiar-msg]', (b) => copiar(mensagemParaCliente(achar(b.dataset.copiarMsg), linkDe(b.dataset.copiarMsg))));

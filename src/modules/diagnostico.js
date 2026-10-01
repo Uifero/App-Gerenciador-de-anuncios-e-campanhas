@@ -15,7 +15,7 @@ import { diagnosticarCampanha } from '../core/ia.js';
 import { obterConfig, classificarSinal } from './configuracoes.js';
 import { paisDoCliente, chavePais, simboloDoCliente, simbolosDaMoeda } from '../lib/pais.js';
 import { PLATAFORMAS_ANUNCIO } from '../lib/constantes.js';
-import { $, esc, on, modal, toast, ocupado, opcoes, dataBR, lerForm, num, campoArquivo } from '../core/ui.js';
+import { $, esc, on, modal, toast, ocupado, opcoes, dataBR, lerForm, num, campoArquivo, mostrarResultado } from '../core/ui.js';
 
 export const MAX_ANEXOS = 6;
 const TIPOS_LEITURA = ['metricas', 'anuncio_ativo', 'criativo', 'ilegivel', 'sem_relacao'];
@@ -348,7 +348,7 @@ export async function abrirDiagnostico(cliente, { aoFechar } = {}) {
       if (anexos.length) salvo.imagens = await guardarImagens(salvo.id);
       historico.push(salvo);
       desenharHistorico();
-      toast(anexos.length ? `Diagnóstico salvo no histórico com ${salvo.imagens} imagem(ns) anexada(s).` : 'Diagnóstico salvo no histórico deste cliente.');
+      mostrarResultado(resultadoEl, anexos.length ? `Pronto: diagnóstico abaixo (salvo no histórico com ${salvo.imagens} imagem(ns)).` : 'Pronto: diagnóstico abaixo (salvo no histórico deste cliente).');
     });
   });
 

@@ -18,8 +18,7 @@ import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
 import {
-  esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, toast, modal, ocupado, lerForm, opcoes, copiar, confirmar, campoArquivo,
-} from '../core/ui.js';
+  esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, toast, modal, ocupado, lerForm, opcoes, copiar, confirmar, campoArquivo, mostrarResultado } from '../core/ui.js';
 
 const rotulo = (lista, v) => (lista.find(([k]) => k === v) || [, v])[1];
 /** Status em que o criativo já passou pelo crivo interno — os mesmos usados em campanhas.js para "disponível". */
@@ -210,6 +209,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
         ${iaNota(`A IA criou ${vars.length} variações com hooks e ângulos diferentes, usando o perfil de marca${ref ? ' e a referência escolhida' : ''}. Salve as que gostar: elas vão para a lista abaixo como rascunho. Depois, abra cada uma para refinar, completar o checklist e enviar ao cliente.`)}
         ${vars.map((x, i) => variacao(x, i, cliente)).join('')}</div>`;
       saida._vars = vars;
+      mostrarResultado(saida, `Pronto: ${vars.length} variação(ões) abaixo. Salve as que gostar.`);
       saida._ctx = { referenciaId: ref?.id || null, modelo: v.modelo || null, produtoId: v.produtoId || null };
       perguntarBuscaMercado(cliente); // 1º criativo gerado na sessão: oferece buscar novos exemplos de mercado (uma vez)
     });
@@ -353,7 +353,7 @@ function detalhe(c, cliente, cfg, recarregar) {
       conversa.push({ role: 'user', content: instrucao }, { role: 'assistant', content: r.explicacao || 'Ajuste aplicado.' });
       await novaVersao({ hook: r.hook || c.hook, copy: r.copy || c.copy, cta: r.cta || c.cta, ...(r.angulo ? { angulo: r.angulo } : {}), ...(r.gatilho ? { gatilho: r.gatilho } : {}) }, `IA: ${instrucao}`);
       desenhar(); recarregar();
-      toast('A IA criou uma nova versão — veja o histórico abaixo.');
+      mostrarResultado($('#fe', alvo), 'Pronto: nova versão no texto (e no histórico de versões).');
     });
   });
   on(alvo, 'click', '[data-restaurar]', async (b) => {

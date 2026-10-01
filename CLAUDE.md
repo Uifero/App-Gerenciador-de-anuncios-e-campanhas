@@ -14,6 +14,7 @@ Responda em português do Brasil.
 - Toda função de IA tem caminho manual sem IA; a IA não inventa dado, número, preço nem depoimento.
 - `semRaciocinio` em `TAREFAS` só onde foi medido sem perda de qualidade (ver comentário lá).
 - Nunca definir `VITE_DEMO_MODE`/`DEV_AUTH_BYPASS` em produção.
+- Depois de qualquer geração ou leitura, o resultado fica visível sem o operador procurar: rolar até ele, destacar, status que não some, erro que não some. (Use `mostrarResultado` e `ocupado`/`toast(…, 'erro')` de `src/core/ui.js`.)
 
 ## Armadilhas
 - Vários arquivos são CRLF; scripts de patch devem normalizar `\r\n`. Heredoc do Bash quebra com aspas: escreva o script com Write.

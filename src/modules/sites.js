@@ -15,7 +15,7 @@ import { montarAjusteSite } from './ajuste-site.js';
 import { montarPainelMaterial } from './material-site.js';
 import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal } from '../lib/prova-social.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
-import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar } from '../core/ui.js';
+import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado } from '../core/ui.js';
 import { dadosDoPacote, gruposPlataforma, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
 
@@ -270,7 +270,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         : `<button type="button" class="btn-primary" data-csv><i class="fa-solid fa-file-csv"></i> Catálogo (CSV)</button>${site.pacote ? '<button type="button" class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Banners e briefing (.txt)</button>' : ''}${cliente.logoArquivo ? '<button type="button" class="btn-ghost" data-baixar-logo><i class="fa-solid fa-copyright"></i> Logo (original)</button>' : ''}`}
         <button type="button" class="btn-ghost" data-manual><i class="fa-solid fa-file-pdf"></i> Manual de entrega (PDF)</button></div></section>`;
     if (d) ligarPreviaLoja(alvoR, gerarPreviaLojaHTML(d));
-    $('[data-painel-resultado]', alvoR).scrollIntoView({ block: 'start' });
+    mostrarResultado($('[data-painel-resultado]', alvoR), `Pronto: site gerado (versão ${n}). Prévia, link, o que colocar na plataforma e downloads abaixo.`);
   };
   on(root, 'click', '[data-ver-resultado]', (b) => ocupado(b, abrirResultado));
   on(root, 'click', '[data-fechar-resultado]', () => { $('[data-resultado-site]', root).innerHTML = ''; });

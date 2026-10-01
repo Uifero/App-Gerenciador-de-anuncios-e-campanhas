@@ -15,7 +15,7 @@ import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
   FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
-import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo } from '../core/ui.js';
+import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo, mostrarResultado } from '../core/ui.js';
 import { CENAS_UNBOXING } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
 import { montarEditorVideo } from './video-editor.js';
@@ -526,7 +526,10 @@ export function abrirEstudio(criativo, cliente) {
           <div class="mt-2 flex flex-wrap items-center gap-2"><button class="btn-primary btn-sm" data-baixar-video><i class="fa-solid fa-download"></i> Baixar ${esc(r.ext.toUpperCase())} (${r.duracao.toFixed(0)} s)</button></div>
           ${r.ext === 'webm' ? '<p class="mt-2 text-sm text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> Este navegador só gravou em WebM. O Meta Ads e o TikTok pedem MP4: atualize o Chrome/Edge ou converta o arquivo antes de subir.</p>' : ''}`;
         est.ultimo = { blob: r.blob, nome };
-        toast('Vídeo pronto. Confira a prévia logo abaixo e clique em baixar; para o cliente aprovar, anexe como peça final no criativo.');
+        mostrarResultado($('[data-resultado]', raiz), 'Vídeo pronto: confira a prévia e baixe. Para o cliente aprovar, anexe como peça final no criativo.');
+      } catch (e) {
+        if (est.ctrl?.signal.aborted) { toast('Gravação cancelada.', 'info'); return; } // cancelar foi escolha da pessoa, não é erro
+        throw e;
       } finally { prog.classList.add('hidden'); cancelar.classList.add('hidden'); est.ctrl = null; }
     });
   });
