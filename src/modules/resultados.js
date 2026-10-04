@@ -4,6 +4,8 @@ import { db, COL } from '../core/storage.js';
 import { esc, $, on, montar, cabecalho, vazio, tag, dataBR, moeda, toast, ocupado, lerForm, num, confirmar } from '../core/ui.js';
 import { cartaoInsights, ligarExplicacaoIA } from './insights.js';
 import { lerRoas, lerCtr, lerCpa, NIVEL_TAG } from '../lib/leitura-metricas.js';
+import { filtrarResultados, agruparResultados, produtoDoResultado, ofertaDoResultado } from '../lib/conexoes.js';
+import { nomeCriativo } from '../lib/exclusao.js';
 
 const fmt = (v, suf = '') => (v == null ? '—' : String(v).replace('.', ',') + suf);
 /** Valor pintado de verde/amarelo/vermelho conforme a leitura (bom/atenção/ruim); sem leitura, só o valor. */
@@ -25,19 +27,34 @@ export function versaoAtivaEm(criativo, dataISO) {
   return candidatas.length ? candidatas[candidatas.length - 1] : versoes[0];
 }
 
+const filtrosPorCliente = new Map(); // filtro de produto/oferta escolhido (sobrevive ao redesenho da aba)
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [resultados, criativos, campanhas] = await Promise.all([
+  const [todosResultados, criativos, campanhas, produtos] = await Promise.all([
     db.listar(COL.resultados, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.campanhas, { clienteId: cliente.id }).then((l) => l.filter((c) => c.status !== 'rascunho')),
+    db.listar(COL.produtos, { clienteId: cliente.id }).catch(() => []),
   ]);
+  // Filtros por produto (o do criativo, lido agora) e por oferta (a que estava ativa quando o resultado foi registrado).
+  const filtroSalvo = filtrosPorCliente.get(cliente.id) || { produtoId: null, oferta: null };
+  const resultados = filtrarResultados(todosResultados, { ...filtroSalvo, criativos, produtos });
+  const opcoesProduto = [...new Map(todosResultados.map((r) => { const x = produtoDoResultado(r, criativos, produtos); return [x.id, x.nome]; })).entries()];
+  const opcoesOferta = [...new Set(todosResultados.map(ofertaDoResultado))];
+  const tabelaGrupo = (titulo, grupos, attr) => (grupos.length ? `<div><h4 class="mb-1 text-sm font-semibold">${titulo}</h4><table class="w-full text-sm" ${attr}><thead class="text-left text-xs uppercase text-slate-500"><tr><th class="py-1">${titulo.split(' ')[1] || ''}</th><th>Resultados</th><th>Gasto</th><th>ROAS médio</th><th>CPA médio</th></tr></thead><tbody>
+    ${grupos.map((g) => `<tr class="border-t border-slate-100"><td class="py-1">${esc(g.nome)}</td><td>${g.amostras}</td><td>${moeda(g.gasto)}</td><td>${g.roasMedio != null ? fmt(g.roasMedio.toFixed(2), 'x') : '—'}</td><td>${g.cpaMedio != null ? moeda(g.cpaMedio) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '');
   const hoje = new Date().toISOString().slice(0, 10);
   const metas = cliente.metas || {};
   // Frase curta dizendo o que o número significa (ROAS primeiro; se não houver, CTR).
   const leitura = (r) => { const l = lerRoas(r.roas, metas.roas); const c = lerCtr(r.ctr); return l ? esc('ROAS: ' + l.texto) : c ? esc('CTR: ' + c.texto) : '—'; };
 
   root.innerHTML = `${cabecalho('Resultados', 'Copie aqui os números de cada criativo. O app diz se cada número está bom ou ruim, encontra o que mais funcionou (Insights) e a IA usa isso para sugerir criativos parecidos.')}
+    ${todosResultados.length ? `<div class="card mb-5" data-filtros-insights><div class="flex flex-wrap items-end gap-3">
+      <label class="text-sm">Produto<select class="input mt-0.5" data-filtro-produto><option value="__">Todos</option>${opcoesProduto.map(([id, nome]) => `<option value="${esc(id)}" ${filtroSalvo.produtoId === id ? 'selected' : ''}>${esc(nome)}</option>`).join('')}</select></label>
+      <label class="text-sm">Oferta<select class="input mt-0.5" data-filtro-oferta><option value="__">Todas</option>${opcoesOferta.map((o) => `<option value="${esc(o)}" ${filtroSalvo.oferta === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></label>
+      <p class="hint">${resultados.length} de ${todosResultados.length} resultado(s). Insights e tabela abaixo seguem o filtro.</p></div>
+      <div class="mt-3 grid gap-4 md:grid-cols-2">${tabelaGrupo('Por produto', agruparResultados(resultados, 'produto', { criativos, produtos }), 'data-insights-produto')}${tabelaGrupo('Por oferta', agruparResultados(resultados, 'oferta', { criativos, produtos }), 'data-insights-oferta')}</div>
+      <p class="hint mt-2">O produto vem do criativo (lido agora da aba Produtos). A oferta é a que estava ativa no perfil de marca quando o resultado foi registrado.</p></div>` : ''}
     <div id="insights"></div>
     ${criativos.length ? `<form id="f" class="card mb-5 space-y-3">
-      <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Criativo *</label><select class="input" name="criativoId">${criativos.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
+      <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Criativo *</label><select class="input" name="criativoId">${criativos.filter((c) => !c.arquivado).map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
         <div><label class="label">Campanha (opcional)</label><select class="input" name="campanhaId"><option value="">—</option>${campanhas.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div></div>
       <p class="caption">Onde achar: no Gerenciador de Anúncios do Meta, colunas "Valor usado", "CTR (taxa de cliques no link)", "Custo por resultado" e "ROAS de compras". Preencha só o que tiver.</p>
       <div class="grid gap-3 sm:grid-cols-5">
@@ -51,7 +68,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       : vazio('chart-line', 'Crie um criativo primeiro', 'Os resultados são registrados por criativo.')}
     ${resultados.length ? `<div class="card overflow-x-auto p-0"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr>
       <th class="p-3">Criativo</th><th>Data</th><th>Gasto</th><th>CTR</th><th>CPA</th><th>ROAS</th><th>O que significa</th><th></th></tr></thead><tbody>
-      ${resultados.map((r) => `<tr class="border-t border-slate-100"><td class="p-3"><b>${esc(r.criativoNome)}</b> ${r.angulo ? tag(r.angulo) : ''}${r.versaoCriativo ? tag(`v${r.versaoCriativo}`, 'tag-info') : ''}</td>
+      ${resultados.map((r) => `<tr class="border-t border-slate-100"><td class="p-3"><b>${esc(nomeCriativo(r.criativoId, criativos, r.criativoNome))}</b> ${r.angulo ? tag(r.angulo) : ''}${r.versaoCriativo ? tag(`v${r.versaoCriativo}`, 'tag-info') : ''}</td>
         <td>${dataBR(r.data)}</td><td>${moeda(r.gasto)}</td><td>${celula(fmt(r.ctr, '%'), lerCtr(r.ctr))}</td><td>${celula(moeda(r.cpa), lerCpa(r.cpa, metas.cpa))}</td><td>${celula(fmt(r.roas, 'x'), lerRoas(r.roas, metas.roas))}</td>
         <td class="max-w-56 py-2 pr-2 text-xs text-slate-500">${leitura(r)}</td>
         <td><button class="text-rose-500" data-apagar="${r.id}" aria-label="Apagar"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>
@@ -78,9 +95,14 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         angulo: versao?.angulo ?? cr.angulo ?? '', framework: versao?.framework ?? cr.framework ?? '',
         formato: versao?.formato ?? cr.formato ?? '', gatilho: versao?.gatilho ?? cr.gatilho ?? '', versaoCriativo: versao?.n ?? null,
         gasto: num(v.gasto), ctr: num(v.ctr), cpa: num(v.cpa), roas: num(v.roas), data: v.data,
+        oferta: String(cliente.marca?.ofertaAtiva || '').trim() || null, // a oferta que estava no ar nesta data (fato do dia)
       });
       toast('Resultado registrado.'); recarregar();
     });
+  });
+  on(root, 'change', '[data-filtro-produto], [data-filtro-oferta]', () => {
+    const pv = $('[data-filtro-produto]', root).value, ov = $('[data-filtro-oferta]', root).value;
+    filtrosPorCliente.set(cliente.id, { produtoId: pv === '__' ? null : pv, oferta: ov === '__' ? null : ov }); recarregar();
   });
   on(root, 'click', '[data-apagar]', async (b) => {
     if (!(await confirmar('Apagar este registro?', 'Apagar'))) return;

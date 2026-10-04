@@ -7,7 +7,7 @@ const bancos = {};
 let seq = 0;
 const tabela = (c) => (bancos[c] ||= new Map());
 vi.mock('../core/storage.js', () => ({
-  COL: { clientes: 'clientes', produtos: 'produtos', materiais: 'materiais', sites: 'sites' },
+  COL: { clientes: 'clientes', produtos: 'produtos', materiais: 'materiais', sites: 'sites', criativos: 'criativos', resultados: 'resultados' },
   db: {
     listar: async (c, f) => [...tabela(c).entries()].map(([id, v]) => ({ id, ...v })).filter((d) => !f || Object.entries(f).every(([k, v]) => d[k] === v)),
     obter: async (c, id) => (tabela(c).has(id) ? { id, ...tabela(c).get(id) } : null),
@@ -94,5 +94,43 @@ describe('rotas antigas e backup', () => {
     expect(b.colecoes.materiais.filter((m) => m.migradoDe)).toHaveLength(3);
     expect(b.colecoes.clientes[0].migracaoFotos).toMatchObject({ fotos: 3 });
     expect(b.colecoes.produtos.find((p) => p.id === 'p1').fotosMigradas).toBe(true);
+  });
+});
+
+describe('excluir foto em uso (removerMaterial, o único caminho)', () => {
+  it('link de aprovação já enviado: o registro sai, o arquivo fica (anotado no cliente) e o site perde a referência', async () => {
+    tabela('materiais').set('mx', { clienteId: 'c1', url: 'https://x/mx.jpg', path: 'gcc/c1/materiais/mx.jpg', origem: 'envio', borrada: { url: 'https://x/mx-b.jpg', path: 'gcc/c1/materiais/mx-b.jpg' } });
+    tabela('sites').set('s1', { clienteId: 'c1', layout: { imagens: { hero: { materialId: 'mx', url: 'https://x/mx.jpg' } } }, conteudo: { depoimentos: [{ texto: 'ok', materialId: 'mx' }, { texto: 'escrito' }] } });
+    const { removerMaterial } = await import('./materiais.js');
+    await removerMaterial({ id: 'c1' }, { id: 'mx', ...tabela('materiais').get('mx') }, { confirmado: true, manterArquivo: true });
+    expect(tabela('materiais').has('mx')).toBe(false);
+    expect(removerArquivo).not.toHaveBeenCalled();
+    expect(tabela('clientes').get('c1').arquivosRetidos.map((a) => a.path)).toEqual(['gcc/c1/materiais/mx.jpg', 'gcc/c1/materiais/mx-b.jpg']);
+    expect(tabela('sites').get('s1').layout.imagens).toEqual({});
+    expect(tabela('sites').get('s1').conteudo.depoimentos).toEqual([{ texto: 'escrito' }]);
+  });
+  it('sem link: o arquivo e a cópia borrada saem do Storage', async () => {
+    tabela('materiais').set('my', { clienteId: 'c1', url: 'u', path: 'gcc/c1/materiais/my.jpg', borrada: { path: 'gcc/c1/materiais/my-b.jpg' } });
+    const { removerMaterial } = await import('./materiais.js');
+    await removerMaterial({ id: 'c1' }, { id: 'my', ...tabela('materiais').get('my') }, { confirmado: true });
+    expect(removerArquivo.mock.calls.map((c) => c[0])).toEqual(['gcc/c1/materiais/my.jpg', 'gcc/c1/materiais/my-b.jpg']);
+  });
+  it('sem confirmação, recusa (a trava de sempre)', async () => {
+    const { removerMaterial } = await import('./materiais.js');
+    await expect(removerMaterial({ id: 'c1' }, { id: 'm0', ...tabela('materiais').get('m0') }, { manterArquivo: true })).rejects.toThrow(/só pelo botão de apagar/);
+  });
+});
+
+describe('backup leva o estado de arquivo e as ligações novas', () => {
+  it('criativo arquivado com produto, resultado com oferta e arquivos retidos', async () => {
+    tabela('criativos').set('cr1', { clienteId: 'c1', nome: 'A', arquivado: true, arquivadoEm: '2026-10-04', produtoId: 'p1' });
+    tabela('resultados').set('r1', { clienteId: 'c1', criativoId: 'cr1', gasto: 10, oferta: 'Frete grátis' });
+    tabela('clientes').set('c1', { nome: 'Loja', arquivosRetidos: [{ path: 'gcc/c1/x.jpg' }] });
+    vi.doMock('../modules/configuracoes.js', () => ({ registrarBackup: async () => {} }));
+    const { montarBackup } = await import('../modules/backup.js');
+    const b = await montarBackup({ id: 'c1', ...tabela('clientes').get('c1') });
+    expect(b.colecoes.criativos[0]).toMatchObject({ arquivado: true, produtoId: 'p1' });
+    expect(b.colecoes.resultados[0].oferta).toBe('Frete grátis');
+    expect(b.colecoes.clientes[0].arquivosRetidos).toHaveLength(1);
   });
 });

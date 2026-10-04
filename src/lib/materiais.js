@@ -58,17 +58,45 @@ export async function enviarMateriais(cliente, arquivos = [], aoProgresso = () =
  *  - { trocando: 'logo' | 'referencia' } — troca do logo ou do print de referência, e só apaga material dessa origem;
  *  - { desfazendoMigracao: true } — só registro criado pela migração das fotos dos produtos; o ARQUIVO fica (é do produto).
  * Sem isso, recusa: nenhum outro fluxo (envio de prints, borrar, "É print de cliente"...) pode sumir com um arquivo.
+ * `manterArquivo`: o registro sai, mas o arquivo (e a cópia borrada) ficam no Storage porque um link de aprovação já
+ * enviado mostra a foto; o caminho vai para cliente.arquivosRetidos (apagado junto se o cliente for apagado).
+ * Depois de sair, nenhuma referência fica para trás no site (imagem escolhida nos ajustes, depoimento do print).
  */
-export async function removerMaterial(cliente, m, { confirmado = false, trocando = null, desfazendoMigracao = false } = {}) {
+export async function removerMaterial(cliente, m, { confirmado = false, trocando = null, desfazendoMigracao = false, manterArquivo = false } = {}) {
   if (!m?.id) throw new Error('Material inválido.');
   const soRegistro = desfazendoMigracao && Boolean(m.migradoDe);
   if (!confirmado && !soRegistro && !(trocando && ['logo', 'referencia'].includes(trocando) && m.origem === trocando)) {
     throw new Error('Apagar um material só pelo botão de apagar, com confirmação.');
   }
-  if (!soRegistro) await removerArquivo(m.path);
-  if (m.borrada?.path) await removerArquivo(m.borrada.path); // cópia borrada do print (o site usa ela)
+  const guardar = manterArquivo && !soRegistro;
+  if (!soRegistro && !guardar) await removerArquivo(m.path);
+  if (m.borrada?.path && !guardar) await removerArquivo(m.borrada.path); // cópia borrada do print (o site usa ela)
+  if (guardar) await reterArquivos(cliente.id, [m.path, m.borrada?.path].filter(Boolean), 'link de aprovação já enviado');
   await db.remover(COL.materiais, m.id);
+  await limparReferenciasMaterial(cliente.id, m.id);
   if (cliente.logoArquivo?.materialId === m.id) { await db.atualizar(COL.clientes, cliente.id, { logoArquivo: null }); cliente.logoArquivo = null; }
+}
+
+/** Arquivos que ficaram no Storage só para um link de aprovação já enviado (apagados junto com o cliente). */
+async function reterArquivos(clienteId, paths, motivo) {
+  const c = await db.obter(COL.clientes, clienteId).catch(() => null);
+  const atuais = c?.arquivosRetidos || [];
+  const novos = paths.filter((x) => !atuais.some((a) => a.path === x)).map((path) => ({ path, motivo, em: new Date().toISOString() }));
+  if (novos.length) await db.atualizar(COL.clientes, clienteId, { arquivosRetidos: [...atuais, ...novos] }, { silencioso: true });
+}
+
+/** Tira do site do cliente o que apontava para o material (imagem dos ajustes rápidos, depoimento do print). */
+export async function limparReferenciasMaterial(clienteId, materialId) {
+  const sites = await db.listar(COL.sites, { clienteId }).catch(() => []);
+  for (const st of sites) {
+    const patch = {};
+    const img = st.layout?.imagens || {};
+    if (Object.values(img).some((v) => v?.materialId === materialId)) patch.layout = { ...st.layout, imagens: Object.fromEntries(Object.entries(img).filter(([, v]) => v?.materialId !== materialId)) };
+    if (st.pacote?.visual?.banner?.materialId === materialId) patch.pacote = { ...st.pacote, visual: { ...st.pacote.visual, banner: null } };
+    const deps = st.conteudo?.depoimentos || [];
+    if (deps.some((d) => d?.materialId === materialId)) patch.conteudo = { ...st.conteudo, depoimentos: deps.filter((d) => d?.materialId !== materialId) };
+    if (Object.keys(patch).length) await db.atualizar(COL.sites, st.id, patch, { silencioso: true });
+  }
 }
 
 // ---------- logo (um atual por cliente) ----------

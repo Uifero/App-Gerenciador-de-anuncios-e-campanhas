@@ -15,6 +15,8 @@ import { diagnosticarCampanha } from '../core/ia.js';
 import { obterConfig, classificarSinal } from './configuracoes.js';
 import { paisDoCliente, chavePais, simboloDoCliente, simbolosDaMoeda } from '../lib/pais.js';
 import { PLATAFORMAS_ANUNCIO } from '../lib/constantes.js';
+import { fonteDiagnostico, linhasFonteDiagnostico } from '../lib/conexoes.js';
+import { etiquetaSite } from '../lib/aprovacao-site.js';
 import { $, esc, on, modal, toast, ocupado, opcoes, dataBR, lerForm, num, campoArquivo, mostrarResultado } from '../core/ui.js';
 
 export const MAX_ANEXOS = 6;
@@ -230,9 +232,13 @@ function htmlResultadoManual(r, fontes = [], marcacoes = []) {
 /** `aoFechar` (opcional): chamado ao fechar o modal (a aba Campanhas usa para atualizar "último diagnóstico"). */
 export async function abrirDiagnostico(cliente, { aoFechar } = {}) {
   const simbolo = simboloDoCliente(cliente), pais = paisDoCliente(cliente);
-  const [referencias, resultados, historico, cfg] = await Promise.all([
+  const [referencias, resultados, historico, cfg, sites, produtos, aprovacoes, respostas] = await Promise.all([
     db.listar(COL.referencias, { clienteId: cliente.id }), db.listar(COL.resultados, { clienteId: cliente.id }), db.listar(COL.diagnosticos, { clienteId: cliente.id }), obterConfig(),
+    db.listar(COL.sites, { clienteId: cliente.id }).catch(() => []), db.listar(COL.produtos, { clienteId: cliente.id }).catch(() => []),
+    db.listar(COL.aprovacoes, { clienteId: cliente.id }).catch(() => []), db.listar(COL.respostas, { clienteId: cliente.id }).catch(() => []),
   ]);
+  // Rastreamento, plataforma, site publicado/aprovado, oferta e produtos: lidos do cadastro (fonte), não digitados de novo.
+  const fonte = fonteDiagnostico({ cliente, site: sites[0] || null, etiquetaAprov: etiquetaSite(aprovacoes.filter((l) => l.tipo === 'site'), respostas), produtos });
   const referenciasFortes = referencias.filter((r) => r.sinal === 'forte');
   const locais = padroesLocais(resultados);
   const h = cliente.historico || {};
@@ -243,6 +249,10 @@ export async function abrirDiagnostico(cliente, { aoFechar } = {}) {
   const raiz = $('#diag', m.el);
   raiz.innerHTML = `
     <p class="hint mb-3">Descreva o que já está no ar hoje. Os campos já vêm preenchidos com o que está cadastrado no perfil do cliente — ajuste para refletir o estado mais atual. Valores em ${esc(simbolo)} (país do cliente: ${esc(pais)}; muda em Editar).</p>
+    <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm" data-fonte-diagnostico><p class="font-semibold">Do cadastro do cliente <span class="font-normal text-slate-500">(lido agora; muda no cadastro, no perfil de marca e na aba Site/Loja)</span></p>
+      <p>Pixel do Meta: <b data-fonte-pixel>${esc(fonte.pixel || 'não cadastrado')}</b> · Google Ads: ${esc(fonte.googleAds || 'não cadastrado')} · Hotjar: ${esc(fonte.hotjar || 'não')} · Tawk.to: ${esc(fonte.tawk || 'não')}</p>
+      <p>Loja: ${esc(fonte.plataforma)}${fonte.tema ? ` (tema ${esc(fonte.tema)})` : ''} · <span data-fonte-link>${fonte.lojaPublicada ? `no ar${fonte.linkLoja ? `: ${esc(fonte.linkLoja)}` : ''}` : 'ainda não publicada'}</span> · aprovação do site: ${esc(fonte.aprovacao)}</p>
+      <p>Oferta ativa (perfil de marca): ${esc(fonte.oferta || 'nenhuma')}</p></div>
     <form id="fd" class="grid gap-3 sm:grid-cols-2" data-aviso-sair>
       <div><label class="label">Plataforma</label><select class="input" name="plataforma">${opcoes(PLATAFORMAS_ANUNCIO, 'meta')}</select></div>
       <div><label class="label">Orçamento diário atual (${esc(simbolo)})</label><input class="input" type="number" step="0.01" name="orcamentoDiario" value="${esc(h.orcamentoDiario)}"></div>
@@ -250,7 +260,7 @@ export async function abrirDiagnostico(cliente, { aoFechar } = {}) {
       <div><label class="label">ROAS atual</label><input class="input" type="number" step="0.01" name="roasAtual"></div>
       <div class="sm:col-span-2"><label class="label">Público(s) atual(is)</label><input class="input" name="publicos" value="${esc(h.publicos)}"></div>
       <div class="sm:col-span-2"><label class="label">Criativos que já estão rodando (ângulo, formato, há quanto tempo)</label><textarea class="input" rows="2" name="criativosRodando" placeholder="Ex.: 2 criativos de vídeo, ângulo dor, no ar há 3 semanas"></textarea></div>
-      <div class="sm:col-span-2"><label class="label">Ofertas/promoções ativas</label><input class="input" name="ofertas" placeholder="Ex.: frete grátis acima de ${esc(simbolo)} 150"></div>
+      <div class="sm:col-span-2"><label class="label">Outras ofertas no ar além da do perfil (opcional)</label><input class="input" name="ofertas" placeholder="Ex.: cupom só nos anúncios"><p class="hint">A oferta ativa do perfil de marca já vai junto (acima).</p></div>
       <div class="sm:col-span-2"><label class="label">Link da Biblioteca de Anúncios da marca <span class="font-normal text-slate-500">(opcional)</span></label>
         <input class="input" name="bibliotecaAnuncios" value="${esc(cliente.bibliotecaAnuncios)}" placeholder="Ex.: https://www.facebook.com/ads/library/?view_all_page_id=... ou Loja da Ana">
         <p class="hint">Cole o link da Biblioteca de Anúncios da marca (ou só o nome da página). Isso ajuda a IA a achar o texto e a oferta dos anúncios que estão no ar agora, além do que já está nas referências salvas. Fica guardado no cliente para os próximos diagnósticos.</p></div>
@@ -323,7 +333,8 @@ export async function abrirDiagnostico(cliente, { aoFechar } = {}) {
     ev.preventDefault();
     const btn = ev.submitter; const v = lerForm(form);
     const dados = { plataforma: v.plataforma, orcamentoDiario: num(v.orcamentoDiario), cpaAtual: num(v.cpaAtual), roasAtual: num(v.roasAtual), publicos: v.publicos, criativosRodando: v.criativosRodando, ofertas: v.ofertas,
-      bibliotecaAnuncios: String(v.bibliotecaAnuncios || '').trim(), pais, moeda: simbolo, marcacoes: anexos.map((a) => a.rotulo) };
+      bibliotecaAnuncios: String(v.bibliotecaAnuncios || '').trim(), pais, moeda: simbolo, marcacoes: anexos.map((a) => a.rotulo),
+      ofertaPerfil: fonte.oferta || '', fonteCadastro: linhasFonteDiagnostico(fonte) };
     // O link/nome da Biblioteca fica no cliente para vir preenchido no próximo diagnóstico.
     if (dados.bibliotecaAnuncios !== (cliente.bibliotecaAnuncios || '')) {
       await db.atualizar(COL.clientes, cliente.id, { bibliotecaAnuncios: dados.bibliotecaAnuncios }, { silencioso: true }).catch((e) => console.warn(e));

@@ -35,6 +35,9 @@ export async function apagarClienteEmCascata(clienteId) {
   const f = { clienteId };
   const criativos = await db.listar(COL.criativos, f);
   const materiais = await db.listar(COL.materiais, f);
+  const cli = await db.obter(COL.clientes, clienteId).catch(() => null);
+  // Arquivos guardados só para links de aprovação já enviados (foto excluída em uso): saem junto com o cliente.
+  await Promise.all((cli?.arquivosRetidos || []).map((a) => a?.path && removerArquivo(a.path)));
   await Promise.all([...criativos.flatMap((c) => [c.arquivoPath, c.previaPath]), ...materiais.flatMap((m) => [m.path, m.borrada?.path])].filter(Boolean).map((p) => removerArquivo(p))); // peça final + prévia reduzida + fotos salvas (e a cópia borrada dos prints)
   await Promise.all([
     removerTodos(COL.criativos, f), removerTodos(COL.hooks, f), removerTodos(COL.referencias, f), removerTodos(COL.campanhas, f),
@@ -51,9 +54,18 @@ export async function apagarClienteEmCascata(clienteId) {
  * aprovação (`gcc_aprovacoes`) também ficam intocados: guardam uma CÓPIA do criativo no momento do envio, então a
  * página pública continua funcionando mesmo depois que o criativo original é apagado.
  */
-export async function apagarCriativoEmCascata(criativoId, arquivoPath, previaPath = null) {
-  if (arquivoPath) await removerArquivo(arquivoPath);
-  if (previaPath) await removerArquivo(previaPath); // prévia reduzida do link de aprovação
+export async function apagarCriativoEmCascata(criativoId, arquivoPath, previaPath = null, { manterArquivos = false, clienteId = null } = {}) {
+  // Criativo que já foi para um link de aprovação: o arquivo e a prévia ficam no Storage para o link continuar mostrando
+  // a peça (anotados em cliente.arquivosRetidos e apagados junto com o cliente).
+  if (manterArquivos && clienteId) {
+    const cli = await db.obter(COL.clientes, clienteId).catch(() => null);
+    const atuais = cli?.arquivosRetidos || [];
+    const novos = [arquivoPath, previaPath].filter((x) => x && !atuais.some((a) => a.path === x)).map((path) => ({ path, motivo: 'link de aprovação de criativo já enviado', em: new Date().toISOString() }));
+    if (novos.length) await db.atualizar(COL.clientes, clienteId, { arquivosRetidos: [...atuais, ...novos] });
+  } else {
+    if (arquivoPath) await removerArquivo(arquivoPath);
+    if (previaPath) await removerArquivo(previaPath); // prévia reduzida do link de aprovação
+  }
   await Promise.all([removerTodos(COL.resultados, { criativoId }), removerTodos(COL.respostas, { criativoId })]);
   await db.remover(COL.criativos, criativoId);
 }

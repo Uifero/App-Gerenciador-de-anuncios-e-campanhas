@@ -9,6 +9,10 @@ import { STATUS_CAMPANHA, FORMATOS } from '../lib/constantes.js';
 import { tipoDaPeca, previaAtual } from '../lib/previa.js';
 import { perguntarBuscaMercado } from './busca-mercado.js';
 import { abrirDiagnostico } from './diagnostico.js';
+import { nomeCriativo } from '../lib/exclusao.js';
+import { avisosCampanha, lojaDoCliente, urlDoProduto, fonteDiagnostico, linhasFonteDiagnostico } from '../lib/conexoes.js';
+import { produtosComFotos } from '../lib/fotos-site.js';
+import { etiquetaSite } from '../lib/aprovacao-site.js';
 import {
   esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, moeda, toast, modal, ocupado, lerForm, opcoes, copiar,
   listaDeLinhas, num, confirmar,
@@ -38,7 +42,7 @@ export function checklistPadrao(c, cliente, criativos = []) {
   const nomeDe = (id) => criativos.find((x) => x.id === id)?.nome || null;
   // Com diagrama (conjuntos): um passo por conjunto, com público, orçamento e criativos de cada um.
   const passosConjuntos = (c.conjuntos || []).map((k, i) => {
-    const crs = (k.criativos || []).map((s) => nomeDe(s.criativoId) || s.criativoNome).filter(Boolean);
+    const crs = (k.criativos || []).map((s) => nomeCriativo(s.criativoId, criativos, s.criativoNome)).filter(Boolean);
     return `Conjunto ${i + 1} "${k.nome}": público ${k.publico?.nome || 'a definir'}${k.orcamentoDiario ? `, orçamento R$ ${k.orcamentoDiario}/dia` : ''}; anúncios: ${crs.length ? crs.join(', ') : 'nenhum criativo definido ainda'}.`;
   });
   return [
@@ -124,9 +128,9 @@ export function diagramaHtml(c, criativos) {
   const soltos = [...naCampanha].filter((id) => !noConjunto.has(id)).map(doCli).filter(Boolean);
   const crHtml = (s) => {
     const cr = doCli(s.criativoId);
-    if (!cr && !s.criativoNome) return '';
-    return `<div class="arvore-criativo rounded-lg border border-slate-200 bg-white p-2 text-xs">
-      <div class="flex gap-2">${miniatura(cr)}<div class="min-w-0"><p class="truncate font-semibold text-slate-800" title="${esc(cr?.nome || s.criativoNome)}">${esc(cr?.nome || s.criativoNome)}</p>
+    const nome = nomeCriativo(s.criativoId, criativos, s.criativoNome);
+    return `<div class="arvore-criativo rounded-lg border ${cr ? 'border-slate-200' : 'border-dashed border-rose-300'} bg-white p-2 text-xs" ${cr ? '' : 'data-criativo-excluido'}>
+      <div class="flex gap-2">${miniatura(cr)}<div class="min-w-0"><p class="truncate font-semibold text-slate-800" title="${esc(nome)}">${esc(nome)}</p>
         <p class="text-slate-500">${esc([cr?.angulo, cr?.framework].filter(Boolean).join(' · ') || (FORMATOS.find(([k]) => k === cr?.formato)?.[1] || 'sem ângulo definido'))}</p></div></div>
       ${s.motivo ? `<p class="mt-1 border-t border-slate-100 pt-1 text-slate-600"><i class="fa-solid fa-chart-simple text-violet-800"></i> ${esc(s.motivo)}</p>` : ''}</div>`;
   };
@@ -171,17 +175,23 @@ export function raciocinioHtml(c, aberta = true) {
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const rodando = cliente.estagio === 'rodando';
-  const [campanhas, criativos, sites, referencias, resultados, cfg, diagnosticos] = await Promise.all([
+  const [campanhas, criativos, sites, referencias, resultados, cfg, diagnosticos, produtosBase, materiais, aprovacoesSite, respostasSite] = await Promise.all([
     db.listar(COL.campanhas, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
     db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
     db.listar(COL.resultados, { clienteId: cliente.id }), obterConfig(),
     rodando ? db.listar(COL.diagnosticos, { clienteId: cliente.id }) : [],
+    db.listar(COL.produtos, { clienteId: cliente.id }).catch(() => []), db.listar(COL.materiais, { clienteId: cliente.id }).catch(() => []),
+    db.listar(COL.aprovacoes, { clienteId: cliente.id }).catch(() => []), db.listar(COL.respostas, { clienteId: cliente.id }).catch(() => []),
   ]);
+  // Lidos da fonte: produtos (com a foto principal de Materiais), oferta do perfil, plataforma e situação da loja.
+  const produtos = produtosComFotos(produtosBase, materiais);
+  const siteCli = sites[0] || null;
+  const etiquetaAprov = etiquetaSite(aprovacoesSite.filter((l) => l.tipo === 'site'), respostasSite);
   const destino = siteDestino(sites);
   const fadigados = criativos.filter((c) => c.status === 'em_uso' && (diasDesde(c.emUsoDesde) ?? 0) >= cfg.diasFadiga);
   const referenciasFortes = referencias.filter((r) => r.sinal === 'forte');
   const locais = padroesLocais(resultados);
-  const aprovados = criativos.filter((c) => APROVADOS.includes(c.status));
+  const aprovados = criativos.filter((c) => APROVADOS.includes(c.status) && !c.arquivado); // arquivado não entra em campanha nova
   // Contexto que a IA recebe (na geração e no chat do rascunho); o nicho é buscado só quando precisa.
   const ctx = { cliente, criativos, aprovados, locais, referenciasFortes, qtdResultados: resultados.length, porCriativo: resultadosPorCriativo(resultados, criativos), cfg, recarregar };
   const rascunhos = campanhas.filter(ehRascunho);
@@ -215,6 +225,19 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   on(root, 'click', '[data-diagnosticar]', () => abrirDiagnostico(cliente, { aoFechar: recarregar }));
 
+  // Do cadastro (fonte): o que a campanha precisa saber. Avisos não bloqueiam.
+  const loja = lojaDoCliente(siteCli, etiquetaAprov);
+  const avisosHtml = (escolhidos = []) => { const av = avisosCampanha({ cliente, site: siteCli, etiquetaAprov, produtos, criativos: escolhidos });
+    return `<div data-avisos-campanha>${av.length ? `<div class="rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800"><p class="font-semibold"><i class="fa-solid fa-triangle-exclamation"></i> Antes de subir (não impede de montar):</p><ul class="mt-1 list-disc pl-5">${av.map((a) => `<li data-aviso-campanha="${esc(a.id)}">${esc(a.texto)}</li>`).join('')}</ul></div>` : '<p class="text-sm text-emerald-700"><i class="fa-solid fa-circle-check"></i> Pixel, loja e fotos dos produtos em ordem.</p>'}</div>`; };
+  const blocoFonteCampanha = () => `<div class="rounded-lg border border-slate-200 p-2 text-sm" data-fonte-campanha>
+    <p class="font-semibold">Do cadastro do cliente <span class="font-normal text-slate-500">(lido agora)</span></p>
+    <p>Loja: ${esc({ shopify: 'Shopify', nuvemshop: 'Nuvemshop', custom: 'Site personalizado' }[loja.plataforma] || 'plataforma não escolhida')}${loja.tema ? ` (tema ${esc(loja.tema)})` : ''} · ${loja.publicada ? `no ar${loja.url ? `: ${esc(loja.url)}` : ''}` : 'ainda não publicada'}${loja.etiqueta ? ` · aprovação: ${esc(loja.etiqueta)}` : ''}</p>
+    <p>Oferta ativa: ${esc(cliente.marca?.ofertaAtiva || 'nenhuma no perfil de marca')}</p>
+    <p>Produtos: ${produtos.length ? produtos.map((p) => `${esc(p.nome)} (${Number(p.preco) > 0 ? moeda(p.precoPromocional || p.preco) : 'sem preço'}${(p.fotos || []).length ? '' : ', sem foto principal'})`).join('; ') : 'nenhum cadastrado'}</p>
+    <div class="mt-2">${avisosHtml([])}</div></div>`;
+  const urlsProdutos = () => { const l = produtos.map((p) => ({ p, u: urlDoProduto(p, siteCli) })).filter((x) => x.u);
+    return l.length ? `<div class="mt-1 text-xs" data-urls-produtos><p class="text-slate-600">Destino por produto${l[0].u.certeza === 'montado' ? ' (montado pelo identificador do CSV que o app gerou; confira na loja)' : ''}:</p>${l.map((x) => `<button type="button" class="mr-2 underline" data-usar-url="${esc(x.u.url)}" title="${esc(x.u.url)}">${esc(x.p.nome)}</button>`).join('')}</div>` : ''; };
+
   // ---------- nova campanha ----------
   on(root, 'click', '[data-nova]', () => {
     const m = modal('Nova campanha', `<form id="fn" class="space-y-3">
@@ -222,7 +245,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <div><label class="label">Nome *</label><input class="input" name="nome" placeholder="Ex.: Teste de ângulos — Legging"></div>
       <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Objetivo</label><input class="input" name="objetivo" value="Vendas"></div>
         <div><label class="label">Orçamento diário (R$)</label><input class="input" type="number" step="0.01" name="orcamento" value="${esc(cliente.historico?.orcamentoDiario)}"></div></div>
+      ${blocoFonteCampanha()}
       <div><label class="label">URL de destino</label><input class="input" name="urlDestino" value="${esc(destino?.url || '')}" placeholder="https://…">
+        ${urlsProdutos()}
         ${destino ? `<p class="hint">Preenchido com o site publicado deste cliente (${destino.modo === 'custom' ? 'site personalizado' : 'pacote de plataforma'}). Ajuste se quiser apontar para outra página.</p>`
           : `<p class="hint text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> Nenhum site publicado ainda para este cliente — preencha manualmente ou publique um link na aba Site/Loja.</p>`}</div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Estrutura manual (usada no botão "sem IA")</summary>
@@ -236,6 +261,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <p class="caption"><b>Com IA:</b> monta os conjuntos (público, orçamento e objetivo de cada um), escolhe quais criativos aprovados vão em cada conjunto e explica o porquê de cada decisão. <b>Sem IA:</b> usa o que você preencher em "Estrutura manual" acima. Nos dois casos a estrutura abre como <b>rascunho</b>, com o diagrama: nada vira campanha até você clicar em "Confirmar estrutura".</p>
       <div class="flex flex-wrap gap-2"><button class="btn-ia" type="submit" data-modo="ia"><i class="fa-solid fa-wand-magic-sparkles"></i> Montar rascunho com IA</button>
         <button class="btn-ghost" type="submit" data-modo="manual">Montar rascunho com a estrutura manual</button></div></form>`);
+    on(m.el, 'click', '[data-usar-url]', (b) => { m.el.querySelector('[name=urlDestino]').value = b.dataset.usarUrl; toast('Endereço do produto colocado como destino.'); });
+    on(m.el, 'change', '[name^=cr_]', () => { const x = m.el.querySelector('[data-avisos-campanha]'); if (x) x.outerHTML = avisosHtml(aprovados.filter((c) => m.el.querySelector(`[name=cr_${c.id}]`)?.checked)); });
     on(m.el, 'submit', '#fn', async (f, ev) => {
       ev.preventDefault();
       const btn = ev.submitter; const v = lerForm(f);
@@ -249,6 +276,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           const e = await gerarEstruturaCampanha({
             cliente, criativos: aprovados, criativosAprovados: aprovados, objetivo: v.objetivo, orcamentoDiario: v.orcamento,
             padroesLocais: locais, padroesNicho: nicho.padroes, referenciasFortes, qtdResultados: resultados.length, resultadosPorCriativo: ctx.porCriativo,
+            fonteLoja: linhasFonteDiagnostico(fonteDiagnostico({ cliente, site: siteCli, etiquetaAprov, produtos })),
           });
           nova = await db.criar(COL.campanhas, {
             ...base, origem: 'ia', ...camposDaEstrutura(e, aprovados, base.orcamentoDiario), versaoRascunho: 1, discussao: [],

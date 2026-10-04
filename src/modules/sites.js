@@ -28,6 +28,7 @@ import { preferenciasHtml, referenciaExtraHtml, ligarPreferencias, resultadoFoto
 import { provaSocialHtml, ligarProvaSocial } from './prova-social.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { abrirMateriais } from './materiais-cliente.js';
+import { excluirMateriais } from './excluir-material.js';
 import { abrirProduto, garantirMigracaoFotos } from './produtos.js';
 import { ETAPAS, STATUS_ETAPA, statusEtapas, primeiraEtapaComFalta, plataformaDoSite, patchPlataforma, PLATAFORMAS_SITE, TEMAS_SHOPIFY, nomeTema } from '../lib/etapas-site.js';
 
@@ -291,7 +292,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <div class="card mt-4" data-ancora="fotos"><div class="flex flex-wrap items-center justify-between gap-2"><h3 class="font-semibold">Fotos e vídeos (${materiais.length} arquivo(s))</h3>
           <button type="button" class="btn-primary btn-sm" data-abrir-materiais><i class="fa-solid fa-upload"></i> Enviar e escolher onde cada foto vai ("Usar em")</button></div>
         <p class="hint">Cada foto tem um código (F1, F2…). Em "Usar em" você diz se ela vai no banner, num produto, em Clientes reais, no Sobre ou na Galeria.</p>
-        ${fotos.length ? `<div class="mt-2 flex gap-2 overflow-x-auto pb-1" data-fotos-passo>${fotos.map((m) => { const u = resumoUsos(m, produtos); return `<div class="w-24 shrink-0 text-[11px]" title="${esc(m.nomeOriginal || m.nome || '')}"><div class="relative"><img src="${esc(m.url)}" alt="${esc(m.codigo)}" loading="lazy" class="h-20 w-24 rounded border border-slate-200 object-cover"><span class="absolute left-0.5 top-0.5 rounded px-1 text-[10px] font-bold" style="background:rgba(0,0,0,.78);color:#fff">${esc(m.codigo)}</span></div><p class="mt-0.5 line-clamp-2 ${u.length ? 'text-slate-700' : 'text-slate-400'}">${u.length ? esc(u.map((x) => x.texto).join(' · ')) : 'sem uso'}</p></div>`; }).join('')}</div>` : '<p class="hint mt-2">Nenhuma foto ainda.</p>'}</div>
+        ${fotos.length ? `<div class="mt-2 flex gap-2 overflow-x-auto pb-1" data-fotos-passo>${fotos.map((m) => { const u = resumoUsos(m, produtos); return `<div class="w-24 shrink-0 text-[11px]" title="${esc(m.nomeOriginal || m.nome || '')}"><div class="relative"><img src="${esc(m.url)}" alt="${esc(m.codigo)}" loading="lazy" class="h-20 w-24 rounded border border-slate-200 object-cover"><span class="absolute left-0.5 top-0.5 rounded px-1 text-[10px] font-bold" style="background:rgba(0,0,0,.78);color:#fff">${esc(m.codigo)}</span>
+          <button type="button" class="absolute bottom-0.5 right-0.5 rounded bg-rose-600 px-1 text-[10px] text-white" data-excluir-foto="${esc(m.id)}" title="Excluir esta foto" aria-label="Excluir ${esc(m.codigo)}"><i class="fa-solid fa-trash"></i></button></div><p class="mt-0.5 line-clamp-2 ${u.length ? 'text-slate-700' : 'text-slate-400'}">${u.length ? esc(u.map((x) => x.texto).join(' · ')) : 'sem uso'}</p></div>`; }).join('')}</div>` : '<p class="hint mt-2">Nenhuma foto ainda.</p>'}</div>
       <div class="card mt-4" data-ancora="provas"><h3 class="font-semibold">Provas sociais</h3>
         <p class="caption">${provasTexto} em texto (perfil de marca, pergunta 10 do passo 1) · ${provasEmImagem(materiais).length} print(s). O texto é lido de lá na hora de mostrar o site: mudou o perfil, mudou o site.</p>
         <details class="mt-2" ${provasTexto || provasEmImagem(materiais).length ? '' : 'open'}><summary class="cursor-pointer text-sm text-indigo-600">Chegou prova nova? Enviar prints aqui</summary>${provaSocialHtml('passo')}</details></div>
@@ -299,6 +301,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     ligarLogo($('[data-logo-passo]', alvo), cliente, () => recarregar());
     ligarProvaSocial($('[data-prova-img="passo"]', alvo), { cliente, produtos, materiais, site, recarregar });
     on(alvo, 'click', '[data-abrir-materiais]', (b) => ocupado(b, () => abrirMateriais(cliente)));
+    on(alvo, 'click', '[data-excluir-foto]', (b) => ocupado(b, async () => { const x = materiais.find((y) => y.id === b.dataset.excluirFoto); if (x) await excluirMateriais(cliente, [x], { aoExcluir: () => recarregar() }); }));
     on(alvo, 'click', '[data-novo-produto]', () => abrirProduto(cliente, null, recarregar));
     on(alvo, 'click', '[data-editar-produto]', (b) => abrirProduto(cliente, produtos.find((p) => p.id === b.dataset.editarProduto), recarregar));
     on(alvo, 'click', '[data-borrar-print]', (b) => ocupado(b, async () => {

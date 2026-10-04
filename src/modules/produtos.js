@@ -5,6 +5,7 @@ import { db, COL } from '../core/storage.js';
 import { esc, $, on, montar, cabecalho, vazio, tag, dataBR, moeda, toast, ocupado, lerForm, num, confirmar, modal, campoArquivo } from '../core/ui.js';
 import { migrarFotosProdutos, enviarFotoDoProduto, garantirCodigos, salvarUsos } from '../lib/materiais.js';
 import { fotosDoProduto, mudarUso, semProduto } from '../lib/fotos-site.js';
+import { excluirMateriais } from './excluir-material.js';
 
 /** Migra uma vez por sessão por cliente (é idempotente; isto só evita reler à toa). Avisa quantas fotos migrou. */
 const migrados = new Set();
@@ -54,8 +55,9 @@ const form = (p = {}, fotos = []) => `<form id="fp" class="space-y-3">
   <div><label class="label">Fotos</label>${campoArquivo({ attrs: 'name="fotos"', accept: 'image/png,image/jpeg,image/webp', multiple: true, icone: 'camera', texto: fotos.length ? 'Adicionar mais fotos do produto' : 'Enviar fotos do produto (JPG/PNG)', destaque: false, dica: 'Fotos originais do produto (JPG ou PNG, sem passar pelo WhatsApp). Elas vão para Materiais do cliente, já ligadas a este produto ("Usar em"), e sobem quando você clicar em "Salvar produto".' })}
     ${fotos.length ? `<div class="mt-2 flex flex-wrap gap-2" data-fotos-produto>${fotos.map((f, i) => `<span class="relative" title="${esc(f.codigo ? `${f.codigo} — ${f.nome}` : f.nome)}"><img src="${esc(f.url)}" class="h-16 w-16 rounded object-cover ${i === 0 ? 'ring-2 ring-indigo-500' : ''}" alt="">
       ${f.codigo ? `<span class="absolute left-0.5 top-0.5 rounded px-1 text-[10px] font-bold" style="background:rgba(0,0,0,.78);color:#fff">${esc(f.codigo)}</span>` : ''}
-      ${f.materialId ? `<button type="button" data-rmfoto="${esc(f.materialId)}" title="Tirar esta foto do produto (ela continua em Materiais)" class="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1 text-xs text-white">×</button>${i ? `<button type="button" data-principal="${esc(f.materialId)}" title="Usar como foto principal" class="absolute -bottom-1 -right-1 rounded-full bg-indigo-600 px-1 text-[10px] text-white">★</button>` : ''}` : ''}</span>`).join('')}</div>
-      <p class="hint">A 1ª (com borda) é a foto principal. ★ troca a principal; × tira a foto do produto (ela continua em Materiais). Ordem e outros usos: "Materiais do cliente" > "Usar em".</p>` : ''}</div>
+      ${f.materialId ? `<button type="button" data-rmfoto="${esc(f.materialId)}" title="Tirar esta foto do produto (ela continua em Materiais)" class="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1 text-xs text-white">×</button>${i ? `<button type="button" data-principal="${esc(f.materialId)}" title="Usar como foto principal" class="absolute -bottom-1 -right-1 rounded-full bg-indigo-600 px-1 text-[10px] text-white">★</button>` : ''}
+      <button type="button" data-excluir-foto-produto="${esc(f.materialId)}" title="Excluir a foto (sai de Materiais e de todo lugar)" class="absolute -bottom-1 -left-1 rounded-full bg-slate-800 px-1 text-[10px] text-white"><i class="fa-solid fa-trash"></i></button>` : ''}</span>`).join('')}</div>
+      <p class="hint">A 1ª (com borda) é a foto principal. ★ troca a principal; × tira a foto só deste produto (ela continua em Materiais); a lixeira exclui a foto de vez (a confirmação diz onde mais ela está em uso).</p>` : ''}</div>
   <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (promoção, destaque)</summary>
     <div class="mt-3 space-y-3"><div><label class="label">Preço promocional (R$)</label><input class="input" type="number" step="0.01" min="0" name="precoPromocional" value="${esc(p.precoPromocional)}">
       <p class="hint">Aparece na seção "Sale" do site e como "preço promocional" no CSV.</p></div>
@@ -80,6 +82,10 @@ export async function abrirProduto(cliente, p, aoSalvar) {
   };
   on(m.el, 'click', '[data-rmfoto]', (b) => ocupado(b, () => mudarFoto(b.dataset.rmfoto, { ligado: false }, 'Foto tirada do produto. Ela continua em Materiais do cliente.')));
   on(m.el, 'click', '[data-principal]', (b) => ocupado(b, () => mudarFoto(b.dataset.principal, { ligado: true, principal: true }, 'Foto principal trocada.')));
+  on(m.el, 'click', '[data-excluir-foto-produto]', (b) => ocupado(b, async () => {
+    const x = materiais.find((y) => y.id === b.dataset.excluirFotoProduto); if (!x) return;
+    await excluirMateriais(cliente, [x], { aoExcluir: (lista) => { materiais = lista; redesenhar(); } });
+  }));
   on(m.el, 'submit', '#fp', async (f, ev) => {
     ev.preventDefault();
     const v = lerForm(f);

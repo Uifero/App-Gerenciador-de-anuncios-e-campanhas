@@ -14,6 +14,8 @@ import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
 import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../lib/narrativas.js';
 import { abrirMateriais } from './materiais-cliente.js';
 import { AVISO_META_SAUDE } from '../lib/saude.js';
+import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
+import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -35,10 +37,12 @@ export async function definirStatus(criativo, status) {
 }
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [criativos, referencias, resultados, produtos, cfg] = await Promise.all([
+  const [criativos, referencias, resultados, produtos, cfg, materiais] = await Promise.all([
     db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
     db.listar(COL.resultados, { clienteId: cliente.id }), db.listar(COL.produtos, { clienteId: cliente.id }), obterConfig(),
+    db.listar(COL.materiais, { clienteId: cliente.id }).catch(() => []),
   ]);
+  const fonte = { produtos, materiais, cliente, resultados }; // produto, fotos e oferta lidos daqui (lib/conexoes.js)
   // Sugestão proativa (Insights): um ângulo/framework comprovado em clientes de nicho semelhante que este
   // cliente ainda não testou em nenhum criativo. Falha aqui não impede o resto da tela (é só uma sugestão).
   let sugestaoInsight = null;
@@ -56,16 +60,26 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     toast('Não consegui verificar as respostas de aprovação do cliente agora (veja o console). As peças continuam com o último status salvo.', 'erro');
   }
   let filtro = '';
-
+  let verArquivados = false; // "Mostrar arquivados": criativos com resultados que saíram da lista (continuam nos Insights)
+  const selecionados = new Set();
+  const qtdArquivados = () => criativos.filter((c) => c.arquivado).length;
+  const barraSelecao = () => (selecionados.size ? `<div class="sticky top-16 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 p-2 text-sm" data-barra-criativos>
+      <span>${selecionados.size} criativo(s) selecionado(s)</span>
+      ${verArquivados ? '<button type="button" class="btn-ghost btn-sm" data-desarquivar-sel><i class="fa-solid fa-box-open"></i> Desarquivar</button><button type="button" class="btn-danger btn-sm" data-excluir-def-sel><i class="fa-solid fa-trash"></i> Excluir definitivamente</button>'
+        : '<button type="button" class="btn-danger btn-sm" data-excluir-sel><i class="fa-solid fa-trash"></i> Excluir ou arquivar</button>'}
+      <button type="button" class="btn-ghost btn-sm" data-limpar-sel>Limpar seleção</button></div>` : '');
   const lista = () => {
-    const itens = criativos.filter((c) => !filtro || c.status === filtro);
-    return itens.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${itens.map((c) => cartao(c, cfg)).join('')}</div>`
+    const itens = criativosVisiveis(criativos, { arquivados: verArquivados }).filter((c) => !filtro || c.status === filtro);
+    if (verArquivados) return `${barraSelecao()}<p class="mb-2 rounded bg-slate-100 p-2 text-sm" data-aviso-arquivados><i class="fa-solid fa-box-archive"></i> Arquivados: criativos com resultados registrados. Não aparecem na lista nem na montagem de campanha, e continuam contando nos Insights. Excluir daqui apaga também os resultados deles.</p>
+      ${itens.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${itens.map((c) => cartao(c, cfg, selecionados)).join('')}</div>` : '<p class="hint">Nenhum criativo arquivado.</p>'}`;
+    return itens.length ? `${barraSelecao()}<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${itens.map((c) => cartao(c, cfg, selecionados)).join('')}</div>`
       : vazio('wand-magic-sparkles', 'Nenhum criativo aqui ainda', 'Comece gerando ideias a partir de um briefing curto.',
         '<button class="btn-primary" data-novo><i class="fa-solid fa-plus"></i> Criar primeiro criativo</button>');
   };
 
   root.innerHTML = `${cabecalho('Criativos', 'Caminho de cada anúncio: 1. gerar ou escrever → 2. abrir, revisar e completar o checklist → 3. enviar ao cliente aprovar → 4. "Gerar foto e vídeo" → 5. vincular na aba Campanhas. Cada ajuste vira uma versão.',
     `<select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
+     <label class="flex items-center gap-1 text-sm" title="Criativos com resultados que foram arquivados"><input type="checkbox" data-ver-arquivados> Mostrar arquivados <span data-qtd-arquivados>(${criativos.filter((c) => c.arquivado).length})</span></label>
      <button class="btn-ghost" data-modelos-prompt title="Modelos prontos de prompt para editar ou gerar fotos de produto, preenchidos com os dados deste cliente"><i class="fa-solid fa-swatchbook"></i> Modelos de prompt</button>
      <button class="btn-ghost" data-materiais-cliente-btn title="Fotos, vídeos, logo e provas do cliente: enviar, ver e apagar (vão para o Estúdio e para o site)"><i class="fa-solid fa-photo-film"></i> Materiais do cliente${cliente.logoArquivo ? '' : ' <span class="tag tag-warn">sem logo</span>'}</button>
      <button class="btn-ghost" data-enviar title="Gera um link para o cliente final ver as peças e aprovar ou pedir ajuste, sem login"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação</button>
@@ -79,6 +93,32 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     $('#lista', root).innerHTML = lista();
   };
   on(root, 'change', '[data-filtro]', (s) => { filtro = s.value; $('#lista', root).innerHTML = lista(); });
+  const redesenharLista = () => { $('#lista', root).innerHTML = lista(); const q = $('[data-qtd-arquivados]', root); if (q) q.textContent = `(${qtdArquivados()})`; };
+  on(root, 'change', '[data-ver-arquivados]', (c) => { verArquivados = c.checked; selecionados.clear(); redesenharLista(); });
+  on(root, 'change', '[data-sel-criativo]', (c) => { if (c.checked) selecionados.add(c.dataset.selCriativo); else selecionados.delete(c.dataset.selCriativo); redesenharLista(); });
+  on(root, 'click', '[data-limpar-sel]', () => { selecionados.clear(); redesenharLista(); });
+  const escolhidos = () => criativos.filter((c) => selecionados.has(c.id));
+  // Uma confirmação só, dizendo o que acontece com cada grupo (lib/exclusao.js planoCriativos).
+  const executarPlano = async (plano) => {
+    for (const c of [...plano.excluir, ...plano.excluirDefinitivo]) await apagarCriativoEmCascata(c.id, c.arquivoPath, c.previaPath, { manterArquivos: Boolean(c.aprovacaoToken), clienteId: cliente.id });
+    for (const c of plano.arquivar) await db.atualizar(COL.criativos, c.id, { arquivado: true, arquivadoEm: new Date().toISOString() });
+  };
+  on(root, 'click', '[data-excluir-sel]', (b) => ocupado(b, async () => {
+    const plano = planoCriativos(escolhidos(), resultados);
+    if (!(await confirmar(plano.texto, 'Confirmar'))) return;
+    await executarPlano(plano); selecionados.clear(); await atualizar(); redesenharLista();
+    toast(`Pronto: ${plano.excluir.length} excluído(s), ${plano.arquivar.length} arquivado(s).`);
+  }));
+  on(root, 'click', '[data-excluir-def-sel]', (b) => ocupado(b, async () => {
+    const plano = planoCriativos(escolhidos(), resultados, { definitivo: true });
+    if (!(await confirmar(plano.texto, 'Excluir definitivamente'))) return;
+    await executarPlano(plano); selecionados.clear(); await atualizar(); redesenharLista();
+    toast(`${plano.excluirDefinitivo.length} criativo(s) excluído(s) de vez.`);
+  }));
+  on(root, 'click', '[data-desarquivar-sel]', (b) => ocupado(b, async () => {
+    for (const c of escolhidos()) await db.atualizar(COL.criativos, c.id, { arquivado: false, arquivadoEm: null });
+    const n = selecionados.size; selecionados.clear(); await atualizar(); redesenharLista(); toast(`${n} criativo(s) de volta à lista.`);
+  }));
   on(root, 'click', '[data-modelos-prompt]', (b) => ocupado(b, () => abrirBiblioteca({ cliente })));
   on(root, 'click', '[data-materiais-cliente-btn]', (b) => ocupado(b, () => abrirMateriais(cliente)));
   on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg, produtos, sugestaoInsight));
@@ -89,27 +129,29 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   try { preRef = sessionStorage.getItem('gcc_ref'); sessionStorage.removeItem('gcc_ref'); } catch { /* sem storage */ }
   const base = preRef && referencias.find((r) => r.id === preRef);
   if (base) painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, base, atualizar, cfg, produtos, sugestaoInsight);
-  on(root, 'click', '[data-abrir]', (b) => detalhe(criativos.find((c) => c.id === b.dataset.abrir), cliente, cfg, recarregar));
+  on(root, 'click', '[data-abrir]', (b) => detalhe(criativos.find((c) => c.id === b.dataset.abrir), cliente, cfg, recarregar, fonte));
 
   // Vindo da busca global: abre direto o criativo encontrado.
   let abrirId = null;
   try { abrirId = sessionStorage.getItem('gcc_abrir_criativo'); sessionStorage.removeItem('gcc_abrir_criativo'); } catch { /* sem storage */ }
   const alvoBusca = abrirId && criativos.find((c) => c.id === abrirId);
-  if (alvoBusca) detalhe(alvoBusca, cliente, cfg, recarregar);
+  if (alvoBusca) detalhe(alvoBusca, cliente, cfg, recarregar, fonte);
 });
 
-function cartao(c, cfg) {
+function cartao(c, cfg, selecionados = new Set()) {
   const dias = c.status === 'em_uso' ? diasDesde(c.emUsoDesde) : null;
   const fadiga = dias != null && dias >= cfg.diasFadiga;
-  return `<button data-abrir="${c.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
-    <div class="flex items-start justify-between gap-2"><h3 class="font-semibold leading-tight">${esc(c.nome)}</h3>${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}</div>
+  return `<div class="card relative !p-0 transition hover:border-indigo-400 hover:shadow-md ${selecionados.has(c.id) ? 'ring-2 ring-rose-300' : ''}" data-cartao-criativo="${c.id}">
+    <label class="absolute right-2 top-2 z-[1] rounded bg-white/90 px-1" title="Selecionar para excluir ou arquivar vários de uma vez"><input type="checkbox" data-sel-criativo="${c.id}" ${selecionados.has(c.id) ? 'checked' : ''} aria-label="Selecionar ${esc(c.nome)}"></label>
+    <button data-abrir="${c.id}" class="block w-full p-4 pr-9 text-left">
+    <div class="flex items-start justify-between gap-2"><h3 class="font-semibold leading-tight">${esc(c.nome)}</h3>${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}</div>${c.arquivado ? tag('arquivado') : ''}
     <p class="caption mt-1 line-clamp-2">“${esc(c.hook)}”</p>
     <div class="mt-3 flex flex-wrap gap-1">
       ${tagAprovacao(c)}${c.framework ? tag(c.framework, 'tag-info') : ''}${c.angulo ? tag(c.angulo) : ''}${tagNarrativa(c)}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma || 'pt-BR')}
       ${c.arquivoUrl ? tag('com arquivo', 'tag-ok') : tag('sem arquivo', 'tag-warn')}
       ${(c.versoes?.length || 1) > 1 ? tag(`v${c.versoes.length}`) : ''}${c.referenciaId ? tag('de referência', 'tag-info') : ''}
       ${fadiga ? tag(`fadiga: ${dias}d no ar`, 'tag-bad') : ''}</div>
-    <p class="hint mt-2">${dataBR(c.criadoEm)}</p></button>`;
+    <p class="hint mt-2">${dataBR(c.criadoEm)}</p></button></div>`;
 }
 
 // ---------------- painel de novo criativo ----------------
@@ -224,6 +266,10 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     });
   });
   on(saida, 'click', '[data-copiar-var]', (b) => { const x = saida._vars[Number(b.dataset.copiarVar)]; copiar(`${x.hook}\n\n${x.copy}\n\n${x.cta}`); });
+  on(saida, 'click', '[data-descartar-var]', async (b) => {
+    if (!(await confirmar('Excluir esta variação gerada? Ela ainda não foi salva: some daqui e não volta.', 'Excluir'))) return;
+    b.closest('.rounded-lg')?.remove(); toast('Variação excluída.');
+  });
 }
 
 function variacao(x, i, cliente) {
@@ -235,8 +281,9 @@ function variacao(x, i, cliente) {
     <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700">${esc(x.copy)}</p>
     <p class="mt-1 text-sm"><b>CTA:</b> ${esc(x.cta)}</p>
     ${x.porque ? `<p class="hint">Por quê: ${esc(x.porque)}</p>` : ''}
-    <div class="mt-2 flex gap-2"><button class="btn-primary btn-sm" data-salvar-var="${i}"><i class="fa-solid fa-floppy-disk"></i> Salvar este criativo</button>
-      <button class="btn-ghost btn-sm" data-copiar-var="${i}"><i class="fa-solid fa-copy"></i> Copiar texto</button></div></div>`;
+    <div class="mt-2 flex flex-wrap gap-2"><button class="btn-primary btn-sm" data-salvar-var="${i}"><i class="fa-solid fa-floppy-disk"></i> Salvar este criativo</button>
+      <button class="btn-ghost btn-sm" data-copiar-var="${i}"><i class="fa-solid fa-copy"></i> Copiar texto</button>
+      <button class="btn-ghost btn-sm text-rose-600" data-descartar-var="${i}"><i class="fa-solid fa-trash"></i> Excluir esta variação</button></div></div>`;
 }
 
 /** Etiqueta pequena com a narrativa e a etapa do funil — só quando o criativo segue uma das narrativas. */
@@ -258,8 +305,9 @@ async function salvarNovo(cliente, x, ctx) {
 
 
 // ---------------- detalhe / refino ----------------
-function detalhe(c, cliente, cfg, recarregar) {
+function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais: [], cliente, resultados: [] }) {
   const conversa = [];
+  const dadosProduto = () => produtoDoCriativo(c, fonte); // lido agora: preço, fotos e oferta da fonte
   const m = modal(c.nome, '<div id="d"></div>', { largo: true });
   const alvo = $('#d', m.el);
 
@@ -276,6 +324,7 @@ function detalhe(c, cliente, cfg, recarregar) {
       <button class="btn-primary btn-sm mt-2" data-enviar-um><i class="fa-solid fa-paper-plane"></i> Gerar novo link de aprovação com o arquivo atual</button></div>` : ''}
     ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.arquivoNome ? ` · arquivo que ele viu: <b>${esc(c.aprovacaoCliente.arquivoNome)}</b>${c.aprovacaoCliente.arquivoPath !== c.arquivoPath ? ' (não é mais o arquivo atual)' : ''}` : ''}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
     ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
+    ${produtoHtml()}
     <form id="fe" class="space-y-3" data-aviso-sair>
       <p class="caption">Edite direto (sem IA) e salve como nova versão, ou peça um ajuste ao chat abaixo.</p>
       <div><label class="label">Hook</label><input class="input" name="hook" value="${esc(c.hook)}"></div>
@@ -312,7 +361,7 @@ function detalhe(c, cliente, cfg, recarregar) {
         ${tipoDaPeca(c.arquivoNome) ? `<p class="hint mb-2">${previaAtual(c) ? '<i class="fa-solid fa-circle-check text-emerald-600"></i> Prévia reduzida para o link de aprovação: pronta.' : '<i class="fa-solid fa-hourglass-half"></i> Prévia reduzida para o link de aprovação: é gerada sozinha nos bastidores (ou ao enviar para aprovação).'} O original fica em qualidade total.</p>` : ''}
         <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="${esc(c.arquivoUrl)}" target="_blank" rel="noopener" download="${esc(c.arquivoNome || 'criativo')}"><i class="fa-solid fa-download"></i> Baixar</a>
         <button class="btn-ghost btn-sm" data-link><i class="fa-solid fa-link"></i> Copiar link compartilhável</button>
-        <button class="btn-danger btn-sm" data-rm-arq><i class="fa-solid fa-trash"></i> Remover</button></div>`
+        <button class="btn-danger btn-sm" data-rm-arq><i class="fa-solid fa-trash"></i> Excluir peça final</button></div>`
         : `<p class="caption mb-2">${tag('sem arquivo', 'tag-warn')} Envie o vídeo ou imagem finalizado.</p>`}
       <div class="mt-2">${campoArquivo({ attrs: 'data-arq', accept: 'image/*,video/*,application/pdf', texto: c.arquivoUrl ? 'Substituir peça final (vídeo, imagem ou PDF)' : 'Enviar peça final (vídeo, imagem ou PDF)', destaque: !c.arquivoUrl, removivel: false, dica: 'Envie o arquivo final do anúncio em qualidade original (MP4/MOV, JPG/PNG ou PDF, sem passar pelo WhatsApp). É ele que o cliente vê no link de aprovação e que você baixa para subir no Gerenciador de Anúncios.' })}</div></div>
 
@@ -320,18 +369,71 @@ function detalhe(c, cliente, cfg, recarregar) {
       <ol class="space-y-2">${[...versoes].reverse().map((v) => `<li class="rounded-lg bg-slate-50 p-2 text-sm"><div class="flex justify-between"><b>v${v.n} · ${esc(v.nota || '')}</b><span class="hint">${dataBR(v.quando)}</span></div>
         <p class="line-clamp-2 text-slate-600">“${esc(v.hook)}”</p>
         ${v.aprovadaPeloCliente ? `<p class="mt-1 text-xs text-emerald-700" data-versao-aprovada><i class="fa-solid fa-circle-check"></i> O cliente aprovou esta versão em ${dataBR(v.aprovadaPeloCliente.em)}${v.aprovadaPeloCliente.arquivoNome ? `, vendo o arquivo <b>${esc(v.aprovadaPeloCliente.arquivoNome)}</b>` : ' (sem arquivo anexado, só o texto)'}${v.aprovadaPeloCliente.arquivoPath && v.aprovadaPeloCliente.arquivoPath !== c.arquivoPath ? ' — esse arquivo já foi substituído' : ''}.</p>` : ''}
-        ${v.n !== versoes.length ? `<button class="btn-ghost btn-sm mt-1" data-restaurar="${v.n}">Restaurar esta versão</button>` : '<span class="tag tag-ok mt-1">atual</span>'}</li>`).join('')}</ol></div>
-    <div class="mt-5 flex justify-end"><button class="btn-danger btn-sm" data-apagar><i class="fa-solid fa-trash"></i> Apagar criativo</button></div>
+        ${v.n !== Math.max(...versoes.map((x) => x.n)) ? `<div class="mt-1 flex flex-wrap gap-2"><button class="btn-ghost btn-sm" data-restaurar="${v.n}">Restaurar esta versão</button><button class="btn-ghost btn-sm text-rose-600" data-excluir-versao="${v.n}"><i class="fa-solid fa-trash"></i> Excluir esta versão</button></div>` : '<span class="tag tag-ok mt-1">atual</span>'}</li>`).join('')}</ol></div>
+    ${botoesExcluir()}
     </details>`;
   };
+  // Produto ligado: nome, preço, foto principal e oferta ativa lidos da fonte (aba Produtos, Materiais, perfil de marca).
+  function produtoHtml() {
+    const d = dadosProduto();
+    const opts = (fonte.produtos || []).map((p) => `<option value="${esc(p.id)}" ${p.id === c.produtoId ? 'selected' : ''}>${esc(p.nome)}</option>`).join('');
+    return `<div class="mb-3 rounded-lg border border-slate-200 p-3 text-sm" data-produto-criativo>
+      <div class="flex flex-wrap items-center gap-2"><label class="font-semibold" for="pc-${esc(c.id)}">Produto deste criativo</label>
+        <select id="pc-${esc(c.id)}" class="input !w-auto !py-1" data-ligar-produto><option value="">Nenhum</option>${opts}</select></div>
+      ${!d ? '<p class="hint mt-1">Ligue a um produto para o texto, as peças do Estúdio e os Insights usarem o preço, as fotos e a oferta dele.</p>'
+        : d.excluido ? '<p class="mt-1 text-amber-700" data-produto-excluido><i class="fa-solid fa-triangle-exclamation"></i> O produto ligado foi excluído. Escolha outro ou "Nenhum".</p>'
+        : `<div class="mt-2 flex flex-wrap items-center gap-3">${d.principal ? `<img src="${esc(d.principal.url)}" alt="" class="h-14 w-14 rounded object-cover" data-foto-principal-criativo>` : '<span class="tag tag-warn">sem foto principal</span>'}
+          <div><p><b>${esc(d.produto.nome)}</b> · <span data-preco-criativo>${esc(d.precoTexto || 'sem preço')}</span> · ${d.fotos.length} foto(s)</p>
+            <p class="text-slate-600" data-oferta-criativo>${d.oferta ? `Oferta ativa: ${esc(d.oferta)}` : 'Sem oferta ativa no perfil de marca.'}</p>
+            <p class="hint">Lido agora da aba Produtos, dos Materiais e do perfil de marca.</p></div>
+          <button type="button" class="btn-ia btn-sm" data-atualizar-produto title="A IA ajusta o texto (preço, nome, oferta) aos dados atuais do produto e salva como nova versão"><i class="fa-solid fa-arrows-rotate"></i> Atualizar o texto com os dados atuais</button></div>`}</div>`;
+  }
+  // Excluir x arquivar (lib/exclusao.js): com resultado registrado, arquiva; arquivado, só exclusão definitiva com aviso.
+  function botoesExcluir() {
+    const a = acaoAoExcluir(c, fonte.resultados);
+    if (a.acao === 'arquivar') return `<div class="mt-5 flex flex-wrap items-center justify-end gap-2"><span class="hint">Tem ${a.resultados} resultado(s) registrado(s): em vez de excluir, arquive (fica nos Insights).</span>
+      <button class="btn-ghost btn-sm" data-arquivar><i class="fa-solid fa-box-archive"></i> Arquivar</button></div>`;
+    if (a.acao === 'excluirDefinitivo') return `<div class="mt-5 flex flex-wrap items-center justify-end gap-2"><button class="btn-ghost btn-sm" data-desarquivar><i class="fa-solid fa-box-open"></i> Desarquivar</button>
+      <button class="btn-danger btn-sm" data-excluir-definitivo><i class="fa-solid fa-trash"></i> Excluir definitivamente</button></div>`;
+    return '<div class="mt-5 flex justify-end"><button class="btn-danger btn-sm" data-apagar><i class="fa-solid fa-trash"></i> Excluir criativo</button></div>';
+  }
   desenhar();
+
+  on(alvo, 'change', '[data-ligar-produto]', async (s) => {
+    const produtoId = s.value || null;
+    await db.atualizar(COL.criativos, c.id, { produtoId }); c.produtoId = produtoId;
+    toast(produtoId ? 'Criativo ligado ao produto. Estúdio, campanha e Insights passam a usar os dados dele.' : 'Criativo sem produto.'); desenhar(); recarregar();
+  });
+  on(alvo, 'click', '[data-atualizar-produto]', (b) => ocupado(b, async () => {
+    const d = dadosProduto(); if (!d || d.excluido) return;
+    const r = await refinarCriativo({ cliente, criativo: c, produtoAtual: contextoProdutoAtual(d), instrucao: 'Atualize o texto para os dados ATUAIS do produto (nome, preço e oferta ativa). Troque só o que estiver diferente; mantenha o resto igual. Se não houver oferta ativa, tire a menção a promoção.' });
+    await novaVersao({ hook: r.hook || c.hook, copy: r.copy || c.copy, cta: r.cta || c.cta }, 'IA: atualizado com os dados atuais do produto');
+    desenhar(); recarregar();
+    mostrarResultado($('#fe', alvo), `Pronto: texto atualizado com o preço ${d.precoTexto || ''} (nova versão).`);
+  }));
+  on(alvo, 'click', '[data-excluir-versao]', async (b) => {
+    const n = Number(b.dataset.excluirVersao); const v = c.versoes.find((x) => x.n === n);
+    if (!(await confirmar(`Excluir a versão v${n} ("${v?.nota || ''}") do histórico?${v?.aprovadaPeloCliente ? ' O cliente aprovou esta versão: o registro dessa aprovação sai junto do histórico (a resposta continua no link de aprovação).' : ''} Resultados registrados continuam com o ângulo/framework que tinham.`, 'Excluir versão'))) return;
+    try { const { versoes } = semVersao(c, n); await db.atualizar(COL.criativos, c.id, { versoes }); c.versoes = versoes; toast(`Versão v${n} excluída.`); desenhar(); recarregar(); }
+    catch (e) { toast(e.message, 'erro'); }
+  });
+  on(alvo, 'click', '[data-arquivar]', async (b) => {
+    if (!(await confirmar('Arquivar este criativo? Ele sai da lista e da montagem de campanha, e continua nos Insights com os resultados. Dá para desarquivar em "Mostrar arquivados".', 'Arquivar'))) return;
+    await ocupado(b, async () => { await db.atualizar(COL.criativos, c.id, { arquivado: true, arquivadoEm: new Date().toISOString() }); m.fechar(); recarregar(); toast('Criativo arquivado. Os resultados continuam nos Insights.'); });
+  });
+  on(alvo, 'click', '[data-desarquivar]', (b) => ocupado(b, async () => { await db.atualizar(COL.criativos, c.id, { arquivado: false, arquivadoEm: null }); c.arquivado = false; desenhar(); recarregar(); toast('Criativo de volta à lista.'); }));
+  on(alvo, 'click', '[data-excluir-definitivo]', async () => {
+    const n = resultadosDoCriativo(c.id, fonte.resultados).length;
+    if (!(await confirmar(`Excluir de vez este criativo arquivado? ${n ? `Os ${n} resultado(s) registrados para ele SAEM dos Insights e não voltam.` : ''} Também saem o arquivo e as respostas de aprovação. Esta ação não pode ser desfeita.`, 'Excluir definitivamente'))) return;
+    await apagarCriativoEmCascata(c.id, c.arquivoPath, c.previaPath, { manterArquivos: Boolean(c.aprovacaoToken), clienteId: cliente.id }); m.fechar(); recarregar(); toast('Criativo excluído de vez.');
+  });
 
   const novaVersao = async (patch, nota) => {
     const versoes = [...(c.versoes || [])];
     // Sempre grava o ângulo/framework/gatilho/formato vigentes nesta versão (do patch, senão o que já estava no
     // criativo) — sem isso, um resultado registrado depois de uma edição seria atribuído ao ângulo/framework ERRADO.
     const angulo = patch.angulo ?? c.angulo, framework = patch.framework ?? c.framework, gatilho = patch.gatilho ?? c.gatilho, formato = patch.formato ?? c.formato;
-    versoes.push({ n: versoes.length + 1, hook: patch.hook, copy: patch.copy, cta: patch.cta, angulo, framework, gatilho, formato, nota, quando: new Date().toISOString() });
+    versoes.push({ n: Math.max(0, ...versoes.map((v) => v.n)) + 1, hook: patch.hook, copy: patch.copy, cta: patch.cta, angulo, framework, gatilho, formato, nota, quando: new Date().toISOString() }); // maior + 1: versão excluída não repete número
     const dados = { ...patch, versoes };
     await db.atualizar(COL.criativos, c.id, dados);
     Object.assign(c, dados);
@@ -343,13 +445,13 @@ function detalhe(c, cliente, cfg, recarregar) {
     await ocupado(f.querySelector('button'), async () => { await novaVersao({ hook: v.hook, copy: v.copy, cta: v.cta }, 'Edição manual'); toast('Nova versão salva.'); desenhar(); recarregar(); });
   });
   on(alvo, 'click', '[data-copiar]', () => copiar(`${c.hook}\n\n${c.copy}\n\n${c.cta}`));
-  on(alvo, 'click', '[data-estudio]', () => abrirEstudio(c, cliente));
+  on(alvo, 'click', '[data-estudio]', () => abrirEstudio(c, cliente, fonte));
   on(alvo, 'submit', '#fc', async (f, ev) => {
     ev.preventDefault();
     const instrucao = lerForm(f).instrucao;
     if (!instrucao) return;
     await ocupado(f.querySelector('button'), async () => {
-      const r = await refinarCriativo({ cliente, criativo: c, instrucao, conversa: conversa.map((t) => ({ role: t.role, content: t.content })) });
+      const r = await refinarCriativo({ cliente, criativo: c, instrucao, produtoAtual: contextoProdutoAtual(dadosProduto()), conversa: conversa.map((t) => ({ role: t.role, content: t.content })) });
       conversa.push({ role: 'user', content: instrucao }, { role: 'assistant', content: r.explicacao || 'Ajuste aplicado.' });
       await novaVersao({ hook: r.hook || c.hook, copy: r.copy || c.copy, cta: r.cta || c.cta, ...(r.angulo ? { angulo: r.angulo } : {}), ...(r.gatilho ? { gatilho: r.gatilho } : {}) }, `IA: ${instrucao}`);
       desenhar(); recarregar();
@@ -410,14 +512,14 @@ function detalhe(c, cliente, cfg, recarregar) {
   });
   on(alvo, 'click', '[data-link]', () => copiar(c.arquivoUrl));
   on(alvo, 'click', '[data-rm-arq]', async () => {
-    if (!(await confirmar('Remover o arquivo deste criativo?', 'Remover'))) return;
-    await removerArquivo(c.arquivoPath);
-    if (c.previaPath || c.previaUrl) await removerPrevia(c);
+    if (!(await confirmar(`Excluir a peça final ("${c.arquivoNome || 'arquivo'}") deste criativo?${c.aprovacaoToken ? ' Ele já foi para um link de aprovação: o link continua mostrando a peça que foi enviada.' : ''}`, 'Excluir peça'))) return;
+    if (!c.aprovacaoToken) { await removerArquivo(c.arquivoPath); if (c.previaPath || c.previaUrl) await removerPrevia(c); } // link já enviado: o arquivo fica para ele
     const patch = { arquivoUrl: null, arquivoPath: null, arquivoNome: null };
     await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch); desenhar(); recarregar();
   });
   on(alvo, 'click', '[data-apagar]', async () => {
-    if (!(await confirmar('Apagar este criativo? Também apaga o arquivo anexado, os resultados registrados para ele e as respostas de aprovação recebidas. Esta ação não pode ser desfeita.', 'Apagar'))) return;
-    await apagarCriativoEmCascata(c.id, c.arquivoPath, c.previaPath); m.fechar(); recarregar(); toast('Criativo e os dados ligados a ele foram apagados.');
+    if (acaoAoExcluir(c, fonte.resultados).acao !== 'excluir') return; // com resultado: só arquivar (botão acima)
+    if (!(await confirmar(`Excluir este criativo? Também sai o arquivo anexado e as respostas de aprovação recebidas${c.aprovacaoToken ? ' (o link já enviado continua mostrando a peça)' : ''}. Campanhas que usavam ele mostram "criativo excluído". Esta ação não pode ser desfeita.`, 'Excluir'))) return;
+    await apagarCriativoEmCascata(c.id, c.arquivoPath, c.previaPath, { manterArquivos: Boolean(c.aprovacaoToken), clienteId: cliente.id }); m.fechar(); recarregar(); toast('Criativo excluído.');
   });
 }

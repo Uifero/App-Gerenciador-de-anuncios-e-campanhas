@@ -3,7 +3,8 @@
 // mesmo limite de hoje; nada guardado em paralelo. Abre do passo 2 de "Montar site", da pergunta 8 e da aba
 // Criativos. O Estúdio (etapa 1) e o "Ajustar este site" já leem esta mesma lista.
 import { db, COL } from '../core/storage.js';
-import { enviarMateriais, removerMaterial, ACEITA_MATERIAL, limiteMaterialMB, garantirCodigos, salvarUsos } from '../lib/materiais.js';
+import { enviarMateriais, ACEITA_MATERIAL, limiteMaterialMB, garantirCodigos, salvarUsos } from '../lib/materiais.js';
+import { excluirMateriais } from './excluir-material.js';
 import { temCodigo, usosDe, mudarUso, mudarPessoa, comUsos, resumoUsos, DEFINIDO_TEXTO } from '../lib/fotos-site.js';
 import { tipoMaterial, ETIQUETA_PROVA } from '../lib/prova-social.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
@@ -25,21 +26,26 @@ export async function abrirMateriais(cliente, { aoMudar: aoMudarExtra = () => {}
         dica: `Arraste os arquivos para esta área ou clique no botão. Vários de uma vez: fotos (PNG, JPG, WEBP) e vídeos (MP4, MOV); o tipo é detectado sozinho. Até ${limite} MB por arquivo.` })}
       <p class="hint mt-1" data-progresso-materiais></p></div>
     <div class="mt-3"><p class="text-sm font-semibold">Logo</p><div data-logo-materiais>${logoHtml(cliente)}</div></div>
+    <div class="sticky top-0 z-10 mt-3 hidden flex-wrap items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 p-2 text-sm" data-barra-selecao>
+      <span data-qtd-selecao></span><button type="button" class="btn-danger btn-sm" data-excluir-selecao><i class="fa-solid fa-trash"></i> Excluir selecionados</button>
+      <button type="button" class="btn-ghost btn-sm" data-limpar-selecao>Limpar seleção</button></div>
     <div class="mt-3 space-y-3" data-grade-materiais><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando…</p></div></div>`, { largo: true });
   const raiz = $('[data-materiais-cliente]', m.el);
   let lista = [];
   const produtos = await db.listar(COL.produtos, { clienteId: cliente.id }).catch(() => []);
   const abertos = new Set(); // "Usar em" aberto continua aberto depois de redesenhar
+  const selecionados = new Set(); // seleção para excluir vários de uma vez
 
   const cartao = (x) => {
     const video = tipoMaterial(x) === 'video';
     const midia = video ? `<video src="${esc(x.url)}#t=0.1" muted preload="metadata" playsinline class="h-24 w-full rounded bg-black object-cover"></video>`
       : `<img src="${esc(x.url)}" alt="" loading="lazy" class="h-24 w-full rounded object-${tipoMaterial(x) === 'logo' ? 'contain' : 'cover'}" ${tipoMaterial(x) === 'logo' ? `style="${XADREZ}"` : ''}>`;
     const cod = temCodigo(x) && x.codigo ? `<span class="absolute left-1 top-1 rounded px-1.5 py-0.5 text-[11px] font-bold" style="background:rgba(0,0,0,.78);color:#fff" data-codigo-foto>${esc(x.codigo)}</span>` : '';
-    return `<div class="rounded-lg border border-slate-200 p-1 text-xs" data-material="${esc(x.id)}"><div class="relative">${midia}${cod}</div>
+    return `<div class="rounded-lg border ${selecionados.has(x.id) ? 'border-rose-400 ring-2 ring-rose-300' : 'border-slate-200'} p-1 text-xs" data-material="${esc(x.id)}"><div class="relative">${midia}${cod}
+        <label class="absolute right-1 top-1 rounded bg-white/90 px-1" title="Selecionar para excluir vários de uma vez"><input type="checkbox" data-selecionar-material="${esc(x.id)}" ${selecionados.has(x.id) ? 'checked' : ''} aria-label="Selecionar"></label></div>
       <p class="mt-1 truncate" title="${esc(x.nomeOriginal || x.descricao || x.nome || '')}">${esc(x.nomeOriginal || x.descricao || x.nome || 'arquivo')}</p>
       <div class="flex items-center justify-between gap-1"><span class="text-slate-500">${esc(mb(x.tamanho))}</span>
-        <button type="button" class="btn-danger btn-sm !px-2 !py-0.5" data-apagar-material="${esc(x.id)}" title="Apagar este arquivo"><i class="fa-solid fa-trash"></i></button></div>
+        <button type="button" class="btn-danger btn-sm !px-2 !py-0.5" data-apagar-material="${esc(x.id)}" title="Excluir este arquivo"><i class="fa-solid fa-trash"></i> Excluir</button></div>
       ${x.origem === 'envio' && ['foto', 'prova_social'].includes(tipoMaterial(x)) ? `<button type="button" class="mt-1 w-full rounded border border-slate-200 px-1 py-0.5 text-[11px] ${tipoMaterial(x) === 'prova_social' ? 'bg-emerald-50 text-emerald-800' : ''}" data-print-cliente="${esc(x.id)}" title="Prints de clientes aparecem na seção Clientes reais do site">${tipoMaterial(x) === 'prova_social' ? '<i class="fa-solid fa-check"></i> Print de cliente' : 'É print de cliente?'}</button>` : ''}
       ${temCodigo(x) && x.codigo ? usarEmHtml(x) : ''}</div>`;
   };
@@ -63,6 +69,7 @@ export async function abrirMateriais(cliente, { aoMudar: aoMudarExtra = () => {}
         <p class="pt-1 font-medium">Produto</p>${ligados}
         ${produtos.length ? (livres.length ? `<select class="w-full rounded border border-slate-300 py-0.5 text-[11px]" data-add-produto="${esc(x.id)}"><option value="">+ usar no produto…</option>${livres.map((p) => `<option value="${esc(p.id)}">${esc(p.nome)}</option>`).join('')}</select>` : '') : '<p class="hint">Cadastre produtos na aba Produtos.</p>'}
         <div class="border-t border-slate-100 pt-1">${caixa('nao', 'Não usar no site')}</div>
+        <button type="button" class="mt-1 text-rose-600 underline" data-apagar-material="${esc(x.id)}">Excluir esta foto</button>
         ${resumo.some((r) => r.por === 'texto') ? `<p class="text-amber-700">* ${DEFINIDO_TEXTO}</p>` : ''}</div></details>`;
   };
   const gradeHtml = () => GRUPOS.map(([k, titulo]) => {
@@ -122,15 +129,24 @@ export async function abrirMateriais(cliente, { aoMudar: aoMudarExtra = () => {}
     await desenharGrade(); aoMudar(lista);
     toast(eh ? 'Não é mais print de cliente: sai da seção Clientes reais.' : 'Marcado como print de cliente: entra na seção Clientes reais do site. Borre nome e número antes de publicar.');
   }));
-  on(raiz, 'click', '[data-apagar-material]', async (b) => {
+  // Excluir: um ou vários. A confirmação (uma só) lista onde cada arquivo está em uso (modules/excluir-material.js).
+  const depoisDeExcluir = async () => { $('[data-logo-materiais]', raiz).innerHTML = logoHtml(cliente); selecionados.clear(); await desenharGrade(); aoMudarExtra(lista); pintarSelecao(); };
+  const pintarSelecao = () => {
+    const barra = $('[data-barra-selecao]', raiz); barra.classList.toggle('hidden', !selecionados.size); barra.classList.toggle('flex', selecionados.size > 0);
+    $('[data-qtd-selecao]', raiz).textContent = `${selecionados.size} arquivo(s) selecionado(s)`;
+  };
+  on(raiz, 'click', '[data-apagar-material]', (b) => ocupado(b, async () => {
     const x = lista.find((y) => y.id === b.dataset.apagarMaterial); if (!x) return;
-    if (!(await confirmar(`Apagar "${x.nomeOriginal || x.nome}" dos materiais do cliente? O arquivo sai do Estúdio e do site.${tipoMaterial(x) === 'logo' ? ' É o logo atual: o cliente fica sem logo.' : ''}`, 'Apagar'))) return;
-    await ocupado(b, async () => {
-      await removerMaterial(cliente, x, { confirmado: true });
-      if (tipoMaterial(x) === 'logo') $('[data-logo-materiais]', raiz).innerHTML = logoHtml(cliente);
-      await desenharGrade(); aoMudar(lista); toast('Arquivo apagado.');
-    });
+    await excluirMateriais(cliente, [x], { aoExcluir: depoisDeExcluir });
+  }));
+  on(raiz, 'change', '[data-selecionar-material]', (c) => {
+    if (c.checked) selecionados.add(c.dataset.selecionarMaterial); else selecionados.delete(c.dataset.selecionarMaterial);
+    c.closest('[data-material]')?.classList.toggle('ring-2', c.checked); pintarSelecao();
   });
+  on(raiz, 'click', '[data-limpar-selecao]', async () => { selecionados.clear(); await desenharGrade(); pintarSelecao(); });
+  on(raiz, 'click', '[data-excluir-selecao]', (b) => ocupado(b, async () => {
+    await excluirMateriais(cliente, lista.filter((x) => selecionados.has(x.id)), { aoExcluir: depoisDeExcluir });
+  }));
   ligarLogo($('[data-logo-materiais]', raiz), cliente, async () => { await desenharGrade(); aoMudar(lista); });
   await desenharGrade();
   return m;

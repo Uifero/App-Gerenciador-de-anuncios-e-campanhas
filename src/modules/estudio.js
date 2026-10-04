@@ -15,7 +15,7 @@ import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
   FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
-import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo, mostrarResultado } from '../core/ui.js';
+import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo, mostrarResultado, confirmar } from '../core/ui.js';
 import { CENAS_UNBOXING } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
 import { montarEditorVideo } from './video-editor.js';
@@ -25,6 +25,8 @@ import { montarBroll } from './broll.js';
 import { abrirBiblioteca } from './modelos-prompt.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { tipoMaterial } from '../lib/prova-social.js';
+import { produtoDoCriativo, printsParaCriativo } from '../lib/conexoes.js';
+import { excluirMateriais } from './excluir-material.js';
 
 const COLE_AQUI = 'Cole esse prompt numa dessas ferramentas:';
 
@@ -41,7 +43,8 @@ function baixar(blob, nome) {
 }
 
 
-export function abrirEstudio(criativo, cliente) {
+/** `fonte` = { produtos, materiais } do cliente: o produto do criativo, as fotos dele e os prints são lidos daqui. */
+export function abrirEstudio(criativo, cliente, fonte = null) {
   const pref = lerPref(cliente.id);
   const est = {
     midias: [], logo: null, musica: null, cenas: extrairCenas(criativo), cor: pref.cor || '#4f46e5', corTexto: pref.corTexto || '#ffffff',
@@ -70,7 +73,9 @@ export function abrirEstudio(criativo, cliente) {
     <label class="label">Fotos e vídeos (do produto, gerados por IA ou enviados pelo cliente)</label>
     ${campoArquivo({ attrs: 'data-midias', accept: 'image/*,video/*', multiple: true, texto: 'Enviar fotos ou vídeos', lista: true, dica: 'Pode escolher vários de uma vez (JPG, PNG, WebP, MP4, MOV).' })}
     <div data-lista-midias class="mt-2 flex flex-wrap gap-2"></div>
+    <div data-produto-estudio class="mt-2"></div>
     <div data-materiais-salvos class="mt-2"></div>
+    <div data-prints-estudio class="mt-2"></div>
     <div class="mt-3 grid gap-3 sm:grid-cols-2">
       <div><label class="label">Logo do cliente (opcional)</label><div data-logo-estudio>${logoHtml(cliente)}</div><p class="hint">Fica salvo no cliente (Materiais) e entra nas peças e no site.</p></div>
       <div><label class="label">Música do vídeo (opcional)</label>${campoArquivo({ attrs: 'data-musica', accept: 'audio/*', icone: 'music', texto: 'Enviar música (MP3/WAV)', destaque: false })}</div>
@@ -183,7 +188,7 @@ export function abrirEstudio(criativo, cliente) {
   const listarMidias = () => {
     $('[data-lista-midias]', raiz).innerHTML = est.midias.map((x, i) => `<div class="relative h-20 w-20 overflow-hidden rounded-lg border bg-slate-100">
       ${x.tipo === 'imagem' ? `<img src="${esc(x.url)}" class="h-full w-full object-cover" alt="">` : `<button data-ver-midia="${i}" class="flex h-full w-full items-center justify-center bg-slate-200 text-slate-600" title="Assistir e anotar o segundo do corte"><i class="fa-solid fa-circle-play text-2xl"></i></button>`}
-      <button data-rm-midia="${i}" class="absolute right-0 top-0 bg-black/60 px-1.5 text-xs text-white" title="Remover">×</button></div>`).join('')
+      <button data-rm-midia="${i}" class="absolute right-0 top-0 bg-black/60 px-1.5 text-xs text-white" title="Excluir desta sessão">×</button></div>`).join('')
       || '<p class="hint">Nenhuma foto ou vídeo ainda. Sem material, o app usa um fundo de cor (só texto).</p>';
     const rotulo = $('[data-etapa="materiais"] [data-upload-rotulo]', raiz);
     if (rotulo) rotulo.textContent = est.midias.length ? 'Adicionar mais fotos ou vídeos' : 'Enviar fotos ou vídeos';
@@ -285,24 +290,82 @@ export function abrirEstudio(criativo, cliente) {
   };
   on(raiz, 'change', '[data-midias]', (i) => ocupado(i, async () => { await adicionarArquivos([...i.files]); i.value = ''; }));
 
-  // Materiais salvos do cliente (ex.: fotos importadas do site dele na aba Site/Loja): um clique traz para cá.
-  db.listar(COL.materiais, { clienteId: cliente.id }).then((salvos) => {
-    const alvo = $('[data-materiais-salvos]', raiz);
-    if (!alvo || !salvos.length) return;
-    alvo.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><p><i class="fa-solid fa-folder-open text-emerald-600"></i> <b>${salvos.length} arquivo(s) salvo(s) do cliente (fotos e vídeos)</b>${[salvos.some((m) => m.origem === 'site') && 'do site dele', salvos.some((m) => m.origem === 'instagram') && 'prints do Instagram dele', salvos.some((m) => m.origem === 'prova_social') && 'prints de prova social (com dados pessoais cobertos)'].filter(Boolean).map((x, i) => (i ? ' e ' : ' — ') + x).join('')}.</p>
-      <div class="my-1 flex flex-wrap gap-1">${salvos.slice(0, 12).map((m) => (tipoMaterial(m) === 'video' ? `<video src="${esc(m.url)}#t=0.1" muted preload="metadata" class="h-10 w-10 rounded bg-black object-cover"></video>` : `<img src="${esc(m.url)}" alt="" class="h-10 w-10 rounded object-cover" loading="lazy">`)).join('')}</div>
-      <button type="button" class="btn-ghost btn-sm" data-usar-salvos><i class="fa-solid fa-plus"></i> Trazer para os materiais</button></div>`;
-    on(alvo, 'click', '[data-usar-salvos]', (b) => ocupado(b, async () => {
+  // Materiais salvos do cliente. Criativo ligado a um produto: mostra as fotos DELE (a principal primeiro, lidas de
+  // Materiais/"Usar em") e já traz para a sessão; "Ver todas as fotos" mostra o resto. Cada foto tem "Excluir".
+  let verTodas = false, salvos = [], produtos = fonte?.produtos || [];
+  const urlParaArquivo = async (url, nome) => { const r = await fetch(url); if (!r.ok) throw new Error(); const bl = await r.blob(); return new File([bl], nome || 'foto.jpg', { type: bl.type || 'image/jpeg' }); };
+  const desenharSalvos = () => {
+    const alvo = $('[data-materiais-salvos]', raiz); if (!alvo) return;
+    const dp = produtoDoCriativo(criativo, { produtos, materiais: salvos, cliente });
+    const doProduto = dp && !dp.excluido ? dp.fotos.filter((f) => f.materialId).map((f) => salvos.find((m) => m.id === f.materialId)).filter(Boolean) : [];
+    const lista = verTodas || !doProduto.length ? salvos.filter((m) => tipoMaterial(m) !== 'referencia') : doProduto;
+    if (!salvos.length) { alvo.innerHTML = ''; return; }
+    alvo.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm" data-salvos-estudio>
+      <p><i class="fa-solid fa-folder-open text-emerald-600"></i> <b>${doProduto.length && !verTodas ? `Fotos do produto ${esc(dp.produto.nome)} (${doProduto.length})` : `${lista.length} arquivo(s) salvo(s) do cliente`}</b>${doProduto.length ? ` · <button type="button" class="underline" data-ver-todas>${verTodas ? 'Só as fotos do produto' : 'Ver todas as fotos'}</button>` : ''}</p>
+      <div class="my-1 flex flex-wrap gap-1">${lista.slice(0, 24).map((m) => `<span class="relative" title="${esc(m.codigo ? `${m.codigo} — ` : '')}${esc(m.nomeOriginal || m.nome || '')}">${tipoMaterial(m) === 'video' ? `<video src="${esc(m.url)}#t=0.1" muted preload="metadata" class="h-12 w-12 rounded bg-black object-cover"></video>` : `<img src="${esc(m.url)}" alt="" class="h-12 w-12 rounded object-cover" loading="lazy">`}
+        <button type="button" class="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1 text-[10px] text-white" data-excluir-salvo="${esc(m.id)}" title="Excluir este arquivo do cliente" aria-label="Excluir"><i class="fa-solid fa-trash"></i></button></span>`).join('')}</div>
+      <button type="button" class="btn-ghost btn-sm" data-usar-salvos><i class="fa-solid fa-plus"></i> Trazer ${lista.length === salvos.length ? 'todos' : 'estes'} para os materiais</button></div>`;
+    alvo._lista = lista;
+  };
+  // Prints de prova social: só a cópia borrada e só com autorização; em saúde/emagrecimento, kg/cm/antes e depois é bloqueado.
+  const desenharPrints = () => {
+    const alvo = $('[data-prints-estudio]', raiz); if (!alvo) return;
+    const prints = printsParaCriativo({ cliente, produtos, materiais: salvos });
+    if (!prints.length) { alvo.innerHTML = ''; return; }
+    alvo.innerHTML = `<details class="rounded-lg border border-amber-200 p-2 text-sm" data-prints-criativo><summary class="cursor-pointer font-medium"><i class="fa-solid fa-star-half-stroke text-amber-500"></i> Prints de clientes (prova social) para usar como imagem</summary>
+      <p class="hint mt-1">Só entra a cópia com nome, número e rosto borrados, e só com a autorização do cliente confirmada (a mesma regra do site).</p>
+      <div class="mt-2 grid gap-2 sm:grid-cols-2">${prints.map((x) => `<div class="flex gap-2 rounded border border-slate-200 p-1" data-print-estudio="${esc(x.material.id)}" data-usavel="${x.usavel}">
+        ${x.usavel ? `<img src="${esc(x.url)}" alt="Print borrado" class="h-14 w-14 rounded object-cover">` : '<span class="flex h-14 w-14 items-center justify-center rounded bg-slate-100 text-slate-400"><i class="fa-solid fa-ban"></i></span>'}
+        <div class="min-w-0 flex-1 text-xs"><p class="truncate">${esc(x.material.codigo ? `${x.material.codigo} — ` : '')}${esc(x.material.descricao || x.material.nomeOriginal || 'print')}</p>
+          ${x.usavel ? `<button type="button" class="btn-ghost btn-sm mt-1" data-usar-print="${esc(x.material.id)}">Usar no criativo${x.pedirAutorizacao ? ' (pede autorização)' : ''}</button>`
+            : `<p class="mt-1 ${x.bloqueadoSaude ? 'font-medium text-rose-700' : 'text-amber-800'}" data-motivo-print>${esc(x.motivo)}</p>`}</div></div>`).join('')}</div></details>`;
+  };
+  // Preço e oferta do produto (lidos agora): um clique põe no texto da peça.
+  const desenharProduto = () => {
+    const alvo = $('[data-produto-estudio]', raiz); const dp = produtoDoCriativo(criativo, { produtos, materiais: salvos, cliente });
+    if (!alvo || !dp || dp.excluido) { if (alvo) alvo.innerHTML = dp?.excluido ? '<p class="hint text-amber-700">O produto deste criativo foi excluído.</p>' : ''; return; }
+    alvo.innerHTML = `<div class="rounded-lg border border-indigo-200 bg-indigo-50/40 p-2 text-sm" data-produto-peca><b>${esc(dp.produto.nome)}</b>${dp.precoTexto ? ` · ${esc(dp.precoTexto)}` : ''}${dp.oferta ? ` · Oferta: ${esc(dp.oferta)}` : ''} <span class="hint">(lido da aba Produtos e do perfil de marca)</span>
+      <div class="mt-1 flex flex-wrap gap-2">${dp.precoTexto ? `<button type="button" class="btn-ghost btn-sm" data-por-texto="cta" data-valor="${esc(`${criativo.cta || 'Compre'} · ${dp.precoTexto}`)}">Preço no botão/CTA</button>` : ''}
+        ${dp.oferta ? `<button type="button" class="btn-ghost btn-sm" data-por-texto="cta" data-valor="${esc(dp.oferta)}">Oferta no botão/CTA</button>` : ''}</div></div>`;
+  };
+  const carregarSalvos = async (primeiraVez = false) => {
+    [salvos, produtos] = await Promise.all([db.listar(COL.materiais, { clienteId: cliente.id }), fonte?.produtos ? Promise.resolve(fonte.produtos) : db.listar(COL.produtos, { clienteId: cliente.id })]);
+    desenharProduto(); desenharSalvos(); desenharPrints();
+    // Criativo com produto: as fotos dele (principal primeiro) já entram na sessão, prontas para a peça.
+    const dp = produtoDoCriativo(criativo, { produtos, materiais: salvos, cliente });
+    if (primeiraVez && dp && !dp.excluido && dp.fotos.length && !est.midias.length) {
       const arqs = [];
-      for (const m of salvos) {
-        try { const r = await fetch(m.url); if (r.ok) { const bl = await r.blob(); arqs.push(new File([bl], m.nome || 'foto.jpg', { type: bl.type || 'image/jpeg' })); } } catch { /* segue com as outras */ }
-      }
-      if (!arqs.length) throw new Error('Não consegui abrir as fotos salvas agora. Tente de novo.');
-      const ok = await adicionarArquivos(arqs); if (ok) toast(`${ok} arquivo(s) adicionado(s) aos materiais.`);
-    }));
-  }).catch(() => { /* sem materiais salvos: nada a mostrar */ });
-  on(raiz, 'click', '[data-rm-midia]', (b) => {
-    const k = Number(b.dataset.rmMidia), [x] = est.midias.splice(k, 1); URL.revokeObjectURL(x.url);
+      for (const f of dp.fotos.slice(0, 8)) { try { arqs.push(await urlParaArquivo(f.url, `${f.codigo ? f.codigo + '-' : ''}${f.nome || 'foto'}`)); } catch { /* segue */ } }
+      if (arqs.length && await adicionarArquivos(arqs)) toast(`Fotos do produto ${dp.produto.nome} trazidas (a principal é a 1ª e já está como fundo).`, 'info');
+    }
+  };
+  carregarSalvos(true).catch(() => { /* sem materiais salvos: nada a mostrar */ });
+  on(raiz, 'click', '[data-ver-todas]', () => { verTodas = !verTodas; desenharSalvos(); });
+  on(raiz, 'click', '[data-usar-salvos]', (b) => ocupado(b, async () => {
+    const arqs = [];
+    for (const m of $('[data-materiais-salvos]', raiz)._lista || []) { try { arqs.push(await urlParaArquivo(m.url, m.nome)); } catch { /* segue com as outras */ } }
+    if (!arqs.length) throw new Error('Não consegui abrir as fotos salvas agora. Tente de novo.');
+    const ok = await adicionarArquivos(arqs); if (ok) toast(`${ok} arquivo(s) adicionado(s) aos materiais.`);
+  }));
+  on(raiz, 'click', '[data-excluir-salvo]', (b) => ocupado(b, async () => {
+    const x = salvos.find((m) => m.id === b.dataset.excluirSalvo); if (!x) return;
+    await excluirMateriais(cliente, [x], { aoExcluir: () => carregarSalvos() });
+  }));
+  on(raiz, 'click', '[data-usar-print]', (b) => ocupado(b, async () => {
+    const x = printsParaCriativo({ cliente, produtos, materiais: salvos }).find((y) => y.material.id === b.dataset.usarPrint);
+    if (!x?.usavel) return;
+    if (x.pedirAutorizacao) {
+      if (!(await confirmar('Você tem autorização deste cliente para usar o print dele num anúncio? (Vai a cópia borrada.)', 'Tenho autorização'))) return;
+      await db.atualizar(COL.materiais, x.material.id, { autorizado: true, autorizadoEm: new Date().toISOString() }); x.material.autorizado = true;
+    }
+    const ok = await adicionarArquivos([await urlParaArquivo(x.url, `print-borrado-${x.material.codigo || 'cliente'}.jpg`)]);
+    if (ok) { toast('Print (cópia borrada) adicionado aos materiais desta peça.'); desenharPrints(); }
+  }));
+  on(raiz, 'click', '[data-por-texto]', (b) => { const campo = $(`[data-${b.dataset.porTexto}]`, raiz); if (campo) { campo.value = b.dataset.valor; campo.dispatchEvent(new Event('input', { bubbles: true })); toast('Texto colocado na peça.'); } });
+  on(raiz, 'click', '[data-rm-midia]', async (b) => {
+    const k = Number(b.dataset.rmMidia);
+    if (!(await confirmar(`Excluir "${est.midias[k]?.nome || 'esta imagem'}" desta sessão do Estúdio? (O arquivo salvo do cliente, se houver, continua em Materiais.)`, 'Excluir'))) return;
+    const [x] = est.midias.splice(k, 1); URL.revokeObjectURL(x.url);
     est.cenas.forEach((c) => { if (c.midiaIdx === k) c.midiaIdx = null; else if (c.midiaIdx > k) c.midiaIdx--; }); // cada cena continua ligada à mesma imagem
     listarMidias();
   });

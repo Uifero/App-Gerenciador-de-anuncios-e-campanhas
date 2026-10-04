@@ -162,7 +162,7 @@ if (typeof document !== 'undefined') {
 export function confirmar(mensagem, textoBotao = 'Confirmar') {
   return new Promise((ok) => {
     // Fechar de qualquer jeito (Cancelar, X, clicar fora) = "não"; só o botão de confirmação resolve "sim".
-    const m = modal('Confirmação', `<p class="mb-5 text-sm">${esc(mensagem)}</p>
+    const m = modal('Confirmação', `<p class="mb-5 whitespace-pre-line text-sm" data-texto-confirmacao>${esc(mensagem)}</p>
       <div class="flex justify-end gap-2"><button class="btn-ghost" data-nao>Cancelar</button>
       <button class="btn-danger" data-sim>${esc(textoBotao)}</button></div>`, { aoFechar: () => ok(false) });
     on(m.el, 'click', '[data-sim]', () => { ok(true); m.fechar(); });

@@ -18,6 +18,7 @@ vi.mock('../core/storage.js', () => ({
       return [...m.entries()].map(([id, v]) => ({ id, ...v })).filter((d) => !filtro || Object.entries(filtro).every(([k, v]) => d[k] === v));
     }),
     remover: vi.fn(async (col, id) => { (bancos[col] || new Map()).delete(id); }),
+    obter: vi.fn(async (col, id) => { const v = (bancos[col] || new Map()).get(id); return v ? { id, ...v } : null; }),
   },
 }));
 
@@ -107,5 +108,23 @@ describe('apagarCriativoEmCascata', () => {
     await apagarCriativoEmCascata('c1', null);
     expect(removerArquivo).not.toHaveBeenCalled();
     expect(bancos.criativos.has('c1')).toBe(false);
+  });
+});
+
+describe('arquivos retidos para links de aprovação', () => {
+  it('criativo com link enviado: excluir mantém arquivo e prévia (anotados no cliente)', async () => {
+    popular('clientes', [{ id: 'c1', nome: 'Loja' }]);
+    const { db } = await import('../core/storage.js');
+    db.atualizar = vi.fn(async (col, id, patch) => { bancos[col].set(id, { ...bancos[col].get(id), ...patch }); });
+    removidos.length = 0;
+    await apagarCriativoEmCascata('cr1', 'gcc/c1/cr1.mp4', 'gcc/c1/cr1-previa.jpg', { manterArquivos: true, clienteId: 'c1' });
+    expect(removidos).toEqual([]);
+    expect(bancos.clientes.get('c1').arquivosRetidos.map((a) => a.path)).toEqual(['gcc/c1/cr1.mp4', 'gcc/c1/cr1-previa.jpg']);
+  });
+  it('apagar o cliente apaga também os arquivos retidos', async () => {
+    popular('clientes', [{ id: 'c1', nome: 'Loja', arquivosRetidos: [{ path: 'gcc/c1/retido.jpg' }] }]);
+    removidos.length = 0;
+    await apagarClienteEmCascata('c1');
+    expect(removidos).toContain('gcc/c1/retido.jpg');
   });
 });

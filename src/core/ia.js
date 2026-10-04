@@ -225,8 +225,8 @@ function normalizarCriativo(c) {
   };
 }
 
-export async function refinarCriativo({ cliente, criativo, instrucao, conversa = [] }) {
-  const system = 'Você refina criativos de anúncio mantendo tom orgânico.';
+export async function refinarCriativo({ cliente, criativo, instrucao, conversa = [], produtoAtual = '' }) {
+  const system = `Você refina criativos de anúncio mantendo tom orgânico.${produtoAtual ? `\n${produtoAtual}` : ''}`;
   const atual = JSON.stringify({ hook: criativo.hook, copy: criativo.copy, cta: criativo.cta, angulo: criativo.angulo, framework: criativo.framework });
   const msgs = [
     ...conversa,
@@ -311,14 +311,14 @@ const REGRAS_ESTRUTURA = `REGRAS DA ESTRUTURA:
  * `padroesLocais`/`padroesNicho` vêm do motor de Insights (insights.js) — a IA só interpreta esses números.
  * `qtdResultados` = quantos resultados o cliente tem registrados (para a IA saber se há histórico de verdade).
  */
-export async function gerarEstruturaCampanha({ cliente, criativos = [], criativosAprovados = [], objetivo, orcamentoDiario, padroesLocais, padroesNicho, referenciasFortes = [], qtdResultados = 0, resultadosPorCriativo = [] }) {
+export async function gerarEstruturaCampanha({ cliente, criativos = [], criativosAprovados = [], objetivo, orcamentoDiario, padroesLocais, padroesNicho, referenciasFortes = [], qtdResultados = 0, resultadosPorCriativo = [], fonteLoja = '' }) {
   const system = 'Você é gestor de tráfego Meta Ads sênior. Estrutura testes enxutos e realistas, escolhe os criativos certos pra cada conjunto com base em dados reais — nunca por preferência estética — e explica cada decisão com franqueza, admitindo quando não há dado.';
   const pedido = `Monte a estrutura de campanha ${cliente.estagio === 'rodando' ? 'de ESCALA/otimização usando o histórico do cliente' : 'de PRIMEIRO TESTE (cliente novo, sem histórico)'}.
 Objetivo: ${objetivo || 'vendas'}. Orçamento diário disponível: ${orcamentoDiario ? 'R$ ' + orcamentoDiario : 'não informado — sugira uma faixa coerente e diga que é estimativa'}.
 Criativos existentes (contexto geral): ${criativos.map((c) => `"${c.nome}" (ângulo ${c.angulo || 'n/d'}${c.narrativa ? `, narrativa ${rotuloNarrativa(c.narrativa)}` : ''})`).join('; ') || 'nenhum ainda — indique quantos e quais ângulos produzir'}.
 
 ${contextoCampanha({ cliente, criativosAprovados, padroesLocais, padroesNicho, referenciasFortes, qtdResultados, resultadosPorCriativo })}
-
+${fonteLoja ? `\nDO CADASTRO DO CLIENTE (fonte; use para o destino e os avisos, não invente outro):\n${fonteLoja}\n` : ''}
 ${REGRAS_ESTRUTURA}
 
 Saída em JSON: ${FORMATO_ESTRUTURA}
@@ -933,7 +933,7 @@ CPA atual: ${dados.cpaAtual ? moeda + ' ' + dados.cpaAtual : 'não informado'}
 ROAS atual: ${dados.roasAtual || 'não informado'}
 Criativos que já estão rodando (ângulo, formato, tempo no ar): ${dados.criativosRodando || 'não informado'}
 Ofertas/promoções ativas: ${dados.ofertas || 'não informado'}
-
+${dados.fonteCadastro ? `\nDO CADASTRO DO CLIENTE (lido da fonte, vale mais que o digitado acima se divergir):\n${dados.fonteCadastro}\n` : ''}
 PADRÕES JÁ DETECTADOS (calculados sem IA, direto dos resultados registrados — média ponderada pelo gasto; USE para embasar, não invente outro padrão):
 Deste cliente:
 ${resumirGrupos(padroesLocais)}
