@@ -4,6 +4,7 @@
 import { db, COL, removerArquivo } from '../core/storage.js';
 import { DEMO } from '../core/firebase.js';
 import { enviarArquivoOuAvisar } from './uploads.js';
+import { novosCodigos } from './fotos-site.js';
 
 const EXTENSOES = { 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/svg+xml': 'svg', 'image/jpeg': 'jpg', 'video/mp4': 'mp4', 'video/quicktime': 'mov' };
 
@@ -99,4 +100,31 @@ export async function salvarLogo(cliente, file) {
   await db.atualizar(COL.clientes, cliente.id, { logoArquivo });
   cliente.logoArquivo = logoArquivo;
   return mat;
+}
+
+// ---------- código das fotos (F1, F2...) e "Usar em" (lib/fotos-site.js) ----------
+const travaCodigos = new Map();
+/**
+ * Dá código às fotos que ainda não têm (as enviadas antes desta função, ou por outro caminho), continuando do contador
+ * do cliente (`contadorFotos`): um código apagado nunca volta. Uma chamada por vez por cliente. Devolve a lista
+ * atualizada (mesma ordem).
+ */
+export function garantirCodigos(cliente, lista) {
+  const anterior = travaCodigos.get(cliente.id) || Promise.resolve();
+  const atual = anterior.catch(() => {}).then(async () => {
+    const { atribuir } = novosCodigos(lista, 0);
+    if (!atribuir.length) return lista;
+    const fresco = await db.obter(COL.clientes, cliente.id).catch(() => null);
+    const { atribuir: finais, contador } = novosCodigos(lista, Math.max(Number(fresco?.contadorFotos) || 0, Number(cliente.contadorFotos) || 0));
+    await db.atualizar(COL.clientes, cliente.id, { contadorFotos: contador }, { silencioso: true }); // o contador primeiro: nunca repete, mesmo se cair no meio
+    cliente.contadorFotos = contador;
+    for (const a of finais) await db.atualizar(COL.materiais, a.id, { codigo: a.codigo }, { silencioso: true });
+    return lista.map((m) => { const a = finais.find((x) => x.id === m.id); return a ? { ...m, codigo: a.codigo } : m; });
+  });
+  travaCodigos.set(cliente.id, atual);
+  return atual;
+}
+/** Grava os usos que mudaram ([{ id, usos }], de mudarUso/aplicarReferencias). */
+export async function salvarUsos(patches = []) {
+  for (const p of patches) await db.atualizar(COL.materiais, p.id, { usos: p.usos }, { silencioso: true });
 }

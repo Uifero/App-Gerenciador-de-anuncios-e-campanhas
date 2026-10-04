@@ -20,17 +20,23 @@ import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado } from '../core/ui.js';
 import { dadosDoPacote, gruposPlataforma, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
+import { lerReferencias, aplicarReferencias, comUsos, produtosComFotos, imagemDoLugar, arquivosPorPasta, rotuloFoto } from '../lib/fotos-site.js';
+import { garantirCodigos, salvarUsos } from '../lib/materiais.js';
+import { resultadoFotosTextoHtml } from './preferencias-site.js';
+
+/** { materialId: usos } (rascunho do "Ajustar este site") -> patches para comUsos. */
+const patchesDe = (usosFotos) => Object.entries(usosFotos || {}).map(([id, usos]) => ({ id, usos }));
 
 /** `visual` devolvido pela IA na geração (só quando as preferências pedem) -> operações validadas por aplicarOperacoes. */
 // Só preenche o que ainda não foi escolhido (mesma regra do app de "só preencher o vazio"): uma escolha feita à mão
 // (ajustes rápidos ou "Ajustar este site") nunca é desfeita por uma geração nova.
-function opsDoVisual(v, modo, site) {
+function opsDoVisual(v, modo, site, materiais = []) {
   if (!v || typeof v !== 'object') return [];
   const salvo = (modo === 'custom' ? site?.layout : site?.pacote?.visual) || {};
   const temBanner = modo === 'custom' ? Boolean(salvo.imagens?.hero) : Boolean(salvo.banner);
   const ops = [];
   if (['contain', 'cover'].includes(v.ajusteFotos) && !salvo.ajusteFotos) ops.push({ op: 'fotos', ajuste: v.ajusteFotos });
-  if (v.bannerMaterialId && !temBanner) ops.push({ op: 'imagem', bloco: modo === 'custom' ? 'hero' : 'banner', materialId: String(v.bannerMaterialId) });
+  if (v.bannerMaterialId && !temBanner && !imagemDoLugar(materiais, 'banner')) ops.push({ op: 'imagem', bloco: modo === 'custom' ? 'hero' : 'banner', materialId: String(v.bannerMaterialId) });
   if (!Array.isArray(salvo.ordem) || !salvo.ordem.length) {
     const ordem = Array.isArray(v.ordem) ? v.ordem.map(String) : [];
     for (let i = 1; i < ordem.length; i++) ops.push({ op: 'mover', bloco: ordem[i], depoisDe: ordem[i - 1] });
@@ -68,6 +74,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
     db.listar(COL.materiais, { clienteId: cliente.id }), db.listar(COL.aprovacoes, { clienteId: cliente.id }).catch(() => []), db.listar(COL.respostas, { clienteId: cliente.id }).catch(() => []),
   ]);
+  materiais.splice(0, materiais.length, ...(await garantirCodigos(cliente, materiais).catch(() => materiais))); // F1, F2... (lib/fotos-site.js)
   const etiquetaAprov = etiquetaSite(aprovacoes, respostasAprov); // "Aprovado v3", "Ajuste pedido v3"... (leva à aba Aprovações do site)
   let site = sites[0] || null;
   // Criativos aprovados marcados "usar como prova social" (toggle na aba Criativos) — candidatos a depoimento do site.
@@ -86,10 +93,29 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     await salvarSite({ ...patch, ...extra });
   };
 
+  // "F3 no banner, F5 no Thermora" (texto "Como eu quero o site"): aplica como se fosse o seletor "Usar em", marcado
+  // "definido pelo texto". Sem IA. O seletor e a escolha direta do modo vencem; conflito e código que não existe ficam
+  // guardados no site (site.fotosTexto) e aparecem no painel até a próxima aplicação.
+  const aplicarFotosTexto = async () => {
+    const mats = await garantirCodigos(cliente, await db.listar(COL.materiais, { clienteId: cliente.id }));
+    const { refs, avisos } = lerReferencias(cliente.preferenciasSite?.texto || '', { materiais: mats, produtos });
+    const custom = site?.modo === 'custom';
+    const L = normalizarLayout(site?.layout);
+    const direta = custom ? { banner: L.imagens.hero || null, sobre: L.imagens.marca || null } : { banner: normalizarVisual(site?.pacote?.visual).banner };
+    const r = aplicarReferencias(mats, refs, { direta, produtos });
+    await salvarUsos(r.patches);
+    materiais.splice(0, materiais.length, ...comUsos(mats, r.patches));
+    const fotosTexto = { em: new Date().toISOString(), aplicadas: r.aplicadas, conflitos: r.conflitos, avisos };
+    if (site) await salvarSite({ fotosTexto });
+    document.dispatchEvent(new CustomEvent('gcc:materiais', { detail: { clienteId: cliente.id, lista: [...materiais] } }));
+    return fotosTexto;
+  };
+
   // Geração dos textos com IA no modo do site — usada pelo botão do formulário e pelo "Gerar site com essas respostas".
   // Se o OUTRO modo já foi gerado e este ainda não, a base (textos principais, cores, FAQ, depoimentos) vem de lá e é
   // reaplicada por cima do que a IA escrever (lib/site-modos.js): o cliente continua vendo o que já aprovou.
   const gerarComIa = (b) => ocupado(b, async () => {
+    await aplicarFotosTexto(); // antes da IA: a imagem do banner escolhida pelo texto não é trocada por ela
     const base = baseParaGerar(site, site.modo === 'custom' ? 'custom' : 'pacote');
     const reaproveitou = base ? { avisoModosVisto: false, baseReaproveitadaEm: new Date().toISOString() } : {};
     if (site.modo === 'custom') {
@@ -101,7 +127,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       const { depoimentos, usouModelos } = montarDepoimentos({ ...argsProva, modelosIa: r.depoimentos || [] });
       const gerado = { ...atual, ...r, depoimentos };
       const patch = base ? aplicarBaseNoCustom(gerado, site.config || {}, base) : { conteudo: gerado };
-      const vis = aplicarOperacoes({ conteudo: patch.conteudo, config: patch.config || site.config || {}, layout: site.layout }, opsDoVisual(visual, 'custom', site), { modo: 'custom', materiais });
+      const vis = aplicarOperacoes({ conteudo: patch.conteudo, config: patch.config || site.config || {}, layout: site.layout }, opsDoVisual(visual, 'custom', site, materiais), { modo: 'custom', materiais });
       await salvarEVersionar({ ...patch, ...(vis.mudancas.length ? { layout: vis.estado.layout } : {}), ...reaproveitou }, 'Textos gerados de novo pela IA');
       toast(base ? 'Site gerado reaproveitando o texto, as cores e a FAQ do pacote que o cliente já viu. A IA só completou o que faltava.'
         : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. ${usouModelos ? 'Sem prova social cadastrada: os depoimentos são MODELOS marcados para substituir.' : `Depoimentos: só as ${depoimentos.length} prova(s) social(is) reais do cliente.`} Revise e use "Ver prévia" ou "Baixar pasta do site".`);
@@ -109,7 +135,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       const { visual, ...gerado } = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base, materiais: imagensParaBanner(materiais) });
       // As escolhas da prévia (banner, fotos, seções) continuam; as que as preferências pedirem entram por cima.
       const novo = { ...(base ? aplicarBaseNoPacote(gerado, base) : gerado), ...(site.pacote?.visual ? { visual: site.pacote.visual } : {}) };
-      const vis = aplicarOperacoes({ pacote: novo }, opsDoVisual(visual, 'pacote', site), { modo: 'pacote', materiais });
+      const vis = aplicarOperacoes({ pacote: novo }, opsDoVisual(visual, 'pacote', site, materiais), { modo: 'pacote', materiais });
       await salvarEVersionar({ pacote: vis.estado.pacote, ...reaproveitou }, 'Pacote gerado de novo pela IA');
       toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado. Confira no painel "Site gerado".' : 'Banners, briefing do tema e textos gerados. Confira no painel "Site gerado".');
     }
@@ -128,8 +154,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     alvoP?.querySelector?.('textarea, input:not([type=checkbox]):not([type=radio]):not([type=file]), select')?.focus({ preventScroll: true });
   };
   const painelMaterial = () => montarPainelMaterial($('[data-painel]', root), {
-    cliente, produtos, materiais, site, respondidas: progressoSite(cliente, site, produtos, materiais.length), totalPerguntas: TOTAL_PERGUNTAS,
-    recarregar, gerar: site?.modo ? gerarComIa : null, irParaPergunta,
+    // produtos com as fotos ligadas em "Usar em" (o aviso "sem foto" conta também essas)
+    cliente, produtos: produtosComFotos(produtos, materiais), materiais, site, respondidas: progressoSite(cliente, site, produtos, materiais.length), totalPerguntas: TOTAL_PERGUNTAS,
+    recarregar, gerar: site?.modo ? gerarComIa : null, irParaPergunta, aplicarFotosTexto: site?.modo ? aplicarFotosTexto : null,
   });
 
   // ---------- escolha do modo ----------
@@ -269,8 +296,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const alvoR = $('[data-resultado-site]', root); if (!alvoR) return;
     const { versaoDoSite } = await import('./aprovacoes-site.js');
     const prints = printsDoCliente(materiais);
-    const n = versaoDoSite(cliente, site, produtos, aprovacoes, prints);
-    const d = custom ? null : dadosDoPacote({ cliente, site, produtos, provas: prints });
+    const n = versaoDoSite(cliente, site, produtos, aprovacoes, prints, materiais);
+    const d = custom ? null : dadosDoPacote({ cliente, site, produtos, provas: prints, materiais });
     gruposCopiar = d ? gruposPlataforma(d) : [];
     const plat = nomePlat(site.plataforma);
     const grupoHTML = (g, gi) => `<details class="rounded-lg border border-slate-200 p-2" ${gi < 3 ? 'open' : ''} data-grupo-plataforma="${esc(g.id)}"><summary class="cursor-pointer text-sm font-semibold">${esc(g.titulo)}</summary>
@@ -286,6 +313,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ${custom ? '<div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost" data-mostrar-previa-loja><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button><button type="button" class="btn-ghost" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button></div><div class="mt-2" data-area-previa-loja><iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe></div>'
         : `<button type="button" class="btn-ghost" data-mostrar-previa-loja><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button><div class="mt-2" data-area-previa-loja>${previaLojaHtml()}</div>`}
       ${ajustesRapidosHtml()}
+      ${resultadoFotosTextoHtml(site.fotosTexto)}
       <h4 class="mt-4 font-semibold">Clientes reais (prints)</h4>
       ${printsPainelHtml(cliente, prints)}
       <h4 class="mt-4 font-semibold">2. Gerar link de aprovação</h4>
@@ -297,8 +325,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <h4 class="mt-4 font-semibold">4. Baixar pacote</h4>
       <div class="flex flex-wrap gap-2">${custom ? '<button type="button" class="btn-primary" data-baixar-zip><i class="fa-solid fa-file-zipper"></i> Baixar pasta do site (.zip)</button>'
         : `<button type="button" class="btn-primary" data-csv><i class="fa-solid fa-file-csv"></i> Catálogo (CSV)</button>${site.pacote ? '<button type="button" class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Banners e briefing (.txt)</button>' : ''}${cliente.logoArquivo ? '<button type="button" class="btn-ghost" data-baixar-logo><i class="fa-solid fa-copyright"></i> Logo (original)</button>' : ''}`}
-        ${!custom && site.pacote?.visual?.banner?.url ? '<button type="button" class="btn-ghost" data-baixar-banner><i class="fa-solid fa-image"></i> Imagem do banner</button>' : ''}
+        ${!custom && d?.visual?.banner?.url ? '<button type="button" class="btn-ghost" data-baixar-banner><i class="fa-solid fa-image"></i> Imagem do banner</button>' : ''}
         ${!custom && prints.length ? '<button type="button" class="btn-ghost" data-baixar-prints><i class="fa-solid fa-images"></i> Prints de clientes (.zip)</button>' : ''}
+        ${!custom && d && arquivosPorPasta(d).length ? `<button type="button" class="btn-primary" data-baixar-por-lugar title="banner/, produtos/<nome do produto>/, clientes-reais/ (cópias borradas), sobre/ e galeria/"><i class="fa-solid fa-folder-tree"></i> Imagens por lugar (.zip, ${arquivosPorPasta(d).length} arquivo(s))</button>` : ''}
         <button type="button" class="btn-ghost" data-manual><i class="fa-solid fa-file-pdf"></i> Manual de entrega (PDF)</button></div></section>`;
     if (d) ligarPreviaLoja(alvoR, gerarPreviaLojaHTML(d));
     else { const ifr = $('[data-previa-custom]', alvoR); if (ifr) ifr.srcdoc = html(); }
@@ -313,13 +342,16 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   function ajustesRapidosHtml() {
     const imgs = imagensParaBanner(materiais);
     const bannerAtual = custom ? normalizarLayout(site.layout).imagens.hero?.materialId : normalizarVisual(site.pacote?.visual).banner?.materialId;
+    const bannerUsarEm = imagemDoLugar(materiais, 'banner', custom ? normalizarLayout(site.layout).imagens.hero : normalizarVisual(site.pacote?.visual).banner);
     const fotos = custom ? normalizarLayout(site.layout).ajusteFotos : normalizarVisual(site.pacote?.visual).ajusteFotos;
     const ordem = ordemAtual(), ocultas = ocultasAtuais();
     return `<details class="mt-3 rounded-lg border border-indigo-200 p-3" open data-ajustes-rapidos><summary class="cursor-pointer text-sm font-semibold"><i class="fa-solid fa-sliders"></i> Ajustes rápidos (sem IA)</summary>
       <p class="hint mt-1">Cada escolha muda a prévia na hora e vira uma versão nova (dá para voltar em "Ajustar este site").${custom ? '' : ' Tudo aparece também em "O que colocar na plataforma".'}</p>
       <div class="mt-2 grid gap-3 sm:grid-cols-2">
-        <label class="text-sm">Imagem do banner<select class="input mt-0.5" data-ctl-banner><option value="">Sem imagem (fundo de cor)</option>${imgs.map((m) => `<option value="${esc(m.id)}" ${m.id === bannerAtual ? 'selected' : ''}>${esc(m.nomeOriginal || m.descricao || m.nome || 'imagem')}</option>`).join('')}</select>
-          <span class="hint">${imgs.length ? 'Imagens de "Materiais do cliente".' : 'Envie uma imagem em "Materiais do cliente" para usar aqui.'}</span></label>
+        <label class="text-sm">Imagem do banner<select class="input mt-0.5" data-ctl-banner ${bannerUsarEm?.por === 'manual' ? 'disabled' : ''}><option value="">Sem imagem (fundo de cor)</option>${imgs.map((m) => `<option value="${esc(m.id)}" ${m.id === bannerAtual ? 'selected' : ''}>${esc(rotuloFoto(m))}</option>`).join('')}</select>
+          <span class="hint" data-banner-origem>${bannerUsarEm?.por === 'manual' ? `Definida em Materiais do cliente: ${esc(rotuloFoto(bannerUsarEm))} ("Usar em: Banner"). Para trocar, mude lá.`
+            : bannerUsarEm ? `No banner agora: ${esc(rotuloFoto(bannerUsarEm))} (definido pelo texto "Como eu quero o site"). Escolher aqui vale mais que o texto.`
+            : imgs.length ? 'Imagens de "Materiais do cliente".' : 'Envie uma imagem em "Materiais do cliente" para usar aqui.'}</span></label>
         <fieldset class="text-sm"><legend>Fotos dos produtos</legend>${Object.entries(AJUSTES_FOTO).map(([k, t]) => `<label class="mr-3 inline-flex items-center gap-1"><input type="radio" name="ctl-fotos" value="${k}" data-ctl-fotos ${fotos === k ? 'checked' : ''}> ${t}</label>`).join('')}
           <span class="hint block">Inteiras: sem cortar nada. Preencher: ocupa o quadro (as bordas podem ser cortadas).</span></fieldset></div>
       <p class="mt-3 text-sm font-medium">Seções (ordem e visibilidade)</p>
@@ -330,7 +362,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   }
   const aplicarControle = async (ops) => {
     const antes = estadoDoSite(site, modoV);
-    const r = aplicarOperacoes(antes, ops, { modo: modoV, materiais });
+    const r = aplicarOperacoes(antes, ops, { modo: modoV, materiais, produtos });
     if (!r.mudancas.length) { toast(r.descartadas[0]?.motivo ? `Nada mudou: ${r.descartadas[0].motivo}.` : 'Nada mudou.', 'info'); return abrirResultado({ rolar: false }); }
     const v = registrarVersao(site, { modo: modoV, estadoAntes: antes, estadoDepois: r.estado, resumo: resumoMudancas(r.mudancas), origem: 'controle' });
     await salvarSite({ ...r.estado, ...v });
@@ -349,8 +381,21 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     await abrirBorrar(cliente, mat, async () => { await recarregarMateriais(); await abrirResultado({ rolar: false }); });
   }));
   on(root, 'click', '[data-baixar-prints]', (b) => ocupado(b, async () => { await baixarPrintsZip(cliente, printsDoCliente(materiais)); await recarregarMateriais(); }));
+  on(root, 'click', '[data-baixar-por-lugar]', (b) => ocupado(b, async () => {
+    const prints = printsDoCliente(materiais);
+    if (!(await autorizarPrints(prints))) return; // prints e fotos com pessoa sem borrar: só com autorização
+    const arquivos = arquivosPorPasta(dadosDoPacote({ cliente, site, produtos, provas: prints, materiais }));
+    const pasta = `imagens-${slug(cliente.nome) || 'loja'}`, falhas = [], itens = [];
+    for (const a of arquivos) {
+      try { const r = await fetch(a.url); if (!r.ok) throw new Error(); itens.push({ nome: `${pasta}/${a.caminho}`, conteudo: new Uint8Array(await r.arrayBuffer()) }); } catch { falhas.push(a.caminho); }
+    }
+    if (!itens.length) throw new Error('Não consegui baixar nenhuma imagem agora. Tente de novo em instantes.');
+    baixarTexto(`${pasta}.zip`, criarZip(itens), 'application/zip');
+    if (falhas.length) toast(`${falhas.length} imagem(ns) não baixaram e ficaram fora do .zip:\n${falhas.join('\n')}`, 'erro');
+    else toast(`Baixado: ${itens.length} imagem(ns) em pastas (banner, produtos, clientes-reais, sobre, galeria). Veja em "O que colocar na plataforma" o que vai em cada lugar.`);
+  }));
   on(root, 'click', '[data-baixar-banner]', (b) => ocupado(b, async () => {
-    const ban = normalizarVisual(site.pacote?.visual).banner; const r = await fetch(ban.url); if (!r.ok) throw new Error('Não consegui baixar a imagem do banner. Tente de novo.');
+    const ban = dadosDoPacote({ cliente, site, produtos, materiais }).visual.banner; const r = await fetch(ban.url); if (!r.ok) throw new Error('Não consegui baixar a imagem do banner. Tente de novo.');
     const bl = await r.blob(); baixarTexto(`banner-${slug(cliente.nome) || 'loja'}.${{ 'image/png': 'png', 'image/webp': 'webp' }[bl.type] || 'jpg'}`, new Uint8Array(await bl.arrayBuffer()), bl.type);
   }));
   on(root, 'click', '[data-ver-resultado]', (b) => ocupado(b, abrirResultado));
@@ -408,8 +453,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   }));
 
   // Sempre o estado ACEITO (conteúdo + cores + layout dos ajustes); uma mudança proposta em aberto nunca entra no download.
-  const htmlDe = (e, extra = {}) => gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(printsDoCliente(materiais), e.conteudo?.depoimentos), ...extra });
-  const previaPacote = (pacote) => gerarPreviaLojaHTML(dadosDoPacote({ cliente, site: { ...site, pacote }, produtos, provas: printsDoCliente(materiais) }));
+  const matsCom = (usosFotos) => (usosFotos ? comUsos(materiais, patchesDe(usosFotos)) : materiais);
+  const htmlDe = (e, extra = {}) => { const mats = matsCom(e.usosFotos); return gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(printsDoCliente(mats), e.conteudo?.depoimentos), materiais: mats, ...extra }); };
+  const previaPacote = (pacote, usosFotos) => { const mats = matsCom(usosFotos); return gerarPreviaLojaHTML(dadosDoPacote({ cliente, site: { ...site, pacote }, produtos, provas: printsDoCliente(mats), materiais: mats })); };
   const html = (extra) => htmlDe({ conteudo: site.conteudo, config: site.config, layout: site.layout }, extra);
   if (custom ? (temCustom(site) || produtos.length) : site.pacote) {
     montarAjusteSite($('[data-ajuste]', root), { cliente, produtos, modo: custom ? 'custom' : 'pacote', get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML, previaPacote })
@@ -460,7 +506,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   on(root, 'change', '[data-plat]', (s) => salvarSite({ plataforma: s.value }).then(recarregar));
 
   on(root, 'click', '[data-csv]', async () => {
-    const lista = comTextosDoPacote(produtos, site.pacote); // descrições/SEO ajustados no pacote, quando houver
+    const lista = comTextosDoPacote(produtosComFotos(produtos, materiais), site.pacote); // descrições/SEO do pacote; fotos na ordem de "Usar em"
     const csv = site.plataforma === 'shopify' ? csvShopify(lista, cliente) : csvNuvemshop(lista, cliente);
     baixarTexto(`catalogo-${site.plataforma}-${slug(cliente.nome)}.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
     await salvarSite({ exportadoEm: new Date().toISOString() }); toast('CSV gerado. Confira as colunas no passo a passo do manual.'); recarregar();

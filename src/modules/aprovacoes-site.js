@@ -36,15 +36,16 @@ const versaoDoLink = (site, anteriores, conteudo) => {
  * O que o link mostra do site como está agora: { html } no personalizado; { texto, previa } no pacote (previa = loja
  * aproximada, lib/pacote-loja.js; o texto continua sendo a base de comparação da versão, como antes).
  */
-export function conteudoDoLink(cliente, site, produtos, provas = []) {
+/** `materiais` = Materiais do cliente com o "Usar em" das fotos (banner, fotos dos produtos, Sobre, Galeria). */
+export function conteudoDoLink(cliente, site, produtos, provas = [], materiais = []) {
   const custom = site?.modo === 'custom';
-  if (custom) return { html: gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(provas, site.conteudo?.depoimentos) }), texto: '', previa: '' };
-  return { html: '', texto: pacoteTexto(site.pacote || {}), previa: gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos, provas })) };
+  if (custom) return { html: gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(provas, site.conteudo?.depoimentos), materiais }), texto: '', previa: '' };
+  return { html: '', texto: pacoteTexto(site.pacote || {}), previa: gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos, provas, materiais })) };
 }
 
 /** Versão do site agora (a mesma que o próximo link de aprovação vai mostrar). `links` = links do cliente. */
-export function versaoDoSite(cliente, site, produtos, links = [], provas = []) {
-  const { html, texto } = conteudoDoLink(cliente, site, produtos, provas);
+export function versaoDoSite(cliente, site, produtos, links = [], provas = [], materiais = []) {
+  const { html, texto } = conteudoDoLink(cliente, site, produtos, provas, materiais);
   return versaoDoLink(site, ordenarLinks(links), html || texto);
 }
 
@@ -53,8 +54,9 @@ export async function gerarLinkSite(cliente, site, produtos) {
   const custom = site?.modo === 'custom';
   if (!site?.modo || (custom ? !site.conteudo : !site.pacote)) throw new Error(custom ? 'Monte o site primeiro (aba Site/Loja: conteúdo da loja).' : 'Gere o pacote primeiro (aba Site/Loja).');
   // Prints reais de clientes (a cópia borrada quando houver): a autorização dos sem borrar é pedida antes, na tela.
-  const provas = printsDoCliente(await db.listar(COL.materiais, { clienteId: cliente.id }));
-  const { html, texto, previa } = conteudoDoLink(cliente, site, produtos, provas);
+  const materiais = await db.listar(COL.materiais, { clienteId: cliente.id });
+  const provas = printsDoCliente(materiais);
+  const { html, texto, previa } = conteudoDoLink(cliente, site, produtos, provas, materiais);
   if ((html || texto).length + previa.length > LIMITE_SNAPSHOT) throw new Error('O site ficou grande demais para o link (fotos coladas dentro do texto?). Use fotos enviadas pela aba Produtos.');
   const anteriores = ordenarLinks(await db.listar(COL.aprovacoes, { clienteId: cliente.id }));
   const token = novoToken();

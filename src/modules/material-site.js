@@ -35,7 +35,7 @@ export function montarPainelMaterial(alvo, ctx) {
     <summary class="cursor-pointer"><span class="font-semibold"><i class="fa-solid fa-boxes-stacked mr-1 text-indigo-500"></i> Material para montar o site</span>
       <span class="ml-2 text-sm ${totalAvisos ? 'text-amber-700' : 'text-emerald-700'}">${totalAvisos ? `${totalAvisos} ponto(s) de atenção` : 'tudo certo'}</span></summary>
     <p class="caption mt-2">Tudo o que já temos deste cliente para montar o site. Revise antes de gerar. Nada aqui é uma cópia: "Editar" leva ao campo de verdade, e o que faltar não impede de gerar.</p>
-    ${preferenciasHtml(ctx.cliente)}
+    ${preferenciasHtml(ctx.cliente, ctx.site?.fotosTexto)}
     <ul class="mt-3 divide-y divide-slate-100 text-sm" data-itens-material>${itens.map((it) => `<li class="py-2" data-item-material="${it.chave}">
       <div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0"><b>${esc(it.titulo)}</b>${it.linhas.length ? ` <span class="text-slate-600">· <span ${it.chave === 'materiais' ? 'data-linha-materiais' : ''}>${esc(it.linhas.join(' · '))}</span></span>` : ''}</div>${editar(it)}</div>
       ${campos(it) ? `<div class="mt-1">${campos(it)}</div>` : ''}
@@ -50,7 +50,7 @@ export function montarPainelMaterial(alvo, ctx) {
 
   $('[data-painel-material]', alvo).addEventListener('toggle', (e) => abertoPorCliente.set(ctx.cliente.id, e.target.open));
   ligarProvaSocial($('[data-prova-img="painel"]', alvo), ctx);
-  ligarPreferencias(alvo, ctx.cliente, () => { const x = $('[data-referencia-extra]', alvo); if (x) x.outerHTML = referenciaExtraHtml(ctx.cliente); });
+  ligarPreferencias(alvo, ctx.cliente, () => { const x = $('[data-referencia-extra]', alvo); if (x) x.outerHTML = referenciaExtraHtml(ctx.cliente); }, { aplicarFotosTexto: ctx.aplicarFotosTexto || null });
   on(alvo, 'click', '[data-abrir-materiais]', (b) => ocupado(b, () => abrirMateriais(ctx.cliente)));
   // Contadores sem recarregar: troca só o texto e os avisos da linha "Materiais gerais".
   atualizarMateriais = ({ clienteId, lista }) => {

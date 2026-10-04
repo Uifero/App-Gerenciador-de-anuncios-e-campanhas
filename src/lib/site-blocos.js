@@ -1,4 +1,5 @@
 import { normalizarVisual, ORDEM_LOJA, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js';
+import { mudarUso, comUsos, imagemDoLugar, nomeUso, USOS_FOTO } from './fotos-site.js';
 // "Ajustar este site": modelo de blocos do site personalizado + validador de operações + versões.
 // A IA (ou os controles manuais) NUNCA escreve HTML: ela devolve operações ({ op, ... }) sobre este modelo. O app confere
 // cada operação aqui, aplica numa CÓPIA do estado (rascunho) e só grava no site quando a pessoa aceita.
@@ -11,12 +12,12 @@ import { normalizarVisual, ORDEM_LOJA, nomeSecaoLoja, AJUSTES_FOTO } from './vis
 /** Blocos móveis do site personalizado, na ordem padrão (a mesma de antes desta função existir). */
 export const BLOCOS = [
   ['hero', 'Banner principal'], ['provas', 'Clientes reais'], ['categorias', 'Categorias'], ['vendidos', 'Mais vendidos'], ['sale', 'Promoções (Sale)'],
-  ['catalogo', 'Catálogo completo'], ['marca', 'Nossa história'], ['depoimentos', 'Depoimentos'], ['faq', 'Perguntas frequentes'], ['newsletter', 'Newsletter'],
+  ['catalogo', 'Catálogo completo'], ['marca', 'Nossa história'], ['galeria', 'Galeria'], ['depoimentos', 'Depoimentos'], ['faq', 'Perguntas frequentes'], ['newsletter', 'Newsletter'],
 ];
 export const ORDEM_PADRAO = BLOCOS.map(([k]) => k);
 export const nomeBloco = (k) => (BLOCOS.find(([b]) => b === k) || [, k])[1];
 /** Título padrão da seção no site (editável por bloco). */
-export const TITULOS_PADRAO = { provas: 'Clientes reais', categorias: 'Categorias', vendidos: 'Mais vendidos', sale: 'Sale', catalogo: 'Catálogo completo', marca: 'Nossa história', depoimentos: 'Quem já usa', faq: 'Perguntas frequentes' };
+export const TITULOS_PADRAO = { provas: 'Clientes reais', categorias: 'Categorias', vendidos: 'Mais vendidos', sale: 'Sale', catalogo: 'Catálogo completo', marca: 'Nossa história', galeria: 'Galeria', depoimentos: 'Quem já usa', faq: 'Perguntas frequentes' };
 /** Variações permitidas por bloco. */
 export const VARIACOES = {
   hero: { altura: ['curto', 'normal', 'alto'] },
@@ -367,10 +368,37 @@ function aplicarPacote(e, op, ctx = {}) {
 }
 
 /**
+ * Onde vai uma foto ("Usar em", lib/fotos-site.js), igual nos dois modos. Só quando a pessoa pede de forma explícita
+ * (a IA é instruída assim); vira escolha manual, como no seletor. Fica em `e.usosFotos` ({ materialId: usos }): os
+ * vínculos moram nos Materiais, não no site, e só são gravados lá ao aceitar a mudança.
+ */
+function aplicarFoto(e, op, ctx) {
+  e.usosFotos = e.usosFotos || {};
+  const mats = comUsos(ctx.materiais || [], Object.entries(e.usosFotos).map(([id, usos]) => ({ id, usos })));
+  const cod = String(op.codigo || '').trim().toUpperCase();
+  const m = mats.find((x) => String(x.codigo || '').toUpperCase() === cod);
+  if (!m) return { motivo: `a foto "${cod || '?'}" não existe nos Materiais do cliente (use o código mostrado na miniatura, ex.: F3)` };
+  if (!USOS_FOTO.some(([k]) => k === op.uso)) return { motivo: `a foto pode ir em: ${USOS_FOTO.map(([, t]) => t).join(', ')}` };
+  let produto = null;
+  if (op.uso === 'produto') {
+    const n = String(op.produto || '').trim().toLowerCase();
+    const lista = (ctx.produtos || []).filter((p) => String(p.nome || '').toLowerCase() === n);
+    produto = lista.length === 1 ? lista[0] : (ctx.produtos || []).filter((p) => n && String(p.nome || '').toLowerCase().includes(n)).length === 1 ? (ctx.produtos || []).find((p) => String(p.nome || '').toLowerCase().includes(n)) : null;
+    if (!produto) return { motivo: `o produto "${op.produto || ''}" não está cadastrado na aba Produtos` };
+  }
+  const ligado = op.acao !== 'tirar';
+  const patches = mudarUso(mats, m.id, { uso: op.uso, ligado, produtoId: produto?.id, ordem: op.ordem, principal: op.principal === undefined ? undefined : Boolean(op.principal) });
+  if (!patches.length) return { motivo: `${m.codigo} já está assim` };
+  for (const p of patches) e.usosFotos[p.id] = p.usos;
+  const onde = op.uso === 'produto' ? `no produto ${produto.nome}${op.principal ? ' (foto principal)' : ''}` : `em "${nomeUso(op.uso)}"`;
+  return { mudanca: `Foto ${m.codigo}: ${ligado ? 'passa a ir' : 'sai de'} ${onde} (escolha sua, igual ao seletor "Usar em")` };
+}
+
+/**
  * Valida e aplica uma lista de operações sobre uma CÓPIA do estado. Nunca lança erro por operação ruim:
  * { estado, mudancas: [texto], aplicadas: [op], descartadas: [{ op, motivo }] }.
  */
-export function aplicarOperacoes(estado, operacoes, { modo = 'custom', materiais = [] } = {}) {
+export function aplicarOperacoes(estado, operacoes, { modo = 'custom', materiais = [], produtos = [] } = {}) {
   const e = clone(estado);
   if (modo === 'custom') { e.conteudo = e.conteudo || {}; e.config = e.config || {}; e.layout = normalizarLayout(e.layout); } else e.pacote = e.pacote || {};
   const mudancas = [], aplicadas = [], descartadas = [];
@@ -378,7 +406,11 @@ export function aplicarOperacoes(estado, operacoes, { modo = 'custom', materiais
     if (!op || typeof op !== 'object' || !op.op) { descartadas.push({ op, motivo: 'operação sem formato válido' }); continue; }
     const protegido = motivoProtegido(op);
     if (protegido) { descartadas.push({ op, motivo: protegido }); continue; }
-    const r = modo === 'custom' ? aplicarCustom(e, op, { materiais }) : aplicarPacote(e, op, { materiais });
+    // Imagem do banner/história escolhida em "Usar em" (seletor) vence: só muda pedindo a foto pelo código.
+    const usoImg = op.op === 'imagem' ? ({ hero: 'banner', banner: 'banner', marca: 'sobre' }[op.bloco || (modo === 'custom' ? '' : 'banner')]) : null;
+    const fixa = usoImg && imagemDoLugar(comUsos(materiais, Object.entries(e.usosFotos || {}).map(([id, usos]) => ({ id, usos }))), usoImg);
+    if (fixa?.por === 'manual') { descartadas.push({ op, motivo: `a imagem ${usoImg === 'banner' ? 'do banner' : 'da história'} foi escolhida em Materiais do cliente (${fixa.codigo}, "Usar em"); para trocar, peça a foto pelo código (ex.: "usar F5 no banner")` }); continue; }
+    const r = op.op === 'foto' ? aplicarFoto(e, op, { materiais, produtos }) : modo === 'custom' ? aplicarCustom(e, op, { materiais }) : aplicarPacote(e, op, { materiais });
     if (r.mudanca) { mudancas.push(r.mudanca); aplicadas.push(op); } else descartadas.push({ op, motivo: r.motivo || 'operação inválida' });
   }
   return { estado: e, mudancas, aplicadas, descartadas };

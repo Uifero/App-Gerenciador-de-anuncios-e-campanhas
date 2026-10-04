@@ -15,13 +15,13 @@ export const AVISO_ANVISA = 'Atenção: depoimentos de resultado em suplementos 
 
 /** Bloco "Clientes reais" do painel "Site gerado": um cartão por print, com o estado de privacidade e o "Borrar". */
 export function printsPainelHtml(cliente, prints = []) {
-  const estado = (p) => (p.protegido ? '<span class="tag tag-ok">dados protegidos</span>' : p.autorizado ? '<span class="tag tag-info">sem borrar · autorizado</span>' : '<span class="tag tag-warn">sem borrar</span>');
+  const estado = (p) => (p.protegido ? '<span class="tag tag-ok">dados protegidos</span>' : p.precisaAutorizacao === false ? '<span class="tag">foto sem pessoa</span>' : p.autorizado ? '<span class="tag tag-info">sem borrar · autorizado</span>' : '<span class="tag tag-warn">sem borrar</span>');
   return `<div data-prints-painel>
     ${ehProdutoSaude(cliente) ? `<p class="mb-2 rounded bg-amber-50 p-2 text-xs text-amber-800" data-aviso-anvisa><i class="fa-solid fa-circle-info"></i> ${AVISO_ANVISA}</p>` : ''}
     ${prints.length ? `<p class="hint mb-2">Os prints reais de clientes (Materiais e Provas sociais, sem repetir o mesmo arquivo) aparecem na seção "Clientes reais", logo depois do banner. Mude a posição em "Seções" acima. Antes de publicar, borre nome, número e foto de quem aparece: o site usa a cópia borrada e o original fica guardado.</p>
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">${prints.map((p, i) => `<div class="rounded-lg border border-slate-200 p-1 text-xs" data-print="${esc(p.id)}">
         <img src="${esc(p.url)}" alt="Print ${i + 1}" class="h-28 w-full rounded bg-white object-contain">
-        <div class="mt-1 flex flex-wrap items-center gap-1">${estado(p)}</div>
+        <div class="mt-1 flex flex-wrap items-center gap-1">${p.codigo ? `<span class="tag tag-info">${esc(p.codigo)}</span>` : ''}${estado(p)}</div>
         <button type="button" class="btn-ghost btn-sm mt-1 w-full" data-borrar-print="${esc(p.id)}"><i class="fa-solid fa-eye-slash"></i> Borrar nome, número e foto</button></div>`).join('')}</div>`
     : '<p class="hint">Nenhum print de cliente ainda. Envie em "Materiais do cliente" e marque "É print de cliente", ou use "Provas sociais" (pergunta 10).</p>'}</div>`;
 }
@@ -33,7 +33,8 @@ export function printsPainelHtml(cliente, prints = []) {
 export async function autorizarPrints(prints = []) {
   const faltam = printsSemAutorizacao(prints);
   for (const [i, p] of faltam.entries()) {
-    const ok = await confirmar(`Você tem autorização desses clientes para mostrar os prints? (print sem borrar ${i + 1} de ${faltam.length}; dá para borrar no painel "Site gerado" > Clientes reais)`, 'Tenho autorização');
+    const qual = p.foto ? `foto${p.codigo ? ` ${p.codigo}` : ''} que mostra pessoa` : `print${p.codigo ? ` ${p.codigo}` : ''} sem borrar`;
+    const ok = await confirmar(`Você tem autorização desses clientes para mostrar ${p.foto ? 'as fotos' : 'os prints'}? (${qual}, ${i + 1} de ${faltam.length}; dá para borrar no painel "Site gerado" > Clientes reais)`, 'Tenho autorização');
     if (!ok) { toast('Nada foi gerado. Borre os dados do print (painel "Site gerado" > Clientes reais) ou confirme a autorização.', 'info'); return false; }
     await db.atualizar(COL.materiais, p.id, { autorizado: true, autorizadoEm: new Date().toISOString() });
     p.autorizado = true;
@@ -49,7 +50,7 @@ export async function baixarPrintsZip(cliente, prints = []) {
   for (const [i, p] of prints.entries()) {
     const r = await fetch(p.url); if (!r.ok) throw new Error(`Não consegui baixar o print ${i + 1}. Tente de novo.`);
     const bl = await r.blob(); const ext = { 'image/png': 'png', 'image/webp': 'webp' }[bl.type] || 'jpg';
-    arquivos.push({ nome: `prints-clientes/print-${String(i + 1).padStart(2, '0')}.${ext}`, conteudo: new Uint8Array(await bl.arrayBuffer()) });
+    arquivos.push({ nome: `prints-clientes/print-${String(i + 1).padStart(2, '0')}${p.codigo ? `-${p.codigo}` : ''}.${ext}`, conteudo: new Uint8Array(await bl.arrayBuffer()) });
   }
   baixarTexto(`prints-clientes-${(cliente.nome || 'loja').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zip`, criarZip(arquivos), 'application/zip');
 }

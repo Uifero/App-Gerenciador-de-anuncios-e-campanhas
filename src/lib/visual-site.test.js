@@ -9,7 +9,7 @@ describe('escolhas visuais do pacote', () => {
   });
   it('ordem salva antes de existir "Clientes reais" ganha a seção depois do banner, sem mexer no resto', () => {
     const v = normalizarVisual({ ordem: ['produtos', 'banner', 'confianca', 'depoimentos', 'sobre', 'faq', 'xxx'], ocultas: ['faq', 'yyy'], ajusteFotos: 'contain', banner: { url: 'u.jpg', materialId: 'm1' } });
-    expect(v.ordem).toEqual(['produtos', 'banner', 'provas', 'confianca', 'depoimentos', 'sobre', 'faq']);
+    expect(v.ordem).toEqual(['produtos', 'banner', 'provas', 'confianca', 'depoimentos', 'sobre', 'galeria', 'faq']);
     expect(v.ocultas).toEqual(['faq']);
     expect(v.ajusteFotos).toBe('contain');
     expect(v.banner).toEqual({ materialId: 'm1', url: 'u.jpg', nome: 'imagem' });

@@ -16,9 +16,9 @@ const ap = (ops, e = e0, extra) => aplicarOperacoes(e, ops, { modo: 'custom', ..
 describe('operações no site personalizado', () => {
   it('reordenar: texto antes/depois e o original intacto', () => {
     const r = ap([{ op: 'mover', bloco: 'depoimentos', antesDe: 'vendidos' }]);
-    expect(r.mudancas[0]).toBe('Bloco Depoimentos: passa de depois de "Nossa história" para depois de "Categorias"');
+    expect(r.mudancas[0]).toBe('Bloco Depoimentos: passa de depois de "Galeria" para depois de "Categorias"');
     expect(r.estado.layout.ordem.indexOf('depoimentos')).toBeLessThan(r.estado.layout.ordem.indexOf('vendidos'));
-    expect(e0.layout.ordem.indexOf('depoimentos')).toBe(7); // aplicar não mexe no estado original ("Clientes reais" vem logo depois do banner)
+    expect(e0.layout.ordem.indexOf('depoimentos')).toBe(8); // aplicar não mexe no estado original ("Clientes reais" vem logo depois do banner)
   });
   it('ocultar/mostrar, e não deixa sumir com todos os produtos', () => {
     const r = ap([{ op: 'ocultar', bloco: 'newsletter' }, { op: 'ocultar', bloco: 'vendidos' }, { op: 'ocultar', bloco: 'catalogo' }]);
@@ -128,7 +128,8 @@ describe('versões', () => {
     expect(normalizarLayout(undefined).ordem[0]).toBe('hero');
     const antigo = ['hero', 'categorias', 'vendidos', 'sale', 'catalogo', 'marca', 'depoimentos', 'faq', 'newsletter'].reverse();
     const n = normalizarLayout({ ordem: [...antigo, 'xxx'] }).ordem;
-    expect(n.filter((k) => k !== 'provas')).toEqual(antigo); // ordem salva continua igual
+    expect(n.filter((k) => !['provas', 'galeria'].includes(k))).toEqual(antigo); // ordem salva continua igual
+    expect(n.indexOf('galeria')).toBe(n.indexOf('marca') + 1); // Galeria (nova) entra logo depois da história
     expect(n.indexOf('provas')).toBe(n.indexOf('hero') + 1); // bloco novo entra logo depois do banner
     expect(normalizarLayout({}).ajusteFotos).toBe('cover');
     expect(resumoMudancas(['A: 1', 'B: 2'])).toBe('2 mudanças: A; B');

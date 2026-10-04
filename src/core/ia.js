@@ -636,7 +636,7 @@ export async function gerarConteudoSite({ cliente, produtos, base = null, semDep
   const system = 'Você é copywriter de e-commerce.';
   const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.${linhaBase(base)}${contextoPreferencias(cliente)}${linhaImagens(materiais)}
 Se couber neste cliente (opcional), organize o banner e a história como uma página de produto: título; prova social só se for real do perfil; uma frase de solução; 3 argumentos tirados das crenças e dores do público; texto curto.
-Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": ${semDepoimentos ? '[] (vazio: a loja já tem depoimentos reais, que o app coloca)' : '[{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais)'},"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)}), ${PEDIDO_VISUAL('hero, provas, categorias, vendidos, sale, catalogo, marca, depoimentos, faq, newsletter')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": ${semDepoimentos ? '[] (vazio: a loja já tem depoimentos reais, que o app coloca)' : '[{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais)'},"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)}), ${PEDIDO_VISUAL('hero, provas, categorias, vendidos, sale, catalogo, marca, galeria, depoimentos, faq, newsletter')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
   return { ...textoPlano(d), faq: objecoesDe(cliente).length ? normalizarFaq(d?.faq) : [], visual: d?.visual && typeof d.visual === 'object' ? d.visual : null };
 }
@@ -665,7 +665,7 @@ Saída: array JSON de {"p","r"}. ${idiomaLinha(cliente)} ${SO_JSON}`;
 export async function gerarTextosPacote({ cliente, produtos, plataforma, base = null, materiais = [] }) {
   const system = `Você prepara lojas para ${plataforma}.`;
   const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})`).join(', ') || 'a definir'}.${linhaBase(base)}${base?.cores?.length ? ` Paleta já usada: ${base.cores.join(', ')} (comece a paletaSugerida por ela).` : ''}${contextoPreferencias(cliente)}${linhaImagens(materiais)}
-Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}], ${PEDIDO_VISUAL('banner, provas, produtos, confianca, depoimentos, sobre, faq')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}], ${PEDIDO_VISUAL('banner, provas, produtos, confianca, depoimentos, sobre, galeria, faq')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'pacote', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
@@ -685,17 +685,19 @@ const OPS_CUSTOM = `Operações permitidas (use exatamente estes formatos):
 - {"op":"variacao","bloco":"hero","opcao":"altura","valor":"curto"|"normal"|"alto"} / {"op":"variacao","bloco":"vendidos"|"sale"|"catalogo","opcao":"colunas","valor":2|3|4}
 - {"op":"imagem","bloco":"hero"|"marca","materialId":ID dos Materiais listados | null para tirar}
 - {"op":"fotos","ajuste":"contain"|"cover"}  (fotos dos produtos: inteiras, sem cortar | preenchendo o quadro)
+- {"op":"foto","codigo":"F3","uso":"banner"|"produto"|"clientes"|"sobre"|"galeria"|"nao","produto":NOME DO PRODUTO (só com uso "produto"),"acao":"usar"|"tirar","principal":true|false (opcional, foto principal do produto),"ordem":n (opcional, posição no produto)}  (onde vai cada foto dos Materiais, pelo código. SÓ use quando a pessoa pedir EXPLICITAMENTE para mudar onde vai uma foto: as escolhas de foto são do operador e nunca mudam por iniciativa sua)
   Bloco "provas" = Clientes reais (prints reais de clientes): pode mover, ocultar e mostrar; o conteúdo dos prints NUNCA muda.
-Blocos (B): hero, categorias, vendidos, sale, catalogo, marca, depoimentos, faq, newsletter.`;
+Blocos (B): hero, categorias, vendidos, sale, catalogo, marca, galeria, depoimentos, faq, newsletter.`;
 const OPS_PACOTE = `Operações permitidas (conteúdo do pacote e as escolhas da PRÉVIA, que depois viram configurações do tema em "O que colocar na plataforma"):
 - {"op":"imagem","bloco":"banner","materialId":ID dos Materiais listados | null para tirar}  (imagem do banner)
 - {"op":"fotos","ajuste":"contain"|"cover"}  (fotos dos produtos: inteiras, sem cortar | preenchendo o quadro)
-- {"op":"mover","bloco":S,"antesDe":S2|"depoisDe":S2} / {"op":"ocultar","bloco":S} / {"op":"mostrar","bloco":S}  (seções da prévia; S = banner, provas (Clientes reais: prints reais, conteúdo nunca muda), produtos, confianca, depoimentos, sobre, faq)
+- {"op":"mover","bloco":S,"antesDe":S2|"depoisDe":S2} / {"op":"ocultar","bloco":S} / {"op":"mostrar","bloco":S}  (seções da prévia; S = banner, provas (Clientes reais: prints reais, conteúdo nunca muda), produtos, confianca, depoimentos, sobre, galeria, faq)
 - {"op":"texto","campo":"banner.<i>.titulo"|"banner.<i>.subtitulo"|"banner.<i>.cta"|"sobre"|"tema.estilo"|"tema.tipografia"|"tema.observacoes","valor":string}
 - {"op":"faq","acao":"editar"|"adicionar"|"remover","indice":n,"p":string,"r":string}
 - {"op":"paleta","cores":["#rrggbb", ...]}  (2 a 6 cores sugeridas para o tema)
 - {"op":"mover","secao":NOME,"antesDe":NOME2|"depoisDe":NOME2} / {"op":"ocultar","secao":NOME} / {"op":"mostrar","secao":NOME}  (ordem sugerida das seções da home)
-- {"op":"produto","nome":NOME DO PRODUTO,"campo":"descricao"|"seoTitulo"|"seoDescricao","valor":string}  (vai no CSV de importação)`;
+- {"op":"produto","nome":NOME DO PRODUTO,"campo":"descricao"|"seoTitulo"|"seoDescricao","valor":string}  (vai no CSV de importação)
+- {"op":"foto","codigo":"F3","uso":"banner"|"produto"|"clientes"|"sobre"|"galeria"|"nao","produto":NOME DO PRODUTO (só com uso "produto"),"acao":"usar"|"tirar","principal":true|false (opcional, foto principal do produto),"ordem":n (opcional, posição no produto)}  (onde vai cada foto dos Materiais, pelo código. SÓ use quando a pessoa pedir EXPLICITAMENTE para mudar onde vai uma foto: as escolhas de foto são do operador e nunca mudam por iniciativa sua)`;
 const NUNCA = `NUNCA pode ser alterado (nem se pedirem): códigos de Pixel/Google Ads/Hotjar/Tawk.to; aviso de cookies e a regra de só carregar rastreadores após o "Aceitar"; carrinho, botão "Finalizar compra"/checkout e selo de compra segura; políticas de trocas, envio e privacidade; cabeçalho, rodapé e WhatsApp. Se pedirem isso, diga claramente que não pode e por quê (tipo "recusa"), sem fingir que fez, e diga ONDE a pessoa muda por conta própria: Pixel/Google Ads/Hotjar/Tawk.to → cadastro do cliente, "Editar > Rastreamento"; políticas → formulário "Conteúdo da loja" > Mais opções (revisar com alguém responsável); aviso de cookies, carrinho/pagamento e selo → não mudam (protegem o cliente e o pagamento); formas de pagamento do selo → "Conteúdo da loja" > Mais opções. Nunca mande "contatar um desenvolvedor".`;
 
 /**
@@ -715,13 +717,13 @@ Textos: ${JSON.stringify({ heroTitulo: estado.conteudo?.heroTitulo, heroSubtitul
 FAQ (índice: pergunta): ${(estado.conteudo?.faq || []).map((f, i) => `${i}: ${f.p}`).join(' | ') || '(vazia)'}
 Depoimentos (índice: nome): ${(estado.conteudo?.depoimentos || []).map((d, i) => `${i}: ${d.nome} — "${String(d.texto).slice(0, 60)}"`).join(' | ') || '(nenhum)'}
 Cores: principal ${estado.config?.corPrimaria || '#4f46e5'}, fundo ${estado.config?.corFundo || '#ffffff'}
-Materiais do cliente (imagens): ${materiais.map((m) => `${m.id}: ${m.nomeOriginal || m.nome || 'imagem'}`).join(' | ') || '(nenhum)'}
+Materiais do cliente (imagens): ${linhaFotosAjuste(materiais, produtos)}
 Ajuste das fotos dos produtos: ${estado.layout?.ajusteFotos === 'contain' ? 'inteiras (contain)' : 'preenchendo (cover)'}`
     : `Banners: ${(estado.pacote?.banners || []).map((b, i) => `${i}: ${b.uso} — "${b.titulo}" / "${b.subtitulo}" [${b.cta}]`).join(' | ') || '(nenhum)'}
 Seções sugeridas da home (em ordem): ${(estado.pacote?.briefingTema?.secoesHome || []).join(' > ') || '(nenhuma)'}${(estado.pacote?.secoesOcultas || []).length ? ` · retiradas: ${estado.pacote.secoesOcultas.join(', ')}` : ''}
 Paleta sugerida: ${(estado.pacote?.briefingTema?.paletaSugerida || []).join(', ')}
 Prévia: ${JSON.stringify({ ordem: estado.pacote?.visual?.ordem || 'padrão (banner, provas, produtos, confianca, depoimentos, sobre, faq)', ocultas: estado.pacote?.visual?.ocultas || [], fotos: estado.pacote?.visual?.ajusteFotos || 'cover', banner: estado.pacote?.visual?.banner?.nome || 'sem imagem' })}
-Materiais do cliente (imagens): ${materiais.map((m) => `${m.id}: ${m.nomeOriginal || m.nome || 'imagem'}`).join(' | ') || '(nenhum)'}
+Materiais do cliente (imagens): ${linhaFotosAjuste(materiais, produtos)}
 Página Sobre: "${String(estado.pacote?.textosPagina?.sobre || '').slice(0, 700)}"
 FAQ (índice: pergunta): ${(estado.pacote?.textosPagina?.faq || []).map((f, i) => `${i}: ${f.p}`).join(' | ') || '(vazia)'}
 Produtos com descrição no pacote: ${(estado.pacote?.descricoesProdutos || []).map((d) => d.nome).join(', ') || '(nenhum)'} (cadastrados: ${produtos.map((p) => p.nome).join(', ') || 'nenhum'})`;
@@ -750,6 +752,17 @@ Saída JSON: {"tipo": "explicacao"|"proposta"|"recusa", "resposta": string, "ope
 ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa, cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return { ...normalizarAjusteSite(dados), tarefa };
+}
+
+/** "id (F3): nome [usos]" de cada imagem, para a IA entender pedidos como "usar F5 no banner". */
+function linhaFotosAjuste(materiais = [], produtos = []) {
+  if (!materiais.length) return '(nenhum)';
+  return materiais.map((m) => {
+    const u = m.usos || {};
+    const usos = [...['banner', 'clientes', 'sobre', 'galeria', 'nao'].filter((k) => u[k]).map((k) => (k === 'nao' ? 'não usar' : k)),
+      ...(u.produtos || []).map((p) => `produto ${produtos.find((x) => x.id === p.id)?.nome || '?'}${p.principal ? ' (principal)' : ''}`)];
+    return `${m.id}${m.codigo ? ` (${m.codigo})` : ''}: ${m.nomeOriginal || m.nome || 'imagem'}${usos.length ? ` [usada em: ${usos.join(', ')}]` : ''}`;
+  }).join(' | ');
 }
 
 /** Garante a forma da resposta; "proposta" sem operação vira "explicacao" (nada muda). */

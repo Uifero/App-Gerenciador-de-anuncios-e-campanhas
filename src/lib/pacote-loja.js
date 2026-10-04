@@ -5,6 +5,7 @@
 // Hotjar, Tawk.to nem qualquer rastreador, e é noindex/nofollow. A navegação (home <-> página do produto) é por âncora.
 import { comTextosDoPacote } from './csv.js';
 import { normalizarVisual, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js';
+import { produtosComFotos, imagemDoLugar, fotosDoUso, rotuloFoto } from './fotos-site.js';
 
 const txt = (v) => String(v ?? '').trim();
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -16,13 +17,20 @@ export const TEXTO_COMPRA_DESATIVADA = 'Prévia, compra desativada';
 
 /** Junta o que vai para a loja: textos do pacote, conteúdo/políticas do formulário, produtos reais (com SEO do pacote), logo e cores. */
 /** `provas` = prints reais de clientes (lib/visual-site.js printsDoCliente), já na cópia borrada quando houver. */
-export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas = [] }) {
+/** `materiais` = Materiais do cliente com o "Usar em" de cada foto (lib/fotos-site.js): banner, fotos dos produtos, Sobre e Galeria. */
+export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas = [], materiais = [] }) {
   const p = site.pacote || {}, c = site.conteudo || {};
+  const visual = normalizarVisual(p.visual);
+  const banner = imagemDoLugar(materiais, 'banner', visual.banner); // escolha em "Usar em" > ajustes rápidos > texto
+  if (banner) visual.banner = banner;
+  else if (visual.banner) { const m = materiais.find((x) => x.id === visual.banner.materialId); if (m?.codigo) visual.banner = { ...visual.banner, codigo: m.codigo }; }
   const paleta = (p.briefingTema?.paletaSugerida || []).filter((h) => HEX.test(h || ''));
   const cor = paleta[0] || (HEX.test(site.config?.corPrimaria || '') ? site.config.corPrimaria : '#111827');
   const banners = (p.banners || []).filter((b) => txt(b?.titulo));
   return {
-    visual: normalizarVisual(p.visual),
+    visual,
+    sobreImagens: fotosDoUso(materiais, 'sobre'),
+    galeria: fotosDoUso(materiais, 'galeria'),
     provas: (provas || []).filter((x) => x?.url),
     plataforma: site.plataforma === 'shopify' ? 'shopify' : 'nuvemshop',
     nomeLoja: txt(cliente.nome) || 'Loja',
@@ -36,9 +44,10 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
     faq: (p.textosPagina?.faq || []).filter((f) => txt(f?.p) && txt(f?.r)),
     politicas: { trocas: txt(c.politicas?.trocas), envio: txt(c.politicas?.envio), privacidade: txt(c.politicas?.privacidade) },
     depoimentos: (p.depoimentos?.length ? p.depoimentos : c.depoimentos || []).filter((d) => txt(d?.texto)),
-    produtos: comTextosDoPacote(produtos, p).filter((x) => txt(x?.nome)).map((x) => ({
+    produtos: comTextosDoPacote(produtosComFotos(produtos, materiais), p).filter((x) => txt(x?.nome)).map((x) => ({
       nome: txt(x.nome), descricao: txt(x.descricao), preco: Number(x.preco) || null, precoPromocional: Number(x.precoPromocional) || null,
       variacoes: (x.variacoes || []).filter((v) => v?.nome && v.valores?.length), fotos: (x.fotos || []).map((f) => f?.url).filter(Boolean),
+      arquivos: (x.fotos || []).filter((f) => f?.url).map((f) => ({ url: f.url, nome: f.nome || 'foto', codigo: f.codigo || '' })),
       seoTitulo: txt(x.seoTitulo), seoDescricao: txt(x.seoDescricao), categoria: txt(x.categoria),
     })),
   };
@@ -75,6 +84,8 @@ const CAMINHOS = {
 };
 
 const variacoesTexto = (vs = []) => vs.map((v) => `${v.nome}: ${v.valores.join(', ')}`).join(' · ');
+/** "1. F5 — frente.jpg (principal)" / "2. foto da aba Produtos — x.jpg": código + nome original de cada arquivo, um por linha. */
+const listaArquivos = (lista = [], produto = false) => lista.filter((x) => x?.url).map((x, i) => `${i + 1}. ${x.codigo ? `${x.codigo} — ` : produto ? 'foto da aba Produtos — ' : ''}${x.nome || 'imagem'}${produto && i === 0 ? ' (principal)' : ''}`).join('\n');
 
 /**
  * "O que colocar na plataforma": [{ id, titulo, caminho, itens: [{ rotulo, valor, tipo? }] }]. Item vazio fica de fora;
@@ -92,16 +103,19 @@ export function gruposPlataforma(d) {
     g('home', 'Textos da home', cam.cores, [item('Ordem das seções da home', d.secoesHome.join(' > ')), item('Texto "Sobre a marca" (bloco de texto da home)', d.sobre)]),
     ...d.produtos.map((x, i) => g(`produto-${i}`, `Produto: ${x.nome}`, cam.produtos, [
       item('Título', x.nome), item('Descrição', x.descricao), item('Preço', moeda(x.preco)), item('Preço promocional', moeda(x.precoPromocional)),
-      item('Variações', variacoesTexto(x.variacoes)), item('Título para SEO', x.seoTitulo), item('Descrição para SEO', x.seoDescricao)])),
+      item('Variações', variacoesTexto(x.variacoes)), item('Título para SEO', x.seoTitulo), item('Descrição para SEO', x.seoDescricao),
+      item('Fotos, nesta ordem (pasta produtos/ do .zip "Imagens por lugar")', listaArquivos(x.arquivos, true))])),
     g('paginas', 'Páginas institucionais', cam.paginas, [item('Página "Sobre"', d.sobre), item('Página "Perguntas frequentes"', d.faq.map((f) => `${f.p}\n${f.r}`).join('\n\n'))]),
     g('politicas', 'Políticas', cam.politicas, [item('Trocas e devoluções', d.politicas.trocas), item('Envio', d.politicas.envio), item('Privacidade', d.politicas.privacidade)]),
     g('cores', 'Cores e tipografia', cam.cores, [item('Paleta (cor principal primeiro)', d.paleta.join(', ') || d.cor), item('Tipografia', d.tipografia)]),
     // Escolhas feitas na prévia (painel "Site gerado" / "Ajustar este site"): o que fazer no tema para a loja ficar igual.
-    g('visual-banner', 'Imagem do banner (escolhida na prévia)', cam.banner, d.visual.banner ? [item('Imagem para subir no banner (baixe em "Baixar pacote")', d.visual.banner.url, 'imagem'), item('Arquivo', d.visual.banner.nome)] : []),
+    g('visual-banner', 'Imagem do banner (escolhida na prévia)', cam.banner, d.visual.banner ? [item('Imagem para subir no banner (baixe em "Baixar pacote")', d.visual.banner.url, 'imagem'), item('Arquivo (pasta banner/ do .zip "Imagens por lugar")', rotuloFoto(d.visual.banner))] : []),
     g('visual-fotos', 'Fotos dos produtos (como aparecem)', cam.fotos, [item('Escolha na prévia', `${AJUSTES_FOTO[d.visual.ajusteFotos]}: ${d.visual.ajusteFotos === 'contain' ? 'a foto aparece inteira, sem cortar' : 'a foto preenche o quadro (as bordas podem ser cortadas)'}`),
       item('No tema', cam.fotosAjuda[d.visual.ajusteFotos])]),
     g('visual-secoes', 'Ordem das seções da home (como aprovado na prévia)', cam.secoes, [item('Ordem', d.visual.ordem.filter((k) => !d.visual.ocultas.includes(k)).map(nomeSecaoLoja).join(' > ')), item('Não colocar na home', d.visual.ocultas.map(nomeSecaoLoja).join(', '))]),
-    g('provas', 'Clientes reais (prints)', cam.provas, d.provas.length ? [item('Prints para subir', `${d.provas.length} imagem(ns): baixe em "Baixar pacote" (Prints de clientes). São as cópias com dados pessoais borrados quando você borrou.`), item('Onde na home', `${d.visual.ocultas.includes('provas') ? 'Oculta na prévia: não colocar.' : `Posição ${d.visual.ordem.filter((k) => !d.visual.ocultas.includes(k)).indexOf('provas') + 1} da home (como na prévia).`}`)] : []),
+    g('provas', 'Clientes reais (prints)', cam.provas, d.provas.length ? [item('Prints para subir', `${d.provas.length} imagem(ns): baixe em "Baixar pacote" (Prints de clientes ou pasta clientes-reais/ do .zip "Imagens por lugar"). São as cópias com dados pessoais borrados quando você borrou.`), item('Arquivos', listaArquivos(d.provas)), item('Onde na home', `${d.visual.ocultas.includes('provas') ? 'Oculta na prévia: não colocar.' : `Posição ${d.visual.ordem.filter((k) => !d.visual.ocultas.includes(k)).indexOf('provas') + 1} da home (como na prévia).`}`)] : []),
+    g('fotos-sobre', 'Imagem do "Sobre a marca"', cam.paginas, [item('Arquivos (pasta sobre/ do .zip "Imagens por lugar")', listaArquivos(d.sobreImagens))]),
+    g('fotos-galeria', 'Galeria de fotos', cam.provas, [item('Arquivos (pasta galeria/ do .zip "Imagens por lugar")', listaArquivos(d.galeria))]),
   ];
   return grupos.filter((x) => x.itens.length);
 }
@@ -131,7 +145,8 @@ export function gerarPreviaLojaHTML(d) {
     produtos: () => `<div class="wrap"><h2 id="produtos">Produtos</h2><div class="grade">${grade}</div></div>`,
     confianca: () => `<div class="wrap"><div class="confianca"><div><b>Compra segura</b><span>Pagamento pela plataforma</span></div><div><b>Entrega</b><span>${esc(d.politicas.envio ? d.politicas.envio.slice(0, 90) : 'Frete calculado no carrinho')}</span></div><div><b>Trocas</b><span>${esc(d.politicas.trocas ? d.politicas.trocas.slice(0, 90) : 'Política de trocas da loja')}</span></div></div></div>`,
     depoimentos: () => (d.depoimentos.length ? `<div class="wrap"><h2>Quem já comprou</h2><div class="depos">${d.depoimentos.slice(0, 6).map((x) => `<blockquote>“${esc(x.texto)}”<cite>${esc(x.nome || 'Cliente')}</cite></blockquote>`).join('')}</div></div>` : ''),
-    sobre: () => (d.sobre ? `<div class="wrap"><h2 id="sobre">Sobre a marca</h2><p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p></div>` : ''),
+    galeria: () => ((d.galeria || []).length ? `<div class="wrap"><h2 id="galeria">Galeria</h2><div class="galeria-fotos">${d.galeria.map((f) => `<img src="${esc(f.url)}" alt="" loading="lazy">`).join('')}</div></div>` : ''),
+    sobre: () => (d.sobre ? `<div class="wrap"><h2 id="sobre">Sobre a marca</h2>${(d.sobreImagens || [])[0] ? `<img class="sobre-img" src="${esc(d.sobreImagens[0].url)}" alt="" loading="lazy">` : ''}<p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p></div>` : ''),
     faq: () => (d.faq.length ? `<div class="wrap"><h2 id="faq">Perguntas frequentes</h2>${d.faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div>` : ''),
   };
   const home = `<section id="inicio" class="home">${V.ordem.filter((k) => !V.ocultas.includes(k)).map((k) => secao[k]()).join('')}</section>`;
@@ -160,6 +175,7 @@ footer .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr
 .aviso{text-align:center;color:#6b7280;margin:18px 16px 0}.card img,.principal,.miniaturas img{background:#fff}.banner.com-img{background-size:cover;background-position:center;padding:90px 0}
 .prints{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px}.prints a{flex:0 0 auto;scroll-snap-align:start}.prints img{height:min(380px,65vh);max-width:80vw;width:auto;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;background:#fff;display:block}.dica{font-size:12px;color:#6b7280}
 .lightbox{display:none;position:fixed;inset:0;z-index:9;background:#000d;align-items:center;justify-content:center;padding:16px}.lightbox:target{display:flex}.lightbox img{max-width:100%;max-height:100%;object-fit:contain}.lightbox .fechar{position:absolute;top:8px;right:16px;color:#fff;font-size:36px;text-decoration:none}
+.galeria-fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}.galeria-fotos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px}.sobre-img{width:100%;max-height:360px;object-fit:cover;border-radius:8px;margin-bottom:12px}
 @media(max-width:640px){.pdp{grid-template-columns:1fr}.banner{padding:36px 0}}`;
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
 <base href="about:srcdoc"><title>${esc(d.nomeLoja)} — prévia</title><style>${css}</style></head><body>${cabecalho}${paginasProduto}${home}${rodape}${lightbox}</body></html>`;

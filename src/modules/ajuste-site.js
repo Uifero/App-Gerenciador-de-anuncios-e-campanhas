@@ -11,6 +11,7 @@ import {
 } from '../lib/site-blocos.js';
 import { temCustom, temPacote, divergencias, aplicarBaseNoPacote, aplicarBaseNoCustom, baseDoCustom, baseDoPacote } from '../lib/site-modos.js';
 import { esc, $, on, toast, ocupado, modal, confirmar, tag, dataBR } from '../core/ui.js';
+import { salvarUsos } from '../lib/materiais.js';
 
 const LEGENDA = 'Peça uma mudança em linguagem normal. Você vê uma prévia antes de aceitar, e pode voltar para qualquer versão anterior.';
 const LEGENDA_PACOTE = 'Aqui você ajusta o conteúdo que será importado. O visual final depende do tema da plataforma escolhida, então mudanças de layout precisam ser feitas no editor da própria plataforma';
@@ -47,12 +48,15 @@ export async function montarAjusteSite(alvo, ctx) {
   const estadoBase = () => rascunho()?.estado || estadoAtual();
 
   // ---------- rascunho ----------
+  // Onde vai cada foto ("Usar em") mora nos Materiais, não no site: no rascunho fica à parte (usosFotos) e só é gravado
+  // nos Materiais ao aceitar. Não entra nas versões ("Voltar para esta versão" nunca desfaz uma escolha de foto).
   async function acrescentarAoRascunho(operacoes, origem) {
-    const r = aplicarOperacoes(estadoBase(), operacoes, { modo, materiais });
+    const r = aplicarOperacoes({ ...estadoBase(), usosFotos: rascunho()?.usosFotos || {} }, operacoes, { modo, materiais, produtos });
     if (!r.aplicadas.length) return r;
     const atual = rascunho();
+    const { usosFotos, ...estado } = r.estado;
     await ctx.salvarSite({ rascunhoAjuste: {
-      modo, estado: r.estado, origem: atual && atual.origem !== origem ? 'ia+manual' : origem, criadoEm: atual?.criadoEm || new Date().toISOString(),
+      modo, estado, usosFotos: usosFotos || {}, origem: atual && atual.origem !== origem ? 'ia+manual' : origem, criadoEm: atual?.criadoEm || new Date().toISOString(),
       mudancas: [...(atual?.mudancas || []), ...r.mudancas], descartadas: [...(atual?.descartadas || []), ...r.descartadas.map((d) => ({ op: d.op, motivo: d.motivo }))],
     } });
     aba = 'depois';
@@ -62,6 +66,7 @@ export async function montarAjusteSite(alvo, ctx) {
     const d = rascunho(); if (!d) return;
     const antes = estadoAtual();
     const v = registrarVersao(site(), { modo, estadoAntes: antes, estadoDepois: d.estado, resumo: resumoMudancas(d.mudancas), origem: d.origem });
+    await salvarUsos(Object.entries(d.usosFotos || {}).map(([id, usos]) => ({ id, usos }))); // fotos: escolha da pessoa, como no seletor
     await ctx.salvarSite({ ...d.estado, ...v, rascunhoAjuste: null });
     aceitoRecente.set(chave, v.proximaVersao - 1);
     toast(`Mudança aplicada (v${v.proximaVersao - 1}).`);
@@ -117,12 +122,12 @@ Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de c
 
   function previaHTML(d) {
     if (custom) {
-      const html = ctx.htmlDe(aba === 'antes' ? estadoAtual() : d.estado);
+      const html = ctx.htmlDe(aba === 'antes' ? estadoAtual() : { ...d.estado, usosFotos: d.usosFotos });
       return `<iframe sandbox="${SANDBOX}" srcdoc="${esc(html)}" class="h-[520px] w-full rounded-lg border border-slate-200 bg-white" title="Prévia do site: ${aba === 'antes' ? 'atual' : 'com a mudança'}" data-previa-rascunho></iframe>`;
     }
     // Pacote: a prévia com cara de loja (mesmo molde do painel e do link de aprovação), sem script; o resumo em texto embaixo.
     const pac = aba === 'antes' ? estadoAtual().pacote : d.estado.pacote;
-    return `<div data-previa-rascunho>${ctx.previaPacote ? `<iframe sandbox="" srcdoc="${esc(ctx.previaPacote(pac))}" class="h-[520px] w-full rounded-lg border border-slate-200 bg-white" title="Prévia da loja: ${aba === 'antes' ? 'atual' : 'com a mudança'}" data-previa-loja-ajuste></iframe>` : ''}<details class="mt-2 rounded-lg border border-slate-200 p-2"><summary class="cursor-pointer text-xs text-slate-600">Textos do pacote</summary>${ctx.pacoteHTML(pac)}</details></div>`;
+    return `<div data-previa-rascunho>${ctx.previaPacote ? `<iframe sandbox="" srcdoc="${esc(ctx.previaPacote(pac, aba === 'antes' ? null : d.usosFotos))}" class="h-[520px] w-full rounded-lg border border-slate-200 bg-white" title="Prévia da loja: ${aba === 'antes' ? 'atual' : 'com a mudança'}" data-previa-loja-ajuste></iframe>` : ''}<details class="mt-2 rounded-lg border border-slate-200 p-2"><summary class="cursor-pointer text-xs text-slate-600">Textos do pacote</summary>${ctx.pacoteHTML(pac)}</details></div>`;
   }
   function rascunhoHTML(d) {
     return `<div class="mt-4 rounded-lg border-2 border-emerald-300 bg-emerald-50/40 p-3" data-rascunho>
@@ -204,7 +209,7 @@ Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de c
       <h3 class="mb-1 font-semibold text-violet-800"><i class="fa-solid fa-comments mr-1"></i> Ajustar ${custom ? 'este site' : 'o conteúdo deste pacote'}</h3>
       <p class="caption">${LEGENDA}</p>
       ${custom ? '' : `<p class="mt-1 rounded bg-slate-50 p-2 text-sm text-slate-700"><i class="fa-solid fa-circle-info mr-1"></i>${LEGENDA_PACOTE}.</p>`}
-      <p class="hint mt-1">O que dá para mudar: ${custom ? 'ordem dos blocos, mostrar/ocultar, textos (banner, títulos, história, perguntas frequentes, newsletter), quais depoimentos aparecem, cores, altura do banner, colunas de produtos e imagem do banner/história (dos Materiais)' : 'textos dos banners e da página Sobre, perguntas frequentes, paleta sugerida, ordem sugerida das seções da home e descrições/SEO dos produtos no CSV'}. <b>O que nunca muda por aqui:</b> Pixel, Hotjar e Tawk.to, aviso de cookies, carrinho e pagamento, selo de compra segura e políticas.</p>
+      <p class="hint mt-1">O que dá para mudar: ${custom ? 'ordem dos blocos, mostrar/ocultar, textos (banner, títulos, história, perguntas frequentes, newsletter), quais depoimentos aparecem, cores, altura do banner, colunas de produtos e imagem do banner/história (dos Materiais) e onde vai cada foto pelo código (ex.: "usar F5 no banner", "F6 como foto principal do Thermora")' : 'onde vai cada foto pelo código (ex.: "usar F5 no banner"), textos dos banners e da página Sobre, perguntas frequentes, paleta sugerida, ordem sugerida das seções da home e descrições/SEO dos produtos no CSV'}. <b>O que nunca muda por aqui:</b> Pixel, Hotjar e Tawk.to, aviso de cookies, carrinho e pagamento, selo de compra segura e políticas.</p>
       ${aposAceitar && !d ? `<p class="mt-2 rounded bg-emerald-50 p-2 text-sm text-emerald-800" data-aceito><i class="fa-solid fa-circle-check"></i> <b>Aplicado (v${aposAceitar.n}).</b> Próximo passo: ${custom ? 'baixe a pasta do site de novo (botão "Baixar pasta do site…") e publique por cima da versão antiga na hospedagem' : 'baixe o catálogo (CSV), os banners e o manual de novo para entregar a versão nova'}.</p>` : ''}
       ${aposAceitar ? outroModoHTML() : ''}
       <div class="mt-3 space-y-2 text-sm" data-chat>${conversa().map(itemChat).join('') || '<p class="hint">Exemplos: “coloca os depoimentos antes dos produtos”, “troca o título do banner para algo mais direto”, “deixa o site em tons de verde”, “esconde a newsletter”.</p>'}</div>
@@ -226,7 +231,7 @@ Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de c
   };
   on(alvo, 'submit', '[data-form-ajuste]', (f, ev) => { ev.preventDefault(); const p = f.elements.pedido.value.trim(); if (p) perguntar(p, f.querySelector('button')); });
   on(alvo, 'click', '[data-aba]', (b) => { aba = b.dataset.aba; desenhar(); $('[data-rascunho]', alvo)?.scrollIntoView({ block: 'nearest' }); });
-  on(alvo, 'click', '[data-previa-aba]', () => abrirPreviaIsolada(ctx.htmlDe(aba === 'antes' ? estadoAtual() : rascunho().estado), `Prévia (${aba === 'antes' ? 'atual' : 'com a mudança'}) — ${cliente.nome}`));
+  on(alvo, 'click', '[data-previa-aba]', () => abrirPreviaIsolada(ctx.htmlDe(aba === 'antes' ? estadoAtual() : { ...rascunho().estado, usosFotos: rascunho().usosFotos }), `Prévia (${aba === 'antes' ? 'atual' : 'com a mudança'}) — ${cliente.nome}`));
   on(alvo, 'click', '[data-aceitar]', (b) => ocupado(b, aceitar));
   on(alvo, 'click', '[data-descartar]', (b) => ocupado(b, descartar));
   on(alvo, 'click', '[data-voltar]', (b) => voltarPara(Number(b.dataset.voltar)));

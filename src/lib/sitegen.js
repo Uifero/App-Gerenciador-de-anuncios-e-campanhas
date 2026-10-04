@@ -3,6 +3,7 @@
 import { esc } from '../core/ui.js';
 import { rastreamentoDe, codigoHead, codigoCheckout, CHAVE_CONSENTIMENTO, textoAvisoCookies } from './rastreamento.js';
 import { normalizarLayout, tituloBloco } from './site-blocos.js';
+import { produtosComFotos, imagemDoLugar, fotosDoUso } from './fotos-site.js';
 
 /** Formas de pagamento que o selo "compra segura" pode mostrar (ícones genéricos desenhados aqui, sem logo de bandeira). */
 export const FORMAS_PAGAMENTO = [['cartao', 'Cartão de crédito'], ['pix', 'Pix'], ['boleto', 'Boleto']];
@@ -36,9 +37,14 @@ const brl = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', curren
  * `logoUrl`: endereço do logo no cabeçalho (padrão: o logo salvo do cliente; no .zip, o arquivo que vai na pasta). Sem logo, o nome em texto.
  * `provas`: prints reais de clientes (lib/visual-site.js printsDoCliente: a cópia borrada quando houver) para a seção "Clientes reais".
  */
-export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg = {}, url = '', layout: layoutBruto = null, logoUrl = cliente?.logoArquivo?.url || '', provas = [] }) {
+export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {}, config: cfg = {}, url = '', layout: layoutBruto = null, logoUrl = cliente?.logoArquivo?.url || '', provas = [], materiais = [] }) {
   // Ordem, blocos ocultos, títulos, variações e imagens ("Ajustar este site", lib/site-blocos.js). Sem layout = padrão de sempre.
   const L = normalizarLayout(layoutBruto || {});
+  // "Usar em" das fotos dos Materiais (lib/fotos-site.js): fotos dos produtos, banner, história e galeria. O seletor vence a
+  // escolha direta (ajustes rápidos), que vence o texto "Como eu quero o site".
+  const produtos = produtosComFotos(produtosBase || [], materiais);
+  for (const [bloco, uso] of [['hero', 'banner'], ['marca', 'sobre']]) { const img = imagemDoLugar(materiais, uso, L.imagens[bloco]); if (img) L.imagens[bloco] = img; }
+  const galeria = fotosDoUso(materiais, 'galeria');
   const visivel = (k) => !L.ocultos.includes(k);
   const cor = cfg.corPrimaria || '#4f46e5';
   const rastro = rastreamentoDe(cliente); // Pixel do Meta / Google Ads / Hotjar / Tawk.to do cadastro (vazio = nenhum código)
@@ -80,6 +86,7 @@ export function gerarSiteHTML({ cliente, produtos, conteudo: c = {}, config: cfg
     sale: () => (promo.length ? `<section id="sale"><div class="wrap"><h2>${esc(tituloBloco(L, 'sale'))}</h2>${grade(promo, 'sale')}</div></section>` : ''),
     catalogo: () => `<section id="catalogo" class="${promo.length ? 'alt' : ''}"><div class="wrap"><h2>${esc(tituloBloco(L, 'catalogo'))}</h2><div id="catalogoGrade">${grade(produtos, 'catalogo')}</div></div></section>`,
     marca: () => (c.storytelling ? `<section id="marca"><div class="wrap"><h2>${esc(tituloBloco(L, 'marca'))}</h2>${imgMarca ? `<img class="story-img" src="${esc(imgMarca)}" alt="${esc(cliente.nome)}" loading="lazy">` : ''}<div class="story">${esc(c.storytelling)}</div></div></section>` : '<span id="marca"></span>'),
+    galeria: () => (galeria.length ? `<section id="galeria"><div class="wrap"><h2>${esc(tituloBloco(L, 'galeria'))}</h2><div class="galeria">${galeria.map((f) => `<img src="${esc(f.url)}" alt="${esc(cliente.nome)}" loading="lazy">`).join('')}</div></div></section>` : ''),
     depoimentos: () => (deps.length ? `<section class="alt"><div class="wrap"><h2>${esc(tituloBloco(L, 'depoimentos'))}</h2><div class="dep">${deps.map((d) => `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.origem === 'prova_social' ? 'Print de avaliação real de cliente' : d.nome)}" class="dep-midia${d.origem === 'prova_social' ? ' dep-print' : ''}" loading="lazy">`) : ''}${d.exibir === 'print' ? '' : `“${esc(d.texto)}”`}<cite>— ${esc(d.nome)}</cite></blockquote>`).join('')}</div>
 <!-- ATENÇÃO: depoimentos escritos à mão (sem foto/vídeo anexado) podem ser MODELOS — troque por depoimentos reais antes de publicar. Os que têm foto/vídeo vieram de criativos aprovados ou de prints de avaliação reais (com dados pessoais cobertos) guardados no app. --></div></section>` : ''),
     faq: () => (faq.length ? `<section id="faq" class="alt"><div class="wrap faq"><h2>${esc(tituloBloco(L, 'faq'))}</h2>${faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div></section>` : ''),
@@ -110,6 +117,7 @@ section{padding:48px 0}section h2{font-size:26px;margin:0 0 20px}.alt{background
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}.card{background:#fff;border-radius:14px;padding:12px;box-shadow:0 1px 4px #0001}
 .ph{position:relative;aspect-ratio:1;background:var(--suave);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#9ca3af}.ph img{width:100%;height:100%;object-fit:${L.ajusteFotos === 'contain' ? 'contain' : 'cover'}}
 .prints{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px}.prints a{flex:0 0 auto;scroll-snap-align:start}.prints img{height:min(420px,70vh);max-width:80vw;width:auto;object-fit:contain;border-radius:12px;border:1px solid #0001;background:#fff;display:block}.dica-print{font-size:13px;color:#6b7280;margin:8px 0 0}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}.galeria img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;display:block}
 .badge{position:absolute;top:8px;left:8px;background:#dc2626;color:#fff;font-size:11px;padding:3px 8px;border-radius:999px}
 .card h3{font-size:15px;margin:10px 0 4px}.preco{margin:0 0 8px;font-weight:700}.preco s{color:#9ca3af;font-weight:400;margin-right:6px}
 select{width:100%;margin-bottom:6px;padding:6px;border:1px solid #d1d5db;border-radius:8px}

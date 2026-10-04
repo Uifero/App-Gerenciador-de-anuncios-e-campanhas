@@ -6,10 +6,11 @@
 //  - Prints: só os reais (Materiais / Provas sociais), sem repetir o mesmo arquivo; a versão borrada (ou com tarja)
 //    é a que vai para o site; o original fica guardado.
 import { tipoMaterial } from './prova-social.js';
+import { usosDe, temCodigo } from './fotos-site.js';
 
 export const SECOES_LOJA = [
   ['banner', 'Banner'], ['provas', 'Clientes reais'], ['produtos', 'Produtos'], ['confianca', 'Compra segura'],
-  ['depoimentos', 'Quem já comprou'], ['sobre', 'Sobre a marca'], ['faq', 'Perguntas frequentes'],
+  ['depoimentos', 'Quem já comprou'], ['sobre', 'Sobre a marca'], ['galeria', 'Galeria'], ['faq', 'Perguntas frequentes'],
 ];
 export const ORDEM_LOJA = SECOES_LOJA.map(([k]) => k);
 export const nomeSecaoLoja = (k) => (SECOES_LOJA.find(([s]) => s === k) || [, k])[1];
@@ -30,7 +31,7 @@ export function normalizarVisual(v = {}) {
 }
 
 /** Só imagens dos Materiais (sem vídeo, sem o print da referência) servem para banner. */
-export const imagensParaBanner = (materiais = []) => materiais.filter((m) => ['foto', 'logo', 'prova_social'].includes(tipoMaterial(m)) && m.url);
+export const imagensParaBanner = (materiais = []) => materiais.filter((m) => ['foto', 'logo', 'prova_social'].includes(tipoMaterial(m)) && m.url && !usosDe(m).nao);
 
 const chaveArquivo = (m) => m.hashOriginal || m.hash || (m.nomeOriginal && m.tamanho ? `${m.nomeOriginal}|${m.tamanho}` : m.url);
 /** Print protegido: já tem cópia borrada ou foi guardado com tarja (o original com dados não vai para o site). */
@@ -43,18 +44,25 @@ export const printProtegido = (m) => Boolean(m?.borrada?.url) || Number(m?.tarja
  */
 export function printsDoCliente(materiais = []) {
   const porChave = new Map();
-  for (const m of materiais.filter((x) => tipoMaterial(x) === 'prova_social' && x.url)) {
+  // Prints de prova social + fotos marcadas "Clientes reais" em "Usar em" (lib/fotos-site.js); "Não usar no site" tira qualquer uma.
+  const entra = (x) => x.url && !usosDe(x).nao && (tipoMaterial(x) === 'prova_social' || (temCodigo(x) && usosDe(x).clientes));
+  for (const m of materiais.filter(entra)) {
     const k = chaveArquivo(m), atual = porChave.get(k);
     if (!atual || (printProtegido(m) && !printProtegido(atual))) porChave.set(k, m);
   }
-  return [...porChave.values()].sort((a, b) => String(a.criadoEm || '').localeCompare(String(b.criadoEm || ''))).map((m) => ({
-    id: m.id, url: m.borrada?.url || m.url, original: m.url, protegido: printProtegido(m), autorizado: Boolean(m.autorizado),
-    legenda: m.fonteProva || 'Cliente',
-  }));
+  return [...porChave.values()].sort((a, b) => String(a.criadoEm || '').localeCompare(String(b.criadoEm || ''))).map((m) => {
+    const print = tipoMaterial(m) === 'prova_social';
+    return {
+      id: m.id, url: m.borrada?.url || m.url, original: m.url, protegido: printProtegido(m), autorizado: Boolean(m.autorizado),
+      legenda: m.fonteProva || 'Cliente', codigo: m.codigo || '', nome: m.nomeOriginal || m.nome || '',
+      // Print sem borrar sempre pede autorização; foto só quando mostra pessoa ("Mostra pessoa" no seletor).
+      precisaAutorizacao: !printProtegido(m) && (print || usosDe(m).pessoa), foto: !print,
+    };
+  });
 }
 
 /** No site personalizado, o print que já aparece como depoimento (cartão "Prints de prova social no site") não repete em "Clientes reais". */
 export const semRepetirDepoimentos = (prints = [], depoimentos = []) => prints.filter((p) => !depoimentos.some((d) => d?.materialId === p.id && d?.midiaUrl));
 
 /** Prints que vão para fora (link de aprovação, pacote) sem proteção e sem autorização registrada. */
-export const printsSemAutorizacao = (prints = []) => prints.filter((p) => !p.protegido && !p.autorizado);
+export const printsSemAutorizacao = (prints = []) => prints.filter((p) => (p.precisaAutorizacao ?? !p.protegido) && !p.autorizado);
