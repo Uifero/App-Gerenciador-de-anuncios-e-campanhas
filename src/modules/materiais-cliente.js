@@ -65,6 +65,8 @@ export async function abrirMateriais(cliente, { aoMudar: aoMudarExtra = () => {}
   on(raiz, 'click', '[data-print-cliente]', (b) => ocupado(b, async () => {
     const x = lista.find((y) => y.id === b.dataset.printCliente); if (!x) return;
     const eh = tipoMaterial(x) === 'prova_social';
+    // Desmarcar tira o print de "Provas sociais" (vai para Fotos): pede confirmação para não sumir com um clique.
+    if (eh && !(await confirmar(`Tirar "${x.nomeOriginal || x.nome}" de Provas sociais? O arquivo continua guardado, em Fotos, e sai da seção Clientes reais do site.`, 'Tirar de Provas sociais'))) return;
     const etiquetas = eh ? (x.etiquetas || []).filter((t) => t !== ETIQUETA_PROVA) : [...new Set([...(x.etiquetas || []), ETIQUETA_PROVA])];
     await db.atualizar(COL.materiais, x.id, { etiquetas });
     await desenharGrade(); aoMudar(lista);
@@ -74,7 +76,7 @@ export async function abrirMateriais(cliente, { aoMudar: aoMudarExtra = () => {}
     const x = lista.find((y) => y.id === b.dataset.apagarMaterial); if (!x) return;
     if (!(await confirmar(`Apagar "${x.nomeOriginal || x.nome}" dos materiais do cliente? O arquivo sai do Estúdio e do site.${tipoMaterial(x) === 'logo' ? ' É o logo atual: o cliente fica sem logo.' : ''}`, 'Apagar'))) return;
     await ocupado(b, async () => {
-      await removerMaterial(cliente, x);
+      await removerMaterial(cliente, x, { confirmado: true });
       if (tipoMaterial(x) === 'logo') $('[data-logo-materiais]', raiz).innerHTML = logoHtml(cliente);
       await desenharGrade(); aoMudar(lista); toast('Arquivo apagado.');
     });

@@ -84,9 +84,51 @@ describe('logo do cliente', () => {
   it('apagar material tira o arquivo do Storage; apagar o logo atual deixa o cliente sem logo', async () => {
     const cliente = { id: 'c6' };
     const logo = await salvarLogo(cliente, new File(['l'], 'logo.png', { type: 'image/png' }));
-    await removerMaterial(cliente, logo);
+    await removerMaterial(cliente, logo, { confirmado: true });
     expect(removidos).toContain(logo.path);
     expect([...docs.values()].some((d) => d.id === logo.id)).toBe(false);
     expect(cliente.logoArquivo).toBeNull();
+  });
+});
+
+describe('nenhuma operação apaga material sem ser o apagar com confirmação', () => {
+  beforeEach(() => { docs.clear(); removidos.length = 0; });
+
+  it('removerMaterial sem motivo explícito recusa e não toca no banco nem no Storage', async () => {
+    const cliente = { id: 'c7' };
+    const [prova] = (await enviarMateriais(cliente, [new File(['p'], 'print.jpg', { type: 'image/jpeg' })])).salvos;
+    await expect(removerMaterial(cliente, prova)).rejects.toThrow(/confirmação/);
+    await expect(removerMaterial(cliente, prova, { trocando: 'logo' })).rejects.toThrow(); // troca de logo não apaga o que não é logo
+    await expect(removerMaterial(cliente, { ...prova, origem: 'prova_social' }, { trocando: 'referencia' })).rejects.toThrow();
+    expect(docs.has(prova.id)).toBe(true); expect(removidos).toEqual([]);
+  });
+
+  it('trocar o logo só apaga o logo anterior', async () => {
+    const cliente = { id: 'c8' };
+    const [foto] = (await enviarMateriais(cliente, [new File(['f'], 'foto.jpg', { type: 'image/jpeg' })])).salvos;
+    const l1 = await salvarLogo(cliente, new File(['a'], 'v1.png', { type: 'image/png' }));
+    await salvarLogo(cliente, new File(['b'], 'v2.png', { type: 'image/png' }));
+    expect(docs.has(l1.id)).toBe(false); expect(docs.has(foto.id)).toBe(true);
+  });
+
+  it('no código, só lib/materiais.js (removerMaterial) e o apagar cliente (lib/cascata.js) apagam material; quem chama removerMaterial passa o motivo', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const raiz = join(process.cwd(), 'src');
+    const arquivos = []; const andar = (d) => readdirSync(d).forEach((n) => { const p = join(d, n); if (statSync(p).isDirectory()) andar(p); else if (/\.js$/.test(n) && !/\.test\.js$/.test(n)) arquivos.push(p); });
+    andar(raiz);
+    const rel = (p) => p.slice(raiz.length + 1).split('\\').join('/');
+    const apagaDireto = arquivos.filter((p) => /(db\.remover|removerTodos)\(\s*COL\.materiais/.test(readFileSync(p, 'utf8'))).map(rel).sort();
+    expect(apagaDireto).toEqual(['lib/cascata.js', 'lib/materiais.js']);
+    expect(readFileSync(join(raiz, 'lib/materiais.js'), 'utf8').match(/db\.remover\(\s*COL\.materiais/g)).toHaveLength(1); // só dentro de removerMaterial
+    // Toda chamada de removerMaterial fora da definição diz por quê (confirmado após confirmar(), ou trocando logo/referência).
+    for (const p of arquivos) {
+      const src = readFileSync(p, 'utf8');
+      for (const m of src.matchAll(/removerMaterial\(([^;]*?)\);/g)) {
+        if (/export async function/.test(src.slice(Math.max(0, m.index - 30), m.index))) continue;
+        expect(m[1], `${rel(p)}: removerMaterial sem motivo`).toMatch(/confirmado: true|trocando: /);
+        if (/confirmado: true/.test(m[1])) expect(src.slice(Math.max(0, m.index - 600), m.index), `${rel(p)}: apagar sem confirmar()`).toMatch(/confirmar\(/);
+      }
+    }
   });
 });

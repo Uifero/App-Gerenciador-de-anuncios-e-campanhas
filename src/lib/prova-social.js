@@ -67,16 +67,37 @@ const dataCurta = (iso) => { const d = new Date(iso); return Number.isNaN(d.getT
 /** Linha que vai para o campo "provas sociais", com a fonte anotada. */
 export const linhaProva = (resumo, emISO) => `${txt(resumo)} (do print enviado em ${dataCurta(emISO)})`;
 
+/** Chave de comparação de uma linha de prova: sem a data do print, sem acento, caixa e espaços. */
+const chaveProva = (l) => txt(l).replace(/\s*\(do print enviado em [^)]*\)\s*$/i, '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
 /**
  * Acrescenta as linhas novas ao texto atual de provas sociais, uma por linha, NUNCA apagando o que já existe.
- * Linha repetida (mesmo texto) não entra de novo. Devolve { texto, acrescentadas }.
+ * Linha repetida (mesmo texto, mesmo que de outro dia) não entra de novo. Devolve { texto, acrescentadas }.
  */
 export function acrescentarProvas(atual, linhas = []) {
   const base = txt(atual);
-  const jaTem = new Set(base.split('\n').map((l) => l.trim().toLowerCase()).filter(Boolean));
-  const novas = linhas.map(txt).filter((l) => l && !jaTem.has(l.toLowerCase()) && (jaTem.add(l.toLowerCase()), true));
+  const jaTem = new Set(base.split('\n').map(chaveProva).filter(Boolean));
+  const novas = linhas.map(txt).filter((l) => l && !jaTem.has(chaveProva(l)) && (jaTem.add(chaveProva(l)), true));
   return { texto: [base, ...novas].filter(Boolean).join('\n'), acrescentadas: novas.length };
 }
+
+const palavras = (l) => new Set(chaveProva(l).replace(/[^a-z0-9,]+/g, ' ').split(' ').filter((w) => w.length >= 3));
+/**
+ * Linha já existente que diz o mesmo que `resumo` (o mesmo print lido de novo: a IA raramente repete a frase
+ * idêntica). Parecida = pelo menos 60% das palavras da frase mais curta estão na outra. Devolve a linha ou ''.
+ */
+export function provaParecida(resumo, atual) {
+  const a = palavras(resumo); if (a.size < 2) return '';
+  for (const l of txt(atual).split('\n').map((x) => x.trim()).filter(Boolean)) {
+    const b = palavras(l); if (b.size < 2) continue;
+    const comuns = [...a].filter((w) => b.has(w)).length;
+    if (comuns / Math.min(a.size, b.size) >= 0.6) return l;
+  }
+  return '';
+}
+
+/** Print que já está em Materiais (mesma impressão digital do arquivo original). Devolve o material ou null. */
+export const printJaGuardado = (hash, materiais = []) => (hash ? materiais.find((m) => (m.hashOriginal === hash || m.hash === hash) && tipoMaterial(m) === 'prova_social') || null : null);
 
 // ---------- Materiais ----------
 const ehVideo = (m) => /^video\//.test(m?.tipo || m?.mime || '') || /\.(mp4|mov|webm|m4v)$/i.test(m?.nome || m?.url || '');

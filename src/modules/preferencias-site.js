@@ -1,13 +1,18 @@
 // "Como eu quero o site" e o que o operador gostou no site de referência (painel "Material para montar o site").
 // Fica em cliente.preferenciasSite e entra em TODA geração e ajuste do site, nos dois modos (core/ia.js
 // contextoPreferencias), acima dos padrões da IA e abaixo das regras do app. Da referência: só estrutura e estilo.
-import { db, COL, removerArquivo } from '../core/storage.js';
-import { salvarMaterial } from '../lib/materiais.js';
+import { db, COL } from '../core/storage.js';
+import { salvarMaterial, removerMaterial } from '../lib/materiais.js';
 import { lerReferenciaPrint } from '../core/ia.js';
 import { prepararImagem } from './diagnostico.js';
 import { esc, $, on, toast, ocupado, campoArquivo } from '../core/ui.js';
 
 const prefs = (cliente) => cliente.preferenciasSite || {};
+/** Tira o print de referência antigo: só apaga se o registro for mesmo um print de referência (nunca outro material). */
+async function tirarReferencia(cliente, p) {
+  const mat = p?.materialId ? await db.obter(COL.materiais, p.materialId).catch(() => null) : null;
+  if (mat?.origem === 'referencia') await removerMaterial(cliente, mat, { trocando: 'referencia' });
+}
 async function salvarPrefs(cliente, patch) {
   const preferenciasSite = { ...prefs(cliente), ...patch };
   await db.atualizar(COL.clientes, cliente.id, { preferenciasSite }, { silencioso: true });
@@ -61,7 +66,7 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}) {
     const f = inp.files?.[0]; if (!f) return;
     const antigo = prefs(cliente).referenciaPrint;
     const m = await salvarMaterial(cliente, new Blob([f], { type: f.type || 'image/jpeg' }), 'referencia', { nomeOriginal: f.name, tamanho: f.size });
-    if (antigo?.materialId) { await removerArquivo(antigo.path); await db.remover(COL.materiais, antigo.materialId).catch(() => {}); }
+    await tirarReferencia(cliente, antigo);
     await salvarPrefs(cliente, { referenciaPrint: { materialId: m.id, url: m.url, path: m.path, nome: f.name }, referenciaLeitura: '' });
     aoMudar(); await lerPrint(); // já tenta ler a estrutura (sem IA, o texto "O que eu gostei" continua valendo)
   }));
@@ -80,7 +85,7 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}) {
   on(alvo, 'click', '[data-ler-ref-print]', () => lerPrint());
   on(alvo, 'click', '[data-tirar-ref-print]', (b) => ocupado(b, async () => {
     const p = prefs(cliente).referenciaPrint; if (!p) return;
-    await removerArquivo(p.path); await db.remover(COL.materiais, p.materialId).catch(() => {});
+    await tirarReferencia(cliente, p);
     await salvarPrefs(cliente, { referenciaPrint: null, referenciaLeitura: '' }); aoMudar();
   }));
 }

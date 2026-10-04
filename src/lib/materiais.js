@@ -50,8 +50,18 @@ export async function enviarMateriais(cliente, arquivos = [], aoProgresso = () =
   return { salvos, falhas };
 }
 
-/** Apaga um material (registro + arquivo no Storage). Se era o logo atual, o cliente fica sem logo. */
-export async function removerMaterial(cliente, m) {
+/**
+ * Apaga um material (registro + arquivo no Storage). Se era o logo atual, o cliente fica sem logo.
+ * ÚNICO lugar que apaga um material (fora apagar o cliente inteiro, em lib/cascata.js). Exige motivo explícito:
+ *  - { confirmado: true } — a pessoa clicou em apagar e confirmou na janela;
+ *  - { trocando: 'logo' | 'referencia' } — troca do logo ou do print de referência, e só apaga material dessa origem.
+ * Sem isso, recusa: nenhum outro fluxo (envio de prints, borrar, "É print de cliente"...) pode sumir com um arquivo.
+ */
+export async function removerMaterial(cliente, m, { confirmado = false, trocando = null } = {}) {
+  if (!m?.id) throw new Error('Material inválido.');
+  if (!confirmado && !(trocando && ['logo', 'referencia'].includes(trocando) && m.origem === trocando)) {
+    throw new Error('Apagar um material só pelo botão de apagar, com confirmação.');
+  }
   await removerArquivo(m.path);
   if (m.borrada?.path) await removerArquivo(m.borrada.path); // cópia borrada do print (o site usa ela)
   await db.remover(COL.materiais, m.id);
@@ -84,7 +94,7 @@ export async function salvarLogo(cliente, file) {
   const { tipo } = validarLogo(file);
   const anteriores = (await db.listar(COL.materiais, { clienteId: cliente.id })).filter((m) => m.origem === ORIGEM_LOGO);
   const mat = await salvarMaterial(cliente, new Blob([file], { type: tipo }), ORIGEM_LOGO, { nomeOriginal: file.name, tamanho: file.size });
-  for (const m of anteriores) { await removerArquivo(m.path); await db.remover(COL.materiais, m.id); }
+  for (const m of anteriores) await removerMaterial({ id: cliente.id }, m, { trocando: ORIGEM_LOGO }); // cliente "vazio": o logoArquivo é regravado logo abaixo
   const logoArquivo = { materialId: mat.id, url: mat.url, nome: file.name, tipo, em: new Date().toISOString() };
   await db.atualizar(COL.clientes, cliente.id, { logoArquivo });
   cliente.logoArquivo = logoArquivo;
