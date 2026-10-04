@@ -62,7 +62,7 @@ describe('prévia do pacote com cara de loja', () => {
     expect(g.find((x) => x.id === 'cores').caminho).toMatch(/Loja virtual > Temas/);
     const p0 = g.find((x) => x.id === 'produto-0').itens;
     expect(p0).toEqual(expect.arrayContaining([{ rotulo: 'Preço', valor: 'R$ 129,90' }, { rotulo: 'Variações', valor: 'Tamanho: P, M, G' }, { rotulo: 'Título para SEO', valor: 'Legging Power cintura alta' }]));
-    const nuvem = gruposPlataforma(dadosDoPacote({ cliente, site: { ...site, plataforma: 'nuvemshop' }, produtos }));
+    const nuvem = gruposPlataforma(dadosDoPacote({ cliente, site: { ...site, plataforma: 'nuvemshop', plataformaConfirmada: true }, produtos }));
     expect(nuvem.find((x) => x.id === 'banner').caminho).toMatch(/Design > Personalizar/);
     expect(nuvem.find((x) => x.id === 'produto-0').caminho).toMatch(/Produtos > Importar\/Exportar/);
   });

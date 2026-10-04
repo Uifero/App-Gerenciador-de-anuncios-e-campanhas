@@ -4,6 +4,7 @@ import { esc } from '../core/ui.js';
 import { rastreamentoDe, codigoHead, codigoCheckout, CHAVE_CONSENTIMENTO, textoAvisoCookies } from './rastreamento.js';
 import { normalizarLayout, tituloBloco } from './site-blocos.js';
 import { produtosComFotos, imagemDoLugar, fotosDoUso } from './fotos-site.js';
+import { depoimentosVivos } from './prova-social.js';
 
 /** Formas de pagamento que o selo "compra segura" pode mostrar (ícones genéricos desenhados aqui, sem logo de bandeira). */
 export const FORMAS_PAGAMENTO = [['cartao', 'Cartão de crédito'], ['pix', 'Pix'], ['boleto', 'Boleto']];
@@ -71,7 +72,8 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
       ${Number(p.preco) ? `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>` : '<!-- sem preço cadastrado: sem botão de compra -->'}</article>`;
   };
   const grade = (lista, bloco) => { const n = L.variacoes[bloco]?.colunas; return `<div class="grid${n ? ` cols${n}` : ''}">${lista.map(card).join('')}</div>`; };
-  const deps = (c.depoimentos || []).filter((d) => !L.depoimentosOcultos.includes(d.texto));
+  // Depoimentos lidos da fonte (perfil de marca, prints com a cópia borrada), não da cópia da última geração.
+  const deps = depoimentosVivos({ cliente, materiais, guardados: c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => !L.depoimentosOcultos.includes(d.texto));
   const alturaHero = { curto: '40px', alto: '140px' }[L.variacoes.hero?.altura] || '';
   const imgHero = L.imagens.hero?.url, imgMarca = L.imagens.marca?.url;
 

@@ -1,6 +1,7 @@
 // Cadastro de cliente (wizard em 3 etapas) e tela do cliente com abas conforme o escopo.
 import { db, COL } from '../core/storage.js';
 import { IDIOMAS, ESTAGIOS, MODULOS, ESCOPO_PADRAO } from '../lib/constantes.js';
+import { redirecionarRotaAntiga } from '../lib/etapas-site.js';
 import { $, $$, esc, on, lerForm, cabecalho, toast, confirmar, ocupado, opcoes, tag, dataBR, num, modal } from '../core/ui.js';
 import { obterConfig } from './configuracoes.js';
 import { resumoCliente, semaforoHtml, cartaoProgresso } from './alertas.js';
@@ -56,8 +57,10 @@ const etiquetaAuto = (c, campo) => (c?.autoPreenchido?.[campo] ? `<span class="t
   <label class="ml-1 inline-flex items-center gap-1 text-xs font-normal text-slate-600"><input type="checkbox" name="confirmar_${campo}"> Está certo</label>` : '');
 
 // "Aprovações do site" não é um módulo do escopo: aparece logo depois de Site/Loja sempre que o cliente tem site.
-const ABA_APROVACOES = { id: 'aprovacoes', nome: 'Aprovações do site', icone: 'circle-check', legenda: 'Links de aprovação do site para o cliente.' };
-export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]).flatMap((m) => (m.id === 'site' ? [m, ABA_APROVACOES] : [m]));
+// "Aprovações do site" virou o passo 5 de "Montar site" (aba Site/Loja). Endereço antigo -> o passo certo.
+export const abasDoCliente = (c) => MODULOS.filter((m) => (c.escopo || ESCOPO_PADRAO)[m.id]);
+/** Rotas antigas da área do site -> o passo do fluxo "Montar site" (#/c/<id>/site/<n>). null = não é rota antiga. */
+
 
 const camposRastreamento = (v) => ({ metaPixelId: v.metaPixelId, googleAdsId: v.googleAdsId, hotjarId: v.hotjarId, tawkPropertyId: v.tawkPropertyId, tawkWidgetId: v.tawkWidgetId });
 
@@ -294,6 +297,8 @@ export async function viewForm(el, id, { baseId = null } = {}) {
 
 // ---------------- tela do cliente ----------------
 export async function viewCliente(el, id, aba, abasMap) {
+  const antiga = redirecionarRotaAntiga(id, aba);
+  if (antiga) { location.replace(antiga); return; }
   const c = await db.obter(COL.clientes, id);
   if (!c) { el.innerHTML = '<p class="caption">Cliente não encontrado. <a class="text-indigo-600" href="#/">Voltar ao início</a></p>'; return; }
   const abas = abasDoCliente(c);

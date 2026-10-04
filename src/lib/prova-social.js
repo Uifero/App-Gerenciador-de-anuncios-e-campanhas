@@ -171,10 +171,26 @@ export function montarDepoimentos({ cliente, materiais = [], atuais = [], modelo
     usouModelos: true,
   };
 }
+/**
+ * Depoimentos na hora de mostrar o site (prévia, pacote, link, download): lidos da FONTE, não da cópia da última
+ * geração. Provas em texto vêm do perfil de marca como está agora; print usa a mídia atual do material (a cópia
+ * borrada, se houver; material apagado sai). Escritos à mão, de criativos e a escolha de cada print ficam como foram
+ * salvos. Sem nenhuma prova real, os modelos guardados (marcados para substituir).
+ */
+export function depoimentosVivos({ cliente, materiais = [], guardados = [], provasOcultas = [] }) {
+  const { depoimentos } = montarDepoimentos({ cliente, materiais, atuais: guardados.filter((d) => !ehModelo(d)), modelosIa: guardados.filter(ehModelo), provasOcultas });
+  if (!materiais.length) return depoimentos;
+  return depoimentos.map((d) => {
+    if (d.origem !== ORIGEM_PROVA || !d.materialId) return d;
+    const m = materiais.find((x) => x.id === d.materialId);
+    if (!m) return null;
+    return d.midiaUrl ? { ...d, midiaUrl: m.borrada?.url || m.url } : d;
+  }).filter(Boolean);
+}
 /** Tem alguma prova real para os depoimentos? (a IA nem escreve modelo quando tem) */
 export const temProvaReal = (args) => !montarDepoimentos({ ...args, modelosIa: [] }).usouModelos;
 
-// ---------- painel "Material para montar o site" ----------
+// ---------- resumo do material do site (passos 1 e 2 de "Montar site") ----------
 /**
  * Resumo do que já existe para montar o site. Só lê (cliente, produtos, materiais, site); nunca guarda cópia.
  * Devolve [{ chave, titulo, linhas: [texto], avisos: [texto], editar: { tipo: 'pergunta'|'rota', alvo } }].

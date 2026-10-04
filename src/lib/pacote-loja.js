@@ -6,6 +6,8 @@
 import { comTextosDoPacote } from './csv.js';
 import { normalizarVisual, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js';
 import { produtosComFotos, imagemDoLugar, fotosDoUso, rotuloFoto } from './fotos-site.js';
+import { plataformaDoSite, nomeTema } from './etapas-site.js';
+import { depoimentosVivos } from './prova-social.js';
 
 const txt = (v) => String(v ?? '').trim();
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -32,7 +34,9 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
     sobreImagens: fotosDoUso(materiais, 'sobre'),
     galeria: fotosDoUso(materiais, 'galeria'),
     provas: (provas || []).filter((x) => x?.url),
-    plataforma: site.plataforma === 'shopify' ? 'shopify' : 'nuvemshop',
+    // Só a plataforma escolhida pelo operador (passo 3 / pergunta 18); sem escolha, null: nenhum caminho de menu é chutado.
+    plataforma: ['shopify', 'nuvemshop'].includes(plataformaDoSite(site)) ? plataformaDoSite(site) : null,
+    tema: String(site.tema || '').trim(), nomeTema: nomeTema(site),
     nomeLoja: txt(cliente.nome) || 'Loja',
     logoUrl: cliente.logoArquivo?.url || '',
     cor, paleta,
@@ -43,7 +47,8 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
     sobre: txt(p.textosPagina?.sobre) || txt(c.storytelling),
     faq: (p.textosPagina?.faq || []).filter((f) => txt(f?.p) && txt(f?.r)),
     politicas: { trocas: txt(c.politicas?.trocas), envio: txt(c.politicas?.envio), privacidade: txt(c.politicas?.privacidade) },
-    depoimentos: (p.depoimentos?.length ? p.depoimentos : c.depoimentos || []).filter((d) => txt(d?.texto)),
+    // Lidos agora da fonte: provas em texto do perfil de marca, prints (cópia borrada) e escritos à mão (lib/prova-social.js).
+    depoimentos: depoimentosVivos({ cliente, materiais, guardados: p.depoimentos?.length ? p.depoimentos : c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => txt(d?.texto)),
     produtos: comTextosDoPacote(produtosComFotos(produtos, materiais), p).filter((x) => txt(x?.nome)).map((x) => ({
       nome: txt(x.nome), descricao: txt(x.descricao), preco: Number(x.preco) || null, precoPromocional: Number(x.precoPromocional) || null,
       variacoes: (x.variacoes || []).filter((v) => v?.nome && v.valores?.length), fotos: (x.fotos || []).map((f) => f?.url).filter(Boolean),
@@ -54,6 +59,7 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
 }
 
 // Caminhos de menu: as mesmas instruções do manual de entrega (sites.js, manualPacote).
+export const CONFIRA_TEMA = 'confira no editor do seu tema';
 const CAMINHOS = {
   shopify: {
     loja: 'Na criação da conta da Shopify (nome da loja); depois, nas configurações da loja',
@@ -82,6 +88,26 @@ const CAMINHOS = {
     provas: 'Design > Personalizar: adicione um bloco de banners/imagens na página inicial (o nome varia com o tema) e suba os prints',
   },
 };
+// Onde o caminho muda entre os temas da Shopify. Só o que é certo; no resto, "confira no editor do seu tema".
+const SHOPIFY_TEMA = {
+  dawn: {
+    banner: 'Loja virtual > Temas > Personalizar: na página inicial, seção "Banner de imagem" (ou "Apresentação de slides")',
+    provas: 'Loja virtual > Temas > Personalizar > Adicionar seção: "Multicoluna" ou "Imagem com texto", e suba os prints',
+  },
+  horizon: {
+    banner: `Loja virtual > Temas > Personalizar: na página inicial, a primeira seção de imagem grande (hero/slideshow; ${CONFIRA_TEMA})`,
+    provas: `Loja virtual > Temas > Personalizar > Adicionar seção: uma seção de imagens/galeria (${CONFIRA_TEMA}), e suba os prints`,
+  },
+};
+const SEM_PLATAFORMA = 'Escolha a plataforma no passo 3 ("Como quero") para ver onde colocar';
+/** Caminhos de menu para a plataforma e o tema escolhidos. Sem plataforma escolhida, nenhum caminho (nem de outra). */
+export function caminhosDe(plataforma, tema = '') {
+  if (!CAMINHOS[plataforma]) return Object.fromEntries(Object.keys(CAMINHOS.shopify).map((k) => [k, k === 'fotosAjuda' ? { contain: SEM_PLATAFORMA, cover: SEM_PLATAFORMA } : SEM_PLATAFORMA]));
+  if (plataforma !== 'shopify') return CAMINHOS[plataforma];
+  const t = String(tema || '').toLowerCase();
+  const extra = SHOPIFY_TEMA[t] || { banner: `${CAMINHOS.shopify.banner} (${CONFIRA_TEMA})`, provas: `${CAMINHOS.shopify.provas} (${CONFIRA_TEMA})` };
+  return { ...CAMINHOS.shopify, ...extra, fotos: `${CAMINHOS.shopify.fotos} (${CONFIRA_TEMA})`, secoes: t === 'dawn' ? CAMINHOS.shopify.secoes : `${CAMINHOS.shopify.secoes} (${CONFIRA_TEMA})` };
+}
 
 const variacoesTexto = (vs = []) => vs.map((v) => `${v.nome}: ${v.valores.join(', ')}`).join(' · ');
 /** "1. F5 — frente.jpg (principal)" / "2. foto da aba Produtos — x.jpg": código + nome original de cada arquivo, um por linha. */
@@ -92,12 +118,12 @@ const listaArquivos = (lista = [], produto = false) => lista.filter((x) => x?.ur
  * grupo sem nenhum item também (nada de campo em branco para copiar).
  */
 export function gruposPlataforma(d) {
-  const cam = CAMINHOS[d.plataforma] || CAMINHOS.nuvemshop;
+  const cam = caminhosDe(d.plataforma, d.tema);
   const item = (rotulo, valor, tipo) => (txt(valor) ? { rotulo, valor: txt(valor), ...(tipo ? { tipo } : {}) } : null);
   const g = (id, titulo, caminho, itens) => ({ id, titulo, caminho, itens: itens.filter(Boolean) });
   const grupos = [
     g('loja', 'Nome da loja', cam.loja, [item('Nome da loja', d.nomeLoja)]),
-    g('logo', 'Logo', cam.logo, [d.logoUrl ? item('Arquivo do logo (baixe em "Baixar pacote")', d.logoUrl, 'imagem') : item('Logo', 'Sem logo salvo: envie na pergunta 9 ou no painel "Material para montar o site".')]),
+    g('logo', 'Logo', cam.logo, [d.logoUrl ? item('Arquivo do logo (baixe em "Baixar pacote")', d.logoUrl, 'imagem') : item('Logo', 'Sem logo salvo: envie no passo 2 de "Montar site".')]),
     g('banner', 'Banner', cam.banner, (d.banners.length ? d.banners : [d.banner]).flatMap((b, i) => [
       item(`${b.uso || `Banner ${i + 1}`}: título`, b.titulo), item(`${b.uso || `Banner ${i + 1}`}: subtítulo`, b.subtitulo), item(`${b.uso || `Banner ${i + 1}`}: botão`, b.cta)])),
     g('home', 'Textos da home', cam.cores, [item('Ordem das seções da home', d.secoesHome.join(' > ')), item('Texto "Sobre a marca" (bloco de texto da home)', d.sobre)]),

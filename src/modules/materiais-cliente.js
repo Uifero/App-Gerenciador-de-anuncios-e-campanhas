@@ -1,6 +1,6 @@
 // Janela "Materiais do cliente": enviar fotos e vídeos (vários de uma vez, botão ou arrastar), ver tudo agrupado
 // (Logo, Fotos, Vídeos, Provas sociais) e apagar. Usa salvarMaterial (lib/materiais.js): mesmo Storage, mesmas regras e
-// mesmo limite de hoje; nada guardado em paralelo. Abre do painel "Material para montar o site", da pergunta 8 e da aba
+// mesmo limite de hoje; nada guardado em paralelo. Abre do passo 2 de "Montar site", da pergunta 8 e da aba
 // Criativos. O Estúdio (etapa 1) e o "Ajustar este site" já leem esta mesma lista.
 import { db, COL } from '../core/storage.js';
 import { enviarMateriais, removerMaterial, ACEITA_MATERIAL, limiteMaterialMB, garantirCodigos, salvarUsos } from '../lib/materiais.js';

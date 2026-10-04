@@ -17,7 +17,9 @@ const htmlDesc = (p) => (p.descricao ? `<p>${String(p.descricao).replace(/[<>&]/
  */
 export function comTextosDoPacote(produtos, pacote) {
   const mapa = new Map((pacote?.descricoesProdutos || []).map((d) => [String(d.nome || '').toLowerCase(), d]));
-  return produtos.map((p) => { const d = mapa.get(String(p.nome || '').toLowerCase()); return d ? { ...p, descricao: d.descricao || p.descricao, seoTitulo: d.seoTitulo, seoDescricao: d.seoDescricao } : p; });
+  // Pelo id do produto (não se perde se o nome mudar); pelo nome só nos pacotes antigos, gerados antes do id.
+  const porId = new Map((pacote?.descricoesProdutos || []).filter((d) => d.produtoId).map((d) => [d.produtoId, d]));
+  return produtos.map((p) => { const d = porId.get(p.id) || mapa.get(String(p.nome || '').toLowerCase()); return d ? { ...p, descricao: d.descricao || p.descricao, seoTitulo: d.seoTitulo, seoDescricao: d.seoDescricao } : p; });
 }
 const preco = (n) => (n == null || n === '' ? '' : Number(n).toFixed(2));
 

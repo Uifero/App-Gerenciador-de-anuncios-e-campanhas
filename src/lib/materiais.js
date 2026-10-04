@@ -4,7 +4,7 @@
 import { db, COL, removerArquivo } from '../core/storage.js';
 import { DEMO } from '../core/firebase.js';
 import { enviarArquivoOuAvisar } from './uploads.js';
-import { novosCodigos } from './fotos-site.js';
+import { novosCodigos, planoMigracao, proximaOrdem, normalizarUsos } from './fotos-site.js';
 
 const EXTENSOES = { 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/svg+xml': 'svg', 'image/jpeg': 'jpg', 'video/mp4': 'mp4', 'video/quicktime': 'mov' };
 
@@ -55,15 +55,17 @@ export async function enviarMateriais(cliente, arquivos = [], aoProgresso = () =
  * Apaga um material (registro + arquivo no Storage). Se era o logo atual, o cliente fica sem logo.
  * ÚNICO lugar que apaga um material (fora apagar o cliente inteiro, em lib/cascata.js). Exige motivo explícito:
  *  - { confirmado: true } — a pessoa clicou em apagar e confirmou na janela;
- *  - { trocando: 'logo' | 'referencia' } — troca do logo ou do print de referência, e só apaga material dessa origem.
+ *  - { trocando: 'logo' | 'referencia' } — troca do logo ou do print de referência, e só apaga material dessa origem;
+ *  - { desfazendoMigracao: true } — só registro criado pela migração das fotos dos produtos; o ARQUIVO fica (é do produto).
  * Sem isso, recusa: nenhum outro fluxo (envio de prints, borrar, "É print de cliente"...) pode sumir com um arquivo.
  */
-export async function removerMaterial(cliente, m, { confirmado = false, trocando = null } = {}) {
+export async function removerMaterial(cliente, m, { confirmado = false, trocando = null, desfazendoMigracao = false } = {}) {
   if (!m?.id) throw new Error('Material inválido.');
-  if (!confirmado && !(trocando && ['logo', 'referencia'].includes(trocando) && m.origem === trocando)) {
+  const soRegistro = desfazendoMigracao && Boolean(m.migradoDe);
+  if (!confirmado && !soRegistro && !(trocando && ['logo', 'referencia'].includes(trocando) && m.origem === trocando)) {
     throw new Error('Apagar um material só pelo botão de apagar, com confirmação.');
   }
-  await removerArquivo(m.path);
+  if (!soRegistro) await removerArquivo(m.path);
   if (m.borrada?.path) await removerArquivo(m.borrada.path); // cópia borrada do print (o site usa ela)
   await db.remover(COL.materiais, m.id);
   if (cliente.logoArquivo?.materialId === m.id) { await db.atualizar(COL.clientes, cliente.id, { logoArquivo: null }); cliente.logoArquivo = null; }
@@ -127,4 +129,41 @@ export function garantirCodigos(cliente, lista) {
 /** Grava os usos que mudaram ([{ id, usos }], de mudarUso/aplicarReferencias). */
 export async function salvarUsos(patches = []) {
   for (const p of patches) await db.atualizar(COL.materiais, p.id, { usos: p.usos }, { silencioso: true });
+}
+
+// ---------- fotos dos produtos: um lugar só (Materiais) ----------
+/**
+ * Migra as fotos do campo antigo dos produtos para Materiais (mesmos arquivos, já ligados ao produto, mesma ordem e
+ * mesma foto principal). Idempotente e reversível (desfazerMigracaoFotos); nada é apagado. Guarda o resumo em
+ * cliente.migracaoFotos. Devolve { fotos, produtos, jaMigrados }.
+ */
+export async function migrarFotosProdutos(cliente) {
+  const [produtos, materiais] = await Promise.all([db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.materiais, { clienteId: cliente.id })]);
+  const { criar, marcar, jaMigrados } = planoMigracao(produtos, materiais, cliente.id);
+  if (!marcar.length) return { fotos: 0, produtos: 0, jaMigrados };
+  for (const m of criar) await db.criar(COL.materiais, m, undefined, { silencioso: true });
+  for (const id of marcar) await db.atualizar(COL.produtos, id, { fotosMigradas: true }, { silencioso: true });
+  const migracaoFotos = { em: new Date().toISOString(), fotos: (cliente.migracaoFotos?.fotos || 0) + criar.length, produtos: (cliente.migracaoFotos?.produtos || 0) + marcar.length };
+  await db.atualizar(COL.clientes, cliente.id, { migracaoFotos }, { silencioso: true });
+  cliente.migracaoFotos = migracaoFotos;
+  return { fotos: criar.length, produtos: marcar.length, jaMigrados };
+}
+/** Desfaz a migração: tira só os REGISTROS criados por ela (o arquivo é do produto e fica) e volta o campo antigo a valer. */
+export async function desfazerMigracaoFotos(cliente) {
+  const [produtos, materiais] = await Promise.all([db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.materiais, { clienteId: cliente.id })]);
+  const migrados = materiais.filter((m) => m.migradoDe);
+  for (const m of migrados) await removerMaterial(cliente, m, { desfazendoMigracao: true }); // o arquivo continua no produto
+  for (const p of produtos.filter((x) => x.fotosMigradas)) await db.atualizar(COL.produtos, p.id, { fotosMigradas: false }, { silencioso: true });
+  await db.atualizar(COL.clientes, cliente.id, { migracaoFotos: null }, { silencioso: true });
+  cliente.migracaoFotos = null;
+  return { fotos: migrados.length };
+}
+/** Foto enviada no formulário do produto: vai para Materiais, já ligada ao produto (a 1ª do produto vira a principal). */
+export async function enviarFotoDoProduto(cliente, produtoId, file, materiais = []) {
+  const { tipo } = validarMaterial(file);
+  const hash = await hashArquivo(file);
+  const ordem = proximaOrdem(materiais, produtoId);
+  const usos = normalizarUsos({ produtos: [{ id: produtoId, ordem, principal: ordem === 1, por: 'manual' }] });
+  const m = await salvarMaterial(cliente, new Blob([file], { type: tipo }), ORIGEM_ENVIO, { tipo, nomeOriginal: file.name, tamanho: file.size, usos, ...(hash ? { hash } : {}) });
+  return m;
 }

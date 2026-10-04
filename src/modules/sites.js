@@ -1,5 +1,8 @@
-// Aba Site/Loja: modo "custom" (site HTML exportável) ou "pacote_plataforma" (CSV + textos p/ Nuvemshop/Shopify),
-// ambos com manual de handoff em PDF. Nunca processa pagamento: só marca o ponto de encaixe de checkout de terceiros.
+// Aba Site/Loja = "Montar site": um fluxo guiado de 6 passos (lib/etapas-site.js) para os dois modos — "custom" (site
+// HTML exportável) e "pacote_plataforma" (CSV + textos para Shopify/Nuvemshop). Os passos reaproveitam os componentes
+// de sempre (questionário, Materiais, "Como eu quero o site", ajustes rápidos, "Ajustar este site", Clientes reais,
+// Aprovações do site); nenhum passo é trancado. Rota: #/c/<cliente>/site/<1-6>; sem número, abre no 1º com "Falta algo".
+// Nunca processa pagamento: só marca o ponto de encaixe de checkout de terceiros.
 import { db, COL } from '../core/storage.js';
 import { gerarConteudoSite, gerarTextosPacote, gerarFaqSite, objecoesDe } from '../core/ia.js';
 import { gerarSiteHTML, faqValida, FORMAS_PAGAMENTO, PAGAMENTOS_PADRAO } from '../lib/sitegen.js';
@@ -14,15 +17,19 @@ import { estadoDoSite, registrarVersao, versoesDoModo, aplicarOperacoes, resumoM
 import { normalizarVisual, nomeSecaoLoja, imagensParaBanner, printsDoCliente, semRepetirDepoimentos, AJUSTES_FOTO } from '../lib/visual-site.js';
 import { printsPainelHtml, abrirBorrar, autorizarPrints, baixarPrintsZip } from './prints-clientes.js';
 import { montarAjusteSite } from './ajuste-site.js';
-import { montarPainelMaterial } from './material-site.js';
-import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal } from '../lib/prova-social.js';
+import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal, resumoMaterialSite, linhasDeProva, ehModelo } from '../lib/prova-social.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
-import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado } from '../core/ui.js';
+import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, moeda, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado, confirmar } from '../core/ui.js';
 import { dadosDoPacote, gruposPlataforma, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
-import { lerReferencias, aplicarReferencias, comUsos, produtosComFotos, imagemDoLugar, arquivosPorPasta, rotuloFoto } from '../lib/fotos-site.js';
-import { garantirCodigos, salvarUsos } from '../lib/materiais.js';
-import { resultadoFotosTextoHtml } from './preferencias-site.js';
+import { lerReferencias, aplicarReferencias, comUsos, produtosComFotos, imagemDoLugar, arquivosPorPasta, rotuloFoto, temCodigo, resumoUsos, porCodigo } from '../lib/fotos-site.js';
+import { garantirCodigos, salvarUsos, desfazerMigracaoFotos } from '../lib/materiais.js';
+import { preferenciasHtml, referenciaExtraHtml, ligarPreferencias, resultadoFotosTextoHtml } from './preferencias-site.js';
+import { provaSocialHtml, ligarProvaSocial } from './prova-social.js';
+import { logoHtml, ligarLogo } from './logo-cliente.js';
+import { abrirMateriais } from './materiais-cliente.js';
+import { abrirProduto, garantirMigracaoFotos } from './produtos.js';
+import { ETAPAS, STATUS_ETAPA, statusEtapas, primeiraEtapaComFalta, plataformaDoSite, patchPlataforma, PLATAFORMAS_SITE, TEMAS_SHOPIFY, nomeTema } from '../lib/etapas-site.js';
 
 /** { materialId: usos } (rascunho do "Ajustar este site") -> patches para comUsos. */
 const patchesDe = (usosFotos) => Object.entries(usosFotos || {}).map(([id, usos]) => ({ id, usos }));
@@ -45,8 +52,8 @@ function opsDoVisual(v, modo, site, materiais = []) {
   return ops;
 }
 
-// Painel "Site gerado": abre sozinho depois de qualquer "Gerar site" (a aba é redesenhada; o pedido sobrevive aqui).
-const abrirResultadoDepois = new Set();
+// Depois de "Gerar site" a aba é redesenhada: o pedido de rolar até a prévia sobrevive aqui.
+const mostrarDepoisDeGerar = new Set();
 
 const nomePlat = (v) => (PLATAFORMAS.find(([k]) => k === v) || [, v])[1];
 
@@ -69,15 +76,25 @@ export const textoParaFaq = (txt) => listaDeLinhas(txt).map((l) => { const [p, .
 /** Sem IA: uma linha por objeção, já em forma de pergunta, com a resposta em branco para completar. */
 export const perguntasDasObjecoes = (cliente) => objecoesDe(cliente).map((o) => `${/[?？]$/.test(o) ? o : o.charAt(0).toUpperCase() + o.slice(1) + '?'} | `).join('\n');
 
+/** Passo pedido na rota (#/c/<id>/site/<n>), ou null. */
+export const passoDaRota = (hash = typeof location !== 'undefined' ? location.hash : '') => { const n = Number((/^#\/c\/[^/]+\/site\/(\d)/.exec(hash) || [])[1]); return n >= 1 && n <= 6 ? n : null; };
+export const rotaDoPasso = (clienteId, n) => `#/c/${clienteId}/site/${n}`;
+
+const COR_STATUS = { completo: 'bg-emerald-50 text-emerald-800 border-emerald-300', falta: 'bg-amber-50 text-amber-800 border-amber-300', opcional: 'bg-slate-100 text-slate-600 border-slate-300' };
+const ICONE_STATUS = { completo: 'circle-check', falta: 'circle-exclamation', opcional: 'circle-minus' };
+
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
-  const [produtos, sites, criativos, materiais, aprovacoes, respostasAprov] = await Promise.all([
+  await garantirMigracaoFotos(cliente); // fotos dos produtos: um lugar só (Materiais), mesmos arquivos
+  const [produtosBase, sites, criativos, materiais, aprovacoes, respostasAprov] = await Promise.all([
     db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.criativos, { clienteId: cliente.id }),
     db.listar(COL.materiais, { clienteId: cliente.id }), db.listar(COL.aprovacoes, { clienteId: cliente.id }).catch(() => []), db.listar(COL.respostas, { clienteId: cliente.id }).catch(() => []),
   ]);
   materiais.splice(0, materiais.length, ...(await garantirCodigos(cliente, materiais).catch(() => materiais))); // F1, F2... (lib/fotos-site.js)
-  const etiquetaAprov = etiquetaSite(aprovacoes, respostasAprov); // "Aprovado v3", "Ajuste pedido v3"... (leva à aba Aprovações do site)
+  // Produtos como o site os vê: fotos lidas de Materiais ("Usar em"), nunca uma cópia.
+  const produtosComF = () => produtosComFotos(produtosBase, materiais);
+  const produtos = produtosBase; // nomes, preços, variações: a fonte é a aba Produtos
+  const etiquetaAprov = etiquetaSite(aprovacoes, respostasAprov); // "Aprovado v3", "Ajuste pedido v3"... (passo 5)
   let site = sites[0] || null;
-  // Criativos aprovados marcados "usar como prova social" (toggle na aba Criativos) — candidatos a depoimento do site.
   const marcados = criativos.filter((c) => c.provaSocial && ['aprovado', 'em_uso', 'pausado'].includes(c.status));
 
   const salvarSite = async (patch) => {
@@ -93,15 +110,26 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     await salvarSite({ ...patch, ...extra });
   };
 
+  // ---------- navegação entre os passos ----------
+  const etapas = statusEtapas({ cliente, site, produtos: produtosComF(), materiais, etiquetaAprov });
+  const pedido = passoDaRota();
+  const passo = pedido || primeiraEtapaComFalta(etapas);
+  if (!pedido && typeof history !== 'undefined') history.replaceState(null, '', rotaDoPasso(cliente.id, passo)); // sem recarregar
+  const irPara = (n) => { location.hash = rotaDoPasso(cliente.id, n); };
+  const irParaGerar = () => irPara(4);
+  const custom = site?.modo === 'custom';
+  const plat = plataformaDoSite(site);
+  const gerado = plat ? (custom ? temCustom(site) : temPacote(site)) : false;
+  const modoV = custom ? 'custom' : 'pacote';
+
   // "F3 no banner, F5 no Thermora" (texto "Como eu quero o site"): aplica como se fosse o seletor "Usar em", marcado
   // "definido pelo texto". Sem IA. O seletor e a escolha direta do modo vencem; conflito e código que não existe ficam
-  // guardados no site (site.fotosTexto) e aparecem no painel até a próxima aplicação.
+  // guardados no site (site.fotosTexto) e aparecem no passo 4 até a próxima aplicação.
   const aplicarFotosTexto = async () => {
     const mats = await garantirCodigos(cliente, await db.listar(COL.materiais, { clienteId: cliente.id }));
     const { refs, avisos } = lerReferencias(cliente.preferenciasSite?.texto || '', { materiais: mats, produtos });
-    const custom = site?.modo === 'custom';
     const L = normalizarLayout(site?.layout);
-    const direta = custom ? { banner: L.imagens.hero || null, sobre: L.imagens.marca || null } : { banner: normalizarVisual(site?.pacote?.visual).banner };
+    const direta = site?.modo === 'custom' ? { banner: L.imagens.hero || null, sobre: L.imagens.marca || null } : { banner: normalizarVisual(site?.pacote?.visual).banner };
     const r = aplicarReferencias(mats, refs, { direta, produtos });
     await salvarUsos(r.patches);
     materiais.splice(0, materiais.length, ...comUsos(mats, r.patches));
@@ -111,231 +139,281 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     return fotosTexto;
   };
 
-  // Geração dos textos com IA no modo do site — usada pelo botão do formulário e pelo "Gerar site com essas respostas".
-  // Se o OUTRO modo já foi gerado e este ainda não, a base (textos principais, cores, FAQ, depoimentos) vem de lá e é
-  // reaplicada por cima do que a IA escrever (lib/site-modos.js): o cliente continua vendo o que já aprovou.
+  // O ÚNICO "Gerar site" (passo 4). Se o OUTRO modo já foi gerado e este ainda não, a base (textos principais, cores,
+  // FAQ, depoimentos) vem de lá e é reaplicada por cima do que a IA escrever (lib/site-modos.js).
   const gerarComIa = (b) => ocupado(b, async () => {
+    if (!plat) { toast('Escolha a plataforma no passo 3 ("Como quero") antes de gerar.', 'erro'); return; }
+    if (!produtos.length && !custom) { toast('Cadastre pelo menos um produto (passo 2) antes de gerar o pacote.', 'erro'); return; }
     await aplicarFotosTexto(); // antes da IA: a imagem do banner escolhida pelo texto não é trocada por ela
-    const base = baseParaGerar(site, site.modo === 'custom' ? 'custom' : 'pacote');
+    const base = baseParaGerar(site, custom ? 'custom' : 'pacote');
     const reaproveitou = base ? { avisoModosVisto: false, baseReaproveitadaEm: new Date().toISOString() } : {};
-    if (site.modo === 'custom') {
+    if (custom) {
       const atual = site.conteudo || {};
       // Depoimentos: com prova social real (texto, prints, criativos, escritos à mão), só o real — a IA nem escreve
       // modelo. Sem nenhuma prova, os modelos da IA, sempre marcados "[MODELO – substituir…]" (lib/prova-social.js).
       const argsProva = { cliente, materiais, atuais: atual.depoimentos || [], provasOcultas: atual.provasOcultas || [] };
       const { visual, ...r } = await gerarConteudoSite({ cliente, produtos, base, semDepoimentos: temProvaReal(argsProva), materiais: imagensParaBanner(materiais) });
       const { depoimentos, usouModelos } = montarDepoimentos({ ...argsProva, modelosIa: r.depoimentos || [] });
-      const gerado = { ...atual, ...r, depoimentos };
-      const patch = base ? aplicarBaseNoCustom(gerado, site.config || {}, base) : { conteudo: gerado };
+      const gerado2 = { ...atual, ...r, depoimentos };
+      const patch = base ? aplicarBaseNoCustom(gerado2, site.config || {}, base) : { conteudo: gerado2 };
       const vis = aplicarOperacoes({ conteudo: patch.conteudo, config: patch.config || site.config || {}, layout: site.layout }, opsDoVisual(visual, 'custom', site, materiais), { modo: 'custom', materiais });
       await salvarEVersionar({ ...patch, ...(vis.mudancas.length ? { layout: vis.estado.layout } : {}), ...reaproveitou }, 'Textos gerados de novo pela IA');
       toast(base ? 'Site gerado reaproveitando o texto, as cores e a FAQ do pacote que o cliente já viu. A IA só completou o que faltava.'
-        : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. ${usouModelos ? 'Sem prova social cadastrada: os depoimentos são MODELOS marcados para substituir.' : `Depoimentos: só as ${depoimentos.length} prova(s) social(is) reais do cliente.`} Revise e use "Ver prévia" ou "Baixar pasta do site".`);
+        : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. ${usouModelos ? 'Sem prova social cadastrada: os depoimentos são MODELOS marcados para substituir.' : `Depoimentos: só as ${depoimentos.length} prova(s) social(is) reais do cliente.`}`);
     } else {
-      const { visual, ...gerado } = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base, materiais: imagensParaBanner(materiais) });
+      const { visual, ...gerado2 } = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base, materiais: imagensParaBanner(materiais) });
+      // Descrições presas ao produto pelo id (renomear o produto não perde a descrição).
+      const descricoesProdutos = (gerado2.descricoesProdutos || []).map((d) => ({ ...d, produtoId: produtos.find((p) => String(p.nome || '').toLowerCase() === String(d.nome || '').toLowerCase())?.id || null }));
       // As escolhas da prévia (banner, fotos, seções) continuam; as que as preferências pedirem entram por cima.
-      const novo = { ...(base ? aplicarBaseNoPacote(gerado, base) : gerado), ...(site.pacote?.visual ? { visual: site.pacote.visual } : {}) };
+      const novo = { ...(base ? aplicarBaseNoPacote({ ...gerado2, descricoesProdutos }, base) : { ...gerado2, descricoesProdutos }), ...(site.pacote?.visual ? { visual: site.pacote.visual } : {}) };
       const vis = aplicarOperacoes({ pacote: novo }, opsDoVisual(visual, 'pacote', site, materiais), { modo: 'pacote', materiais });
       await salvarEVersionar({ pacote: vis.estado.pacote, ...reaproveitou }, 'Pacote gerado de novo pela IA');
-      toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado. Confira no painel "Site gerado".' : 'Banners, briefing do tema e textos gerados. Confira no painel "Site gerado".');
+      toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado.' : 'Banners, briefing do tema e textos gerados.');
     }
-    abrirResultadoDepois.add(cliente.id);
-    recarregar();
+    mostrarDepoisDeGerar.add(cliente.id);
+    if (passoDaRota() === 4) recarregar(); else irPara(4);
   });
-  const ctxPerguntas = { cliente, produtos, salvarSite, recarregar, gerar: gerarComIa, get site() { return site; } };
 
-  // Painel "Material para montar o site" (só leitura + links para o campo real). "Editar" de um item do perfil abre
-  // o questionário (abaixo) na pergunta certa, com o campo em foco.
+  // ---------- partes comuns ----------
+  const matsCom = (usosFotos) => (usosFotos ? comUsos(materiais, patchesDe(usosFotos)) : materiais);
+  // Sempre o estado ACEITO (conteúdo + cores + layout dos ajustes); uma mudança proposta em aberto nunca entra no download.
+  const htmlDe = (e, extra = {}) => { const mats = matsCom(e.usosFotos); return gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site?.linkPublicado || '', provas: semRepetirDepoimentos(printsDoCliente(mats), e.conteudo?.depoimentos), materiais: mats, ...extra }); };
+  const previaPacote = (pacote, usosFotos) => { const mats = matsCom(usosFotos); return gerarPreviaLojaHTML(dadosDoPacote({ cliente, site: { ...site, pacote }, produtos, provas: printsDoCliente(mats), materiais: mats })); };
+  const html = (extra) => htmlDe({ conteudo: site.conteudo, config: site.config, layout: site.layout }, extra);
+  const dadosPacote = () => dadosDoPacote({ cliente, site, produtos, provas: printsDoCliente(materiais), materiais });
   const irParaPergunta = (id) => {
-    const card = $('[data-perguntas-site]', root); if (!card) return;
+    const card = $('[data-perguntas-site]', root); if (!card) { irPara(1); return; }
     card.open = true;
     const alvoP = id ? $(`[data-pergunta="${id}"]`, card) : card;
     (alvoP || card).scrollIntoView({ block: 'center' });
     alvoP?.querySelector?.('textarea, input:not([type=checkbox]):not([type=radio]):not([type=file]), select')?.focus({ preventScroll: true });
   };
-  const painelMaterial = () => montarPainelMaterial($('[data-painel]', root), {
-    // produtos com as fotos ligadas em "Usar em" (o aviso "sem foto" conta também essas)
-    cliente, produtos: produtosComFotos(produtos, materiais), materiais, site, respondidas: progressoSite(cliente, site, produtos, materiais.length), totalPerguntas: TOTAL_PERGUNTAS,
-    recarregar, gerar: site?.modo ? gerarComIa : null, irParaPergunta, aplicarFotosTexto: site?.modo ? aplicarFotosTexto : null,
-  });
 
-  // ---------- escolha do modo ----------
-  if (!site?.modo) {
-    root.innerHTML = `${cabecalho('Site / Loja', 'Escolha como a loja deste cliente será entregue. Você pode trocar depois.')}
-    <div data-painel></div>
-    <div class="grid gap-4 md:grid-cols-2">
-      <button class="card text-left transition hover:border-indigo-400 hover:shadow-md" data-modo="custom"><div class="mb-2 text-2xl text-indigo-500"><i class="fa-solid fa-code"></i></div>
-        <h3 class="font-semibold">Site personalizado</h3><p class="caption">Gera um site pronto, com catálogo, carrinho, banner, depoimentos e WhatsApp, para publicar numa hospedagem gratuita própria do cliente (o app explica o passo a passo). O pagamento é ligado a um serviço externo.</p></button>
-      <button class="card text-left transition hover:border-indigo-400 hover:shadow-md" data-modo="pacote_plataforma"><div class="mb-2 text-2xl text-indigo-500"><i class="fa-solid fa-box-open"></i></div>
-        <h3 class="font-semibold">Pacote para Nuvemshop/Shopify</h3><p class="caption">Gera o catálogo em CSV, banners e textos prontos e o briefing do tema para importar na plataforma.</p></button></div>
-    ${temCustom(site) || temPacote(site) ? `<p class="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-2 text-sm"><i class="fa-solid fa-circle-info mr-1"></i> Este cliente já tem ${temCustom(site) && temPacote(site) ? 'as duas versões' : temCustom(site) ? 'o site personalizado' : 'o pacote de plataforma'}. Nada se perde ao trocar: o texto, as cores e a FAQ que já existem são reaproveitados na outra versão.</p>` : ''}
-    <p class="caption mt-4">Ainda não sabe? Converse com o cliente usando as perguntas abaixo — a pergunta (i) escolhe o modo por você.</p>
-    <div class="mt-2" data-perguntas></div>`;
-    montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: true });
-    painelMaterial();
-    on(root, 'click', '[data-modo]', async (b) => { await salvarSite({ modo: b.dataset.modo, plataforma: b.dataset.modo === 'pacote_plataforma' ? 'nuvemshop' : null }); recarregar(); });
-    return;
+  // ---------- barra de progresso + o que falta ----------
+  const barraHtml = (etapas) => `<nav class="mb-4" aria-label="Passos para montar o site" data-barra-passos><ol class="flex gap-2 overflow-x-auto pb-1" data-progresso-site>${etapas.map((x) => `<li class="shrink-0">
+      <a href="${rotaDoPasso(cliente.id, x.n)}" class="flex min-w-[8.5rem] items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs ${x.n === passo ? 'ring-2 ring-indigo-500' : ''} ${COR_STATUS[x.status]}" data-ir-passo="${x.n}" data-status-passo="${x.status}" title="${esc(x.legenda)}" ${x.n === passo ? 'aria-current="step"' : ''}>
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current font-bold">${x.n}</span>
+        <span class="min-w-0"><span class="block font-semibold leading-tight">${esc(x.titulo)}</span><span class="block"><i class="fa-solid fa-${ICONE_STATUS[x.status]}"></i> ${STATUS_ETAPA[x.status]}</span></span></a></li>`).join('')}</ol></nav>`;
+  let atual = etapas[passo - 1];
+  const botaoAcao = (f, i) => {
+    const a = f.acao; if (!a) return '';
+    const rot = { pergunta: 'Responder', etapa: `Ir para o passo ${a.alvo}`, produto: 'Abrir o produto', novoProduto: 'Cadastrar produto', ancora: 'Resolver aqui', rota: 'Abrir' }[a.tipo] || 'Resolver';
+    return `<button type="button" class="btn-ghost btn-sm shrink-0" data-resolver="${i}">${rot}</button>`;
+  };
+  const faltasHtml = (atual) => `<div data-faltas-wrap>${atual.faltas.length || atual.dicas.length ? `<div class="mb-4 rounded-lg border ${atual.faltas.length ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'} p-3 text-sm" data-faltas-passo>
+      ${atual.faltas.length ? `<p class="font-semibold text-amber-800"><i class="fa-solid fa-list-check mr-1"></i> O que falta neste passo</p>
+      <ul class="mt-1 space-y-1">${atual.faltas.map((f, i) => `<li class="flex flex-wrap items-center justify-between gap-2 text-amber-800" data-falta><span class="min-w-0 flex-1">${esc(f.texto)}</span>${botaoAcao(f, i)}</li>`).join('')}</ul>` : ''}
+      ${atual.dicas.map((d) => `<p class="mt-1 text-xs text-slate-600" data-dica-passo><i class="fa-solid fa-circle-info"></i> ${esc(d)}</p>`).join('')}</div>`
+    : `<p class="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-sm text-emerald-800" data-passo-ok><i class="fa-solid fa-circle-check"></i> ${atual.status === 'opcional' ? 'Passo opcional: nada obrigatório aqui.' : 'Nada faltando neste passo.'}</p>`}</div>`;
+  const continuar = passo < 6
+    ? `<div class="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4">${passo > 1 ? `<a class="btn-ghost" href="${rotaDoPasso(cliente.id, passo - 1)}"><i class="fa-solid fa-arrow-left"></i> Voltar</a>` : '<span></span>'}
+        <button type="button" class="btn-primary" data-continuar>Continuar <i class="fa-solid fa-arrow-right"></i></button></div>`
+    : `<div class="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4"><a class="btn-ghost" href="${rotaDoPasso(cliente.id, 5)}"><i class="fa-solid fa-arrow-left"></i> Voltar</a>
+        <button type="button" class="btn-primary" data-concluir><i class="fa-solid fa-flag-checkered"></i> Concluir</button></div>`;
+
+  root.innerHTML = `${cabecalho('Montar site', 'Seis passos, na ordem que quiser: nenhum fica trancado. Cada passo diz o que falta e tem o botão para resolver.')}
+    ${barraHtml(etapas)}
+    <section data-passo="${passo}"><h2 class="mb-1 text-lg font-semibold"><span class="text-indigo-600">${passo}.</span> ${esc(atual.titulo)} <span class="text-sm font-normal text-slate-500">· ${esc(atual.legenda)}</span></h2>
+      ${faltasHtml(atual)}<div data-conteudo-passo></div>${continuar}</section>`;
+  const alvo = $('[data-conteudo-passo]', root);
+
+  on(root, 'click', '[data-continuar]', () => irPara(passo + 1));
+  on(root, 'click', '[data-resolver]', (b) => {
+    const a = atual.faltas[Number(b.dataset.resolver)]?.acao; if (!a) return;
+    if (a.tipo === 'pergunta') return irParaPergunta(a.alvo);
+    if (a.tipo === 'etapa') return irPara(a.alvo);
+    if (a.tipo === 'produto') return abrirProduto(cliente, produtos.find((p) => p.id === a.alvo), recarregar);
+    if (a.tipo === 'novoProduto') return abrirProduto(cliente, null, recarregar);
+    if (a.tipo === 'rota') { location.hash = a.alvo; return; }
+    if (a.tipo === 'ancora') { const x = $(`[data-ancora="${a.alvo}"]`, root); if (x) { x.scrollIntoView({ block: 'center' }); x.classList.add('ring-2', 'ring-amber-400'); setTimeout(() => x.classList.remove('ring-2', 'ring-amber-400'), 2500); } }
+  });
+  // Materiais mudaram (Materiais do cliente, envio de print, logo): o passo se redesenha com o status novo.
+  let tMat;
+  const ouvirMateriais = (e) => {
+    if (!root.isConnected) { document.removeEventListener('gcc:materiais', ouvirMateriais); return; }
+    if (e.detail?.clienteId !== cliente.id || ![2, 4].includes(passo)) return;
+    clearTimeout(tMat); tMat = setTimeout(() => recarregar(), 400); // a janela de Materiais fica aberta por cima
+  };
+  document.addEventListener('gcc:materiais', ouvirMateriais);
+  // Qualquer gravação (resposta do questionário, produto, plataforma...): a barra e o "O que falta" se recalculam sem
+  // redesenhar o passo (o campo em edição não perde o foco). Lê de novo do banco: o status vem sempre da fonte.
+  let tStatus;
+  const atualizarStatus = () => {
+    if (!root.isConnected) { window.removeEventListener('gcc:mudou', atualizarStatus); return; }
+    clearTimeout(tStatus);
+    tStatus = setTimeout(async () => {
+      const [cl, prods, mats, sts, aprs, resps] = await Promise.all([db.obter(COL.clientes, cliente.id), db.listar(COL.produtos, { clienteId: cliente.id }), db.listar(COL.materiais, { clienteId: cliente.id }),
+        db.listar(COL.sites, { clienteId: cliente.id }), db.listar(COL.aprovacoes, { clienteId: cliente.id }).catch(() => []), db.listar(COL.respostas, { clienteId: cliente.id }).catch(() => [])]);
+      if (!root.isConnected) return;
+      const novas = statusEtapas({ cliente: cl || cliente, site: sts[0] || null, produtos: produtosComFotos(prods, mats), materiais: mats, etiquetaAprov: etiquetaSite(aprs, resps) });
+      atual = novas[passo - 1];
+      $('[data-barra-passos]', root).outerHTML = barraHtml(novas);
+      $('[data-faltas-wrap]', root).outerHTML = faltasHtml(atual);
+    }, 500);
+  };
+  window.addEventListener('gcc:mudou', atualizarStatus);
+
+
+  // ==================== 1. Informações ====================
+  async function passo1() {
+    const itens = resumoMaterialSite({ cliente, produtos: produtosComF(), materiais, site, respondidas: progressoSite(cliente, site, produtos, materiais.length), totalPerguntas: TOTAL_PERGUNTAS });
+    const it = (k) => itens.find((x) => x.chave === k);
+    const r = rastreamentoDe(cliente);
+    const campos = (x) => (x.campos || []).map((c) => `<span class="tag ${c.ok ? 'tag-ok' : ''}" ${c.pergunta ? `data-ir-pergunta="${esc(c.pergunta)}" role="button" title="Ir para a pergunta"` : ''}>${c.ok ? '<i class="fa-solid fa-check mr-1"></i>' : '<i class="fa-regular fa-circle mr-1"></i>'}${esc(c.rotulo)}${c.ok ? '' : ': não'}</span>`).join(' ');
+    alvo.innerHTML = `<div class="grid gap-3 md:grid-cols-2">
+      <div class="card" data-resumo-perfil><h3 class="font-semibold">Perfil de marca</h3><p class="caption">${esc(it('perfil').linhas.join(' · '))}. Responda no questionário abaixo: cada resposta grava direto no perfil.</p><div class="mt-2 flex flex-wrap gap-1">${campos(it('perfil'))}</div>
+        <p class="mt-2 text-sm">${esc(it('provas').titulo)}: ${esc(it('provas').linhas.join(' · '))}</p></div>
+      <div class="card" data-resumo-rastreamento><h3 class="font-semibold">Rastreamento</h3><div class="mt-1">${indicadorPixel(cliente)}</div>
+        <div class="mt-2 flex flex-wrap gap-1">${campos(it('rastreamento'))}</div>
+        <p class="hint mt-2">Pixel e Google Ads: pergunta 16 abaixo. Hotjar e Tawk.to: <a class="underline" href="#/c/${esc(cliente.id)}/editar">cadastro do cliente → Rastreamento</a>. ${r.metaPixelId || r.googleAdsId ? 'Entram sozinhos no site gerado (depois do "Aceitar" dos cookies).' : ''}</p></div></div>
+      <div class="mt-4" data-perguntas></div>`;
+    montarPerguntasSite($('[data-perguntas]', alvo), { cliente, produtos: produtosComF(), salvarSite, recarregar, irParaGerar, get site() { return site; } }, { aberto: true });
+    on(alvo, 'click', '[data-ir-pergunta]', (b) => irParaPergunta(b.dataset.irPergunta || null));
   }
 
-  const semProdutos = !produtos.length;
-  const c = site.conteudo || {};
-  const cfg = site.config || {};
-  const custom = site.modo === 'custom';
-  const rastro = rastreamentoDe(cliente);
-  // Prints de prova social (Materiais etiquetados "prova social") -> depoimentos do site, por escolha da pessoa.
-  const provas = provasEmImagem(materiais);
-  const exibirAtual = (m) => (c.depoimentos || []).find((d) => d.origem === ORIGEM_PROVA && d.materialId === m.id)?.exibir || '';
-  const cartaoProvasHTML = () => `<div class="card mt-4" data-cartao-provas><h3 class="mb-1 font-semibold"><i class="fa-solid fa-star-half-stroke mr-1 text-amber-500"></i> Prints de prova social no site</h3>
-      <p class="caption mb-3">Os prints de avaliação guardados (pergunta 10 ou o painel "Material para montar o site") podem entrar nos depoimentos do site como <b>imagem real</b> (mais confiável), como <b>texto</b> ou os dois. Escolha para cada um e clique em salvar. Gerar os textos com IA de novo não apaga essa escolha.</p>
-      ${!provas.length ? '<p class="hint">Nenhum print de prova social guardado ainda. Envie em "Material para montar o site", no topo desta aba, ou na pergunta 10.</p>'
-        : !custom ? '<p class="hint">No pacote Nuvemshop/Shopify, suba estes prints como imagem na seção de depoimentos do tema (o manual explica onde). Eles estão em Materiais do cliente.</p>'
-        : `<div class="grid gap-2 sm:grid-cols-2">${provas.map((m) => `<div class="flex gap-2 rounded-lg border border-slate-200 p-2 text-sm"><img src="${esc(m.url)}" alt="Print de prova social" class="h-20 w-20 shrink-0 rounded border object-cover" loading="lazy">
-          <div class="min-w-0 flex-1"><p class="line-clamp-2 text-slate-600">${esc(m.citacao || m.descricao || 'Print de prova social')}</p>
-            <select class="input mt-1 !py-1 text-xs" data-exibir-prova="${esc(m.id)}" title="Como este print aparece nos depoimentos do site">${opcoes(EXIBICOES_PROVA, exibirAtual(m))}</select></div></div>`).join('')}</div>
-          <button class="btn-primary btn-sm mt-3" data-salvar-provas-site><i class="fa-solid fa-floppy-disk"></i> Salvar a escolha nos depoimentos do site</button>`}</div>`;
-
-  // Consistência entre os dois modos (lib/site-modos.js): aviso fixo e reabrível + oferta de sincronizar edições.
-  const doisModos = temCustom(site) && temPacote(site);
-  const avisoModosHTML = doisModos || site.baseReaproveitadaEm ? `<details class="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm" data-aviso-modos ${site.avisoModosVisto ? '' : 'open'}>
-      <summary class="cursor-pointer font-medium"><i class="fa-solid fa-circle-info mr-1"></i> Este cliente tem as duas versões da loja: por que o visual pode não ficar idêntico</summary>
-      <p class="mt-2">${AVISO_MODOS}</p>
-      <p class="mt-1 hint">Em outras palavras: o título, a história, as perguntas frequentes, as cores e as fotos dos produtos são os mesmos nas duas versões. O que muda é o "molde" de cada plataforma (fonte, espaçamentos, posição dos blocos). Mostre ao cliente a versão final antes de publicar. Clique no título acima para fechar ou reabrir este aviso.</p></details>` : '';
-  const dif = divergencias(site);
-  const divergenciaHTML = dif.length ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-divergencia>
-      <p><b><i class="fa-solid fa-code-compare mr-1"></i> O texto do formulário "Conteúdo da loja" está diferente do pacote Nuvemshop/Shopify em: ${esc(dif.join(', '))}.</b></p>
-      <p class="mt-1">Isso acontece quando um dos dois é editado depois. Nada é copiado sozinho: escolha qual versão vale (banner principal, história/Sobre, perguntas frequentes e cores).</p>
-      <div class="mt-2 flex flex-wrap gap-2"><button class="${custom ? 'btn-primary' : 'btn-ghost'} btn-sm" data-sincronizar-modos><i class="fa-solid fa-arrows-rotate"></i> Sincronizar essa edição com o pacote também</button>
-        <button class="${custom ? 'btn-ghost' : 'btn-primary'} btn-sm" data-sincronizar-inverso><i class="fa-solid fa-arrows-rotate"></i> Levar o texto do pacote para o site personalizado</button></div></div>` : '';
-
-  root.innerHTML = `${cabecalho(custom ? 'Site personalizado' : 'Pacote de plataforma', custom ? 'Um site pronto, com vitrine e carrinho. Caminho: 1. preencher o conteúdo → 2. ver a prévia → 3. baixar a pasta → 4. publicar (passo a passo no fim da página) → 5. ligar o pagamento (manual de entrega).' : 'Arquivos prontos para montar a loja do cliente na Nuvemshop ou na Shopify. Caminho: 1. conteúdo → 2. gerar banners e textos → 3. baixar catálogo e manual → 4. seguir o manual na plataforma.',
-    `<button class="btn-ghost btn-sm" data-trocar title="Voltar e escolher outro modo">Trocar modo</button>`)}
-    ${semProdutos ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">Você ainda não cadastrou produtos. <a class="font-semibold underline" href="#/c/${cliente.id}/produtos">Cadastrar agora</a> — o site e o CSV usam essa lista.</div>` : ''}
-    <div class="mb-4 flex flex-wrap gap-1">${tag(STATUS_SITE.find(([k]) => k === site.status)?.[1] || site.status, site.status === 'rascunho' ? '' : 'tag-ok')}${tag(produtos.length + ' produto(s)')}
-      ${site.plataforma ? tag(nomePlat(site.plataforma), 'tag-info') : ''}${site.versaoManual ? tag('manual v' + site.versaoManual) : ''}${site.exportadoEm ? tag('exportado em ' + dataBR(site.exportadoEm)) : ''}
-      <a class="tag ${etiquetaAprov ? { aprovado: 'tag-ok', ajuste: 'tag-bad', aguardando: 'tag-info' }[etiquetaAprov.tipo] || 'tag-warn' : ''}" href="#/c/${cliente.id}/aprovacoes" data-etiqueta-aprovacao title="Ver os links de aprovação do site"><i class="fa-solid fa-circle-check mr-1"></i>${esc(etiquetaAprov ? etiquetaAprov.texto : 'Pedir aprovação do cliente')}</a>
-      ${cliente.siteReferencia ? `<a class="tag tag-info" href="${esc(cliente.siteReferencia)}" target="_blank" rel="noopener">site de referência</a>` : ''}</div>
-    <div class="-mt-2 mb-4">${indicadorPixel(cliente)} ${tag(rastro.hotjarId ? 'Hotjar configurado' : 'Hotjar: não usado', rastro.hotjarId ? 'tag-ok' : '')} ${tag(rastro.tawkPropertyId ? 'Chat Tawk.to configurado' : 'Chat ao vivo: não usado', rastro.tawkPropertyId ? 'tag-ok' : '')}
-      <p class="hint mt-1">${custom ? 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) entram sozinhos no site gerado e só carregam depois que o visitante aceita os cookies.' : 'Os códigos preenchidos no cadastro do cliente (Editar > Rastreamento) vão para o manual, com o passo a passo para colar na loja.'}</p></div>
-    ${(custom ? temCustom(site) : temPacote(site)) ? '<div class="mb-3"><button class="btn-primary btn-sm" data-ver-resultado><i class="fa-solid fa-store"></i> Ver último site gerado</button></div>' : ''}
-    <div data-resultado-site></div>
-    <div data-painel></div>
-    ${avisoModosHTML}${divergenciaHTML}
-    <div class="mb-4" data-perguntas></div>
-
-    <div class="grid gap-4 lg:grid-cols-2">
-      <form id="fc" class="card space-y-3"><h3 class="font-semibold">1. Conteúdo da loja</h3>
-        <p class="caption">Preencha à mão e clique em "Salvar conteúdo", ou use "Gerar textos com IA": ela escreve banner, história da marca, políticas${custom ? ' e a FAQ (a partir das objeções do perfil)' : ''}, e <b>substitui</b> o que estiver nos campos. Depoimentos: se o cliente tem prova social cadastrada (texto ou prints), entram só os reais; sem nenhuma, a IA escreve modelos marcados "[MODELO – substituir]". ${custom ? 'Cores e WhatsApp ficam em "Mais opções".' : 'No pacote, estes textos são a base dos banners e da página Sobre.'}</p>
-        ${custom && !temCustom(site) && temPacote(site) ? `<div class="rounded-lg border border-sky-200 bg-sky-50 p-2 text-sm">Este cliente já tem o pacote Nuvemshop/Shopify pronto. Para o site sair igual ao que ele já viu, traga os textos e as cores de lá (sem IA), ou use "Gerar textos com IA", que também mantém esses textos e só completa o resto.
-          <button type="button" class="btn-ghost btn-sm mt-1" data-trazer-pacote><i class="fa-solid fa-file-import"></i> Trazer texto e cores do pacote (sem IA)</button></div>` : ''}
-        <div><label class="label">Título do banner (hero)</label><input class="input" name="heroTitulo" value="${esc(c.heroTitulo)}"></div>
-        <div><label class="label">Subtítulo</label><input class="input" name="heroSubtitulo" value="${esc(c.heroSubtitulo)}"></div>
-        <div><label class="label">Texto do botão do banner</label><input class="input" name="heroCta" value="${esc(c.heroCta)}"></div>
-        <div><label class="label">História da marca</label><textarea class="input" rows="4" name="storytelling">${esc(c.storytelling)}</textarea></div>
-        <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções</summary><div class="mt-3 space-y-3">
-          ${custom ? `<div class="grid grid-cols-2 gap-3"><div><label class="label">Cor principal</label><input type="color" class="h-10 w-full rounded" name="corPrimaria" value="${esc(cfg.corPrimaria || '#4f46e5')}"></div>
-            <div><label class="label">Cor de fundo</label><input type="color" class="h-10 w-full rounded" name="corFundo" value="${esc(cfg.corFundo || '#ffffff')}"></div></div>
-            <div><label class="label">WhatsApp (com DDD)</label><input class="input" name="whatsapp" value="${esc(cfg.whatsapp)}" placeholder="5511999999999"></div>` : ''}
-          <div><label class="label">Depoimentos escritos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => !depoimentoGerido(d)).map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
-            <p class="hint">Use depoimentos reais. Os que começam com "[MODELO" foram escritos pela IA só porque o cliente ainda não tinha prova social: troque por reais. Os depoimentos puxados de criativos e de prints de prova social (abaixo) não aparecem aqui — são geridos à parte.</p></div>
-          ${custom ? `<div><label class="label">Perguntas frequentes (uma por linha: pergunta | resposta)</label><textarea class="input" rows="4" name="faq" placeholder="E se não servir? | A troca é grátis em até 30 dias.">${esc(faqParaTexto(c.faq || []))}</textarea>
-            <p class="hint">Vira a seção "Perguntas frequentes" do site. Pergunta sem resposta não aparece. ${objecoesDe(cliente).length ? `Base: as ${objecoesDe(cliente).length} objeção(ões) do perfil de marca.` : 'Sem objeções no perfil de marca: com o campo vazio, a seção não aparece no site.'}</p>
-            ${objecoesDe(cliente).length ? `<div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ia btn-sm" data-faq-ia title="Só a FAQ: não mexe no resto do conteúdo"><i class="fa-solid fa-wand-magic-sparkles"></i> Escrever FAQ com IA a partir das objeções</button>
-              <button type="button" class="btn-ghost btn-sm" data-faq-manual title="Coloca as objeções como perguntas; você escreve as respostas">Montar perguntas das objeções (sem IA)</button></div>` : ''}</div>
-          <div><label class="label">Formas de pagamento no selo "Compra segura"</label><div class="flex flex-wrap gap-3 text-sm">${FORMAS_PAGAMENTO.map(([k, t]) => `<label class="flex items-center gap-1"><input type="checkbox" name="pag_${k}" ${(cfg.pagamentos || PAGAMENTOS_PADRAO).includes(k) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
-            <p class="hint">Aparece perto do botão "Finalizar compra", com ícones genéricos (sem logotipo de bandeira). Marque só o que o checkout do cliente aceita de verdade.</p></div>` : ''}
-          <div><label class="label">Newsletter — título</label><input class="input" name="newsletterTitulo" value="${esc(c.newsletterTitulo)}"></div>
-          <div><label class="label">Política de trocas</label><textarea class="input" rows="2" name="trocas">${esc(c.politicas?.trocas)}</textarea></div>
-          <div><label class="label">Política de envio</label><textarea class="input" rows="2" name="envio">${esc(c.politicas?.envio)}</textarea></div>
-          <div><label class="label">Política de privacidade</label><textarea class="input" rows="2" name="privacidade">${esc(c.politicas?.privacidade)}</textarea></div>
-        </div></details>
-        <div class="flex flex-wrap gap-2"><button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar conteúdo</button>
-          <button class="btn-ia" type="button" data-ia title="A IA escreve os textos usando o perfil de marca e os produtos"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar textos com IA</button></div>
-        <div id="nota-ia"></div></form>
-
-      <div class="card space-y-3"><h3 class="font-semibold">2. Exportar e entregar</h3>
-        ${custom ? `
-          <p class="caption">O site é gerado como uma pasta pronta para publicar (com o arquivo <code>index.html</code> dentro). Este app <b>não publica</b> o site em lugar nenhum: veja abaixo, em "Como publicar este site", onde colocar.</p>
-          <button class="btn-ghost" data-preview ${semProdutos ? 'disabled' : ''} title="Abre o site numa aba separada, isolada do painel, só para conferir"><i class="fa-solid fa-eye"></i> Ver prévia do site em nova aba</button>
-          <button class="btn-primary" data-baixar-zip ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-file-zipper"></i> Baixar pasta do site pronta para publicar (.zip)</button>
-          <button class="btn-ghost btn-sm" data-baixar-site ${semProdutos ? 'disabled' : ''} title="O mesmo site, só o arquivo solto (para quem já sabe onde colocar)"><i class="fa-solid fa-download"></i> Baixar só o arquivo index.html</button>`
-        : `
-          <div><label class="label">Plataforma</label><select class="input" data-plat>${opcoes(PLATAFORMAS, site.plataforma)}</select></div>
-          <p class="caption">Três entregas: o catálogo (planilha que a plataforma importa), os textos/banners e o manual. A loja fica hospedada na própria ${esc(nomePlat(site.plataforma))}, na conta do cliente.</p>
-          <button class="btn-primary" data-csv ${semProdutos ? 'disabled' : ''}><i class="fa-solid fa-file-csv"></i> Baixar catálogo de produtos para importar (CSV)</button>
-          <button class="btn-ia" data-pacote ${semProdutos ? 'disabled' : ''} title="A IA escreve banners, briefing do tema e textos de página"><i class="fa-solid fa-wand-magic-sparkles"></i> ${site.pacote ? 'Gerar de novo banners, briefing e textos' : 'Gerar banners, briefing do tema e textos com IA'}</button>
-          ${temCustom(site) && !temPacote(site) ? '<p class="hint">Como o site personalizado já existe, o título, a história, a FAQ e as cores dele serão mantidos; a IA só completa o resto (briefing do tema e descrições).</p>' : ''}
-          ${cliente.logoArquivo ? '<button class="btn-ghost" data-baixar-logo title="O arquivo original, sem compressão, para subir no tema da plataforma"><i class="fa-solid fa-copyright"></i> Baixar o logo (arquivo original)</button>' : '<p class="hint">Sem logo salvo: envie na pergunta 9 ou no painel "Material para montar o site".</p>'}
-          ${site.pacote ? `<button class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Baixar banners e briefing em texto (.txt)</button>` : ''}`}
-        <div><label class="label">Endereço do site já publicado (opcional)</label><input class="input" name="link" data-link value="${esc(site.linkPublicado)}" placeholder="https://…">
-          <p class="hint">Depois de publicar, cole aqui o endereço. A aba Campanhas passa a sugerir este link como destino dos anúncios${custom ? ', e o site baixado de novo já sai com a prévia certa para o WhatsApp' : ''}.</p></div>
-        <div><label class="label">Status</label><select class="input" data-status>${opcoes(STATUS_SITE, site.status)}</select></div>
-        <hr class="border-slate-200">
-        <p class="caption">O manual de entrega é um PDF com o passo a passo para quem vai publicar/importar${custom ? ' e ligar o pagamento' : ''}. Pode mandar direto para o cliente.</p>
-        <button class="btn-primary" data-manual><i class="fa-solid fa-file-pdf"></i> Baixar manual de entrega (PDF)</button></div></div>
-    <div data-ajuste>${custom || site.pacote ? '' : '<div class="card mt-4"><h3 class="font-semibold">Ajustar o conteúdo deste pacote</h3><p class="caption">Disponível depois de gerar o pacote (botão "Gerar banners, briefing do tema e textos com IA", acima).</p></div>'}</div>
-    ${custom ? comoPublicarHTML(cliente) : ''}
-
-    <div class="card mt-4"><h3 class="mb-1 font-semibold">Prova social a partir de criativos aprovados</h3>
-      <p class="caption mb-3">Em vez de montar depoimentos do zero: marque "usar como prova social" no detalhe de um criativo aprovado (aba Criativos) e traga aqui, com o vídeo/imagem anexado quando houver.</p>
-      ${marcados.length ? `<div class="space-y-1 text-sm mb-3">${marcados.map((cr) => `<div class="flex items-center gap-2"><i class="fa-solid fa-circle-check text-emerald-500"></i><b>${esc(cr.nome)}</b> ${cr.arquivoUrl ? tag('com mídia', 'tag-ok') : tag('só texto (hook)')}</div>`).join('')}</div>
-        <button class="btn-primary btn-sm" data-sync-prova><i class="fa-solid fa-arrows-rotate"></i> Atualizar depoimentos com estes ${marcados.length} criativo(s)</button>`
-        : `<p class="hint">Nenhum criativo aprovado marcado ainda. Abra um criativo aprovado (Criativos) e marque "Usar como prova social no site".</p>`}
-      ${(c.depoimentos || []).some((d) => d.origem === 'criativo') ? `<div class="mt-3 grid gap-2 sm:grid-cols-2">${(c.depoimentos || []).filter((d) => d.origem === 'criativo').map((d) => `
-        <div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm"><b>${esc(d.nome)}</b>${d.midiaUrl ? ` ${tag('com mídia', 'tag-ok')}` : ''}<p class="line-clamp-2 text-slate-600">“${esc(d.texto)}”</p></div>`).join('')}</div>` : ''}
-    </div>
-    ${cartaoProvasHTML()}
-    ${site.pacote ? `<div class="card mt-4"><h3 class="mb-2 font-semibold">Banners e briefing do tema${custom ? ' <span class="text-sm font-normal text-slate-500">(do pacote Nuvemshop/Shopify, não aparece neste site)</span>' : ''}</h3>${iaNota(custom ? 'Guardado da versão pacote deste cliente, só para consulta. O site personalizado usa o formulário "Conteúdo da loja" acima.' : 'Criado pela IA para a plataforma escolhida. Próximo passo: use os textos nos banners da loja e o briefing para escolher e ajustar o tema (o manual de entrega explica onde).')}
-      ${pacoteHTML(site.pacote)}</div>` : ''}`;
-
-  on(root, 'click', '[data-trocar]', async () => { await salvarSite({ modo: null }); recarregar(); });
-  painelMaterial();
-
-  // ---------- painel "Site gerado (versão N)": prévia, link de aprovação, o que colocar na plataforma, baixar ----------
-  let gruposCopiar = [];
-  const abrirResultado = async ({ rolar = true } = {}) => {
-    const alvoR = $('[data-resultado-site]', root); if (!alvoR) return;
-    const { versaoDoSite } = await import('./aprovacoes-site.js');
+  // ==================== 2. Materiais ====================
+  async function passo2() {
     const prints = printsDoCliente(materiais);
-    const n = versaoDoSite(cliente, site, produtos, aprovacoes, prints, materiais);
-    const d = custom ? null : dadosDoPacote({ cliente, site, produtos, provas: prints, materiais });
-    gruposCopiar = d ? gruposPlataforma(d) : [];
-    const plat = nomePlat(site.plataforma);
-    const grupoHTML = (g, gi) => `<details class="rounded-lg border border-slate-200 p-2" ${gi < 3 ? 'open' : ''} data-grupo-plataforma="${esc(g.id)}"><summary class="cursor-pointer text-sm font-semibold">${esc(g.titulo)}</summary>
-      <p class="hint mt-1"><i class="fa-solid fa-location-arrow"></i> Onde colocar na ${esc(plat)}: <b data-caminho>${esc(g.caminho)}</b></p>
-      <ul class="mt-1 space-y-1">${g.itens.map((it, ii) => `<li class="flex items-start justify-between gap-2 rounded bg-slate-50 p-2 text-sm"><div class="min-w-0"><p class="text-xs text-slate-500">${esc(it.rotulo)}</p>
-        ${it.tipo === 'imagem' ? `<img src="${esc(it.valor)}" alt="Logo" class="mt-1 max-h-12" style="background:repeating-conic-gradient(#cbd5e1 0% 25%,#fff 0% 50%) 50%/12px 12px">` : `<p class="whitespace-pre-wrap">${esc(it.valor.length > 400 ? it.valor.slice(0, 400) + '…' : it.valor)}</p>`}</div>
-        ${it.tipo === 'imagem' ? '' : `<button type="button" class="btn-ghost btn-sm shrink-0" data-copiar-item="${gi}-${ii}"><i class="fa-solid fa-copy"></i> Copiar</button>`}</li>`).join('')}</ul></details>`;
-    alvoR.innerHTML = `<section class="card mb-4 border-2 border-emerald-300" data-painel-resultado>
-      <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="text-lg font-semibold"><i class="fa-solid fa-circle-check text-emerald-600"></i> Site gerado (versão ${n})</h3>
-        <button type="button" class="btn-ghost btn-sm" data-fechar-resultado>Fechar</button></div>
-      <p class="caption">${custom ? 'Site personalizado' : `Pacote ${esc(plat)}`}. Tudo o que foi gerado está aqui, nesta ordem: ver, mandar para o cliente aprovar, montar na plataforma e baixar.</p>
-      <h4 class="mt-4 font-semibold">1. Ver prévia</h4>
-      ${custom ? '<div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost" data-mostrar-previa-loja><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button><button type="button" class="btn-ghost" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button></div><div class="mt-2" data-area-previa-loja><iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe></div>'
-        : `<button type="button" class="btn-ghost" data-mostrar-previa-loja><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button><div class="mt-2" data-area-previa-loja>${previaLojaHtml()}</div>`}
-      ${ajustesRapidosHtml()}
-      ${resultadoFotosTextoHtml(site.fotosTexto)}
-      <h4 class="mt-4 font-semibold">Clientes reais (prints)</h4>
-      ${printsPainelHtml(cliente, prints)}
-      <h4 class="mt-4 font-semibold">2. Gerar link de aprovação</h4>
-      <button type="button" class="btn-primary" data-link-resultado><i class="fa-solid fa-link"></i> Gerar link de aprovação</button>
-      <p class="hint">Cria o link desta versão e abre a aba "Aprovações do site", onde você copia o link e a mensagem para o cliente.</p>
-      <h4 class="mt-4 font-semibold">3. O que colocar na plataforma</h4>
-      ${custom ? '<p class="text-sm">No site personalizado não há plataforma: baixe a pasta (passo 4) e siga "Como publicar este site", no fim desta página.</p>'
-        : `<p class="hint mb-2">Cada conteúdo, agrupado pelo lugar onde entra na ${esc(plat)}, com o caminho do manual de entrega. Os produtos também vão no CSV.</p><div class="space-y-2" data-o-que-colocar>${gruposCopiar.map(grupoHTML).join('')}</div>`}
-      <h4 class="mt-4 font-semibold">4. Baixar pacote</h4>
-      <div class="flex flex-wrap gap-2">${custom ? '<button type="button" class="btn-primary" data-baixar-zip><i class="fa-solid fa-file-zipper"></i> Baixar pasta do site (.zip)</button>'
-        : `<button type="button" class="btn-primary" data-csv><i class="fa-solid fa-file-csv"></i> Catálogo (CSV)</button>${site.pacote ? '<button type="button" class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Banners e briefing (.txt)</button>' : ''}${cliente.logoArquivo ? '<button type="button" class="btn-ghost" data-baixar-logo><i class="fa-solid fa-copyright"></i> Logo (original)</button>' : ''}`}
-        ${!custom && d?.visual?.banner?.url ? '<button type="button" class="btn-ghost" data-baixar-banner><i class="fa-solid fa-image"></i> Imagem do banner</button>' : ''}
-        ${!custom && prints.length ? '<button type="button" class="btn-ghost" data-baixar-prints><i class="fa-solid fa-images"></i> Prints de clientes (.zip)</button>' : ''}
-        ${!custom && d && arquivosPorPasta(d).length ? `<button type="button" class="btn-primary" data-baixar-por-lugar title="banner/, produtos/<nome do produto>/, clientes-reais/ (cópias borradas), sobre/ e galeria/"><i class="fa-solid fa-folder-tree"></i> Imagens por lugar (.zip, ${arquivosPorPasta(d).length} arquivo(s))</button>` : ''}
-        <button type="button" class="btn-ghost" data-manual><i class="fa-solid fa-file-pdf"></i> Manual de entrega (PDF)</button></div></section>`;
-    if (d) ligarPreviaLoja(alvoR, gerarPreviaLojaHTML(d));
-    else { const ifr = $('[data-previa-custom]', alvoR); if (ifr) ifr.srcdoc = html(); }
-    if (rolar) mostrarResultado($('[data-painel-resultado]', alvoR), `Pronto: site gerado (versão ${n}). Prévia, link, o que colocar na plataforma e downloads abaixo.`);
-  };
+    const fotos = materiais.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo);
+    const provasTexto = linhasDeProva(cliente.marca?.provasSociais).length;
+    const lista = produtosComF();
+    const mig = cliente.migracaoFotos;
+    alvo.innerHTML = `<div class="grid gap-4 lg:grid-cols-2">
+      <div class="card" data-ancora="logo"><h3 class="font-semibold">Logo</h3><div class="mt-2" data-logo-passo>${logoHtml(cliente)}</div></div>
+      <div class="card" data-ancora="produtos"><div class="flex flex-wrap items-center justify-between gap-2"><h3 class="font-semibold">Produtos (${lista.length})</h3>
+          <button type="button" class="btn-ghost btn-sm" data-novo-produto><i class="fa-solid fa-plus"></i> Cadastrar produto</button></div>
+        ${lista.length ? `<ul class="mt-2 space-y-1 text-sm" data-lista-produtos>${lista.map((p) => `<li class="flex items-center gap-2 rounded bg-slate-50 p-1">
+          ${p.fotos[0] ? `<img src="${esc(p.fotos[0].url)}" alt="" class="h-10 w-10 shrink-0 rounded object-cover">` : '<span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-amber-100 text-amber-700"><i class="fa-solid fa-image"></i></span>'}
+          <span class="min-w-0 flex-1"><b>${esc(p.nome)}</b> <span class="hint">${Number(p.preco) > 0 ? moeda(p.precoPromocional || p.preco) : '<span class="text-amber-700">sem preço</span>'} · ${p.fotos.length ? `${p.fotos.length} foto(s)${p.fotos[0].codigo ? `, principal ${esc(p.fotos[0].codigo)}` : ''}` : '<span class="text-amber-700">sem foto</span>'}</span></span>
+          <button type="button" class="btn-ghost btn-sm" data-editar-produto="${esc(p.id)}">Editar</button></li>`).join('')}</ul>` : '<p class="hint mt-2">Nenhum produto ainda.</p>'}
+        <p class="hint mt-2">As fotos dos produtos ficam em Materiais do cliente. Enviar foto dentro do produto já liga ela ao produto ("Usar em").</p>
+        ${mig?.fotos ? `<p class="mt-1 text-xs text-slate-600" data-migracao-fotos><i class="fa-solid fa-right-left"></i> Em ${esc(dataBR(mig.em))}, ${mig.fotos} foto(s) de ${mig.produtos} produto(s) passaram do cadastro do produto para Materiais (mesmos arquivos, mesma ordem e foto principal). <button type="button" class="underline" data-desfazer-migracao>Desfazer</button></p>` : ''}</div></div>
+      <div class="card mt-4" data-ancora="fotos"><div class="flex flex-wrap items-center justify-between gap-2"><h3 class="font-semibold">Fotos e vídeos (${materiais.length} arquivo(s))</h3>
+          <button type="button" class="btn-primary btn-sm" data-abrir-materiais><i class="fa-solid fa-upload"></i> Enviar e escolher onde cada foto vai ("Usar em")</button></div>
+        <p class="hint">Cada foto tem um código (F1, F2…). Em "Usar em" você diz se ela vai no banner, num produto, em Clientes reais, no Sobre ou na Galeria.</p>
+        ${fotos.length ? `<div class="mt-2 flex gap-2 overflow-x-auto pb-1" data-fotos-passo>${fotos.map((m) => { const u = resumoUsos(m, produtos); return `<div class="w-24 shrink-0 text-[11px]" title="${esc(m.nomeOriginal || m.nome || '')}"><div class="relative"><img src="${esc(m.url)}" alt="${esc(m.codigo)}" loading="lazy" class="h-20 w-24 rounded border border-slate-200 object-cover"><span class="absolute left-0.5 top-0.5 rounded px-1 text-[10px] font-bold" style="background:rgba(0,0,0,.78);color:#fff">${esc(m.codigo)}</span></div><p class="mt-0.5 line-clamp-2 ${u.length ? 'text-slate-700' : 'text-slate-400'}">${u.length ? esc(u.map((x) => x.texto).join(' · ')) : 'sem uso'}</p></div>`; }).join('')}</div>` : '<p class="hint mt-2">Nenhuma foto ainda.</p>'}</div>
+      <div class="card mt-4" data-ancora="provas"><h3 class="font-semibold">Provas sociais</h3>
+        <p class="caption">${provasTexto} em texto (perfil de marca, pergunta 10 do passo 1) · ${provasEmImagem(materiais).length} print(s). O texto é lido de lá na hora de mostrar o site: mudou o perfil, mudou o site.</p>
+        <details class="mt-2" ${provasTexto || provasEmImagem(materiais).length ? '' : 'open'}><summary class="cursor-pointer text-sm text-indigo-600">Chegou prova nova? Enviar prints aqui</summary>${provaSocialHtml('passo')}</details></div>
+      <div class="card mt-4" data-ancora="prints"><h3 class="font-semibold">Clientes reais (prints e fotos de clientes)</h3>${printsPainelHtml(cliente, prints)}</div>`;
+    ligarLogo($('[data-logo-passo]', alvo), cliente, () => recarregar());
+    ligarProvaSocial($('[data-prova-img="passo"]', alvo), { cliente, produtos, materiais, site, recarregar });
+    on(alvo, 'click', '[data-abrir-materiais]', (b) => ocupado(b, () => abrirMateriais(cliente)));
+    on(alvo, 'click', '[data-novo-produto]', () => abrirProduto(cliente, null, recarregar));
+    on(alvo, 'click', '[data-editar-produto]', (b) => abrirProduto(cliente, produtos.find((p) => p.id === b.dataset.editarProduto), recarregar));
+    on(alvo, 'click', '[data-borrar-print]', (b) => ocupado(b, async () => {
+      const mat = materiais.find((x) => x.id === b.dataset.borrarPrint); if (!mat) return;
+      await abrirBorrar(cliente, mat, async () => recarregar());
+    }));
+    on(alvo, 'click', '[data-desfazer-migracao]', async (b) => {
+      if (!(await confirmar('Desfazer a passagem das fotos dos produtos para Materiais? Os registros criados por ela saem de Materiais (os arquivos continuam no produto) e o produto volta a usar o campo antigo de fotos. Escolhas de "Usar em" feitas nessas fotos se perdem.', 'Desfazer'))) return;
+      await ocupado(b, async () => { const r = await desfazerMigracaoFotos(cliente); toast(`Desfeito: ${r.fotos} registro(s) tirados de Materiais. Os arquivos continuam no produto.`, 'info'); location.reload(); });
+    });
+  }
+
+  // ==================== 3. Como quero ====================
+  async function passo3() {
+    const tema = String(site?.tema || '');
+    const doisModos = temCustom(site) && temPacote(site);
+    alvo.innerHTML = `<div class="card" data-ancora="plataforma"><h3 class="font-semibold">Plataforma e tema</h3>
+        <p class="caption">Onde a loja vai ficar. Define o modo (pacote para a plataforma, ou site personalizado) e os caminhos de menu do passo 6. É o mesmo dado da pergunta 18.</p>
+        ${site?.modo === 'pacote_plataforma' && !plat ? '<p class="mt-2 rounded bg-amber-50 p-2 text-sm text-amber-800" data-confirmar-plataforma><i class="fa-solid fa-circle-question"></i> Este cliente estava marcado como "Nuvemshop" automaticamente, sem ninguém escolher. Confirme a plataforma certa (uma vez só).</p>' : ''}
+        <div class="mt-2 flex flex-wrap gap-3 text-sm" role="radiogroup" aria-label="Plataforma">${PLATAFORMAS_SITE.map(([k, t]) => `<label class="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2"><input type="radio" name="plataformaSite" value="${k}" data-plataforma ${plat === k ? 'checked' : ''}> ${t}</label>`).join('')}</div>
+        ${plat === 'shopify' ? `<div class="mt-3 text-sm"><p class="font-medium">Tema da Shopify</p><div class="mt-1 flex flex-wrap gap-3">${TEMAS_SHOPIFY.map(([k, t]) => `<label class="flex items-center gap-1"><input type="radio" name="temaShopify" value="${k}" data-tema ${tema === k ? 'checked' : ''}> ${t}</label>`).join('')}</div>
+          <p class="hint">Os caminhos do passo 6 mudam entre Horizon e Dawn; em "Outro" o app avisa onde conferir no editor do tema.</p></div>` : ''}
+        ${plat === 'nuvemshop' ? `<label class="mt-3 block text-sm">Tema da Nuvemshop (opcional)<input class="input mt-1" data-tema-texto value="${esc(tema)}" placeholder="Ex.: Amazonas, Rio, Lima…" maxlength="60"></label>` : ''}
+        ${doisModos ? `<p class="hint mt-2">${esc(AVISO_MODOS)}</p>` : ''}</div>
+      <div class="mt-4" data-como-quero>${preferenciasHtml(cliente, site?.fotosTexto)}
+        <div class="card mt-4" data-ancora="referencia"><h3 class="font-semibold">Site de referência</h3>
+          <input class="input mt-1" data-referencia-site value="${esc(cliente.siteReferencia || '')}" placeholder="https://… (um site que o cliente acha bonito)">
+          <p class="hint">O mesmo campo da pergunta 12. A IA usa só a estrutura e o estilo dele, nunca textos, imagens ou marca.</p>${referenciaExtraHtml(cliente)}</div></div>`;
+    const caixa = $('[data-como-quero]', alvo);
+    ligarPreferencias(caixa, cliente, () => { const x = $('[data-referencia-extra]', caixa); if (x) x.outerHTML = referenciaExtraHtml(cliente); }, { aplicarFotosTexto: site?.modo ? aplicarFotosTexto : null });
+    on(alvo, 'change', '[data-plataforma]', (i) => ocupado(i, async () => {
+      const novo = i.value;
+      await salvarSite({ ...patchPlataforma(novo), ...(novo === 'shopify' && !TEMAS_SHOPIFY.some(([k]) => k === site?.tema) ? { tema: null } : {}), ...(novo !== 'shopify' && TEMAS_SHOPIFY.some(([k]) => k === site?.tema) ? { tema: null } : {}) });
+      toast(`Plataforma: ${PLATAFORMAS_SITE.find(([k]) => k === novo)[1]}. ${novo === 'custom' ? 'Modo: site personalizado.' : 'Modo: pacote para a plataforma.'} Nada se perde ao trocar.`);
+      recarregar();
+    }));
+    on(alvo, 'change', '[data-tema]', (i) => ocupado(i, async () => { await salvarSite({ tema: i.value }); toast(`Tema: ${TEMAS_SHOPIFY.find(([k]) => k === i.value)[1]}.`); recarregar(); }));
+    on(alvo, 'change', '[data-tema-texto]', async (i) => { await salvarSite({ tema: i.value.trim() || null }); toast('Tema anotado.'); });
+    on(alvo, 'change', '[data-referencia-site]', async (i) => {
+      cliente.siteReferencia = i.value.trim();
+      await db.atualizar(COL.clientes, cliente.id, { siteReferencia: cliente.siteReferencia }); toast('Site de referência salvo no cadastro do cliente.');
+    });
+  }
+
+  // ==================== 4. Gerar e ajustar ====================
+  async function passo4() {
+    const c = site?.conteudo || {}, cfg = site?.config || {};
+    const provas = provasEmImagem(materiais);
+    const exibirAtual = (m) => (c.depoimentos || []).find((d) => d.origem === ORIGEM_PROVA && d.materialId === m.id)?.exibir || '';
+    const dif = site ? divergencias(site) : [];
+    alvo.innerHTML = `<div class="card border-violet-200" data-ancora="gerar">
+        <div class="flex flex-wrap items-center justify-between gap-2"><div><h3 class="font-semibold">${gerado ? 'Site gerado' : 'Gerar o site'}</h3>
+          <p class="caption">${plat ? `${custom ? 'Site personalizado' : `Pacote para ${esc(nomePlat(site.plataforma))}${nomeTema(site) ? ` · tema ${esc(nomeTema(site))}` : ''}`}. A IA escreve banner, história, FAQ e textos com tudo dos passos 1 a 3. Escolhas feitas à mão (fotos, banner, seções, ajustes) nunca são desfeitas.` : 'Escolha a plataforma no passo 3 antes de gerar.'}</p></div>
+          <button type="button" class="btn-ia" data-gerar-site ${plat ? '' : 'disabled'}><i class="fa-solid fa-wand-magic-sparkles"></i> ${gerado ? 'Gerar site de novo' : 'Gerar site'}</button></div>
+        ${!plat ? `<a class="btn-ghost btn-sm mt-2" href="${rotaDoPasso(cliente.id, 3)}">Ir para o passo 3</a>` : ''}
+        ${dif.length ? `<div class="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-divergencia><p><b><i class="fa-solid fa-code-compare mr-1"></i> O texto do site personalizado está diferente do pacote em: ${esc(dif.join(', '))}.</b> Nada é copiado sozinho.</p>
+          <div class="mt-2 flex flex-wrap gap-2"><button class="${custom ? 'btn-primary' : 'btn-ghost'} btn-sm" data-sincronizar-modos><i class="fa-solid fa-arrows-rotate"></i> Levar o texto do site personalizado para o pacote</button>
+          <button class="${custom ? 'btn-ghost' : 'btn-primary'} btn-sm" data-sincronizar-inverso><i class="fa-solid fa-arrows-rotate"></i> Levar o texto do pacote para o site personalizado</button></div></div>` : ''}
+        ${gerado ? `<div class="mt-4" data-area-resultado>
+          <div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm" data-mostrar-previa-loja><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button>${custom ? '<button type="button" class="btn-ghost btn-sm" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button>' : ''}</div>
+          <div class="mt-2" data-area-previa-loja>${custom ? '<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe>' : previaLojaHtml()}</div>
+          ${ajustesRapidosHtml()}
+          ${resultadoFotosTextoHtml(site.fotosTexto)}</div>` : ''}</div>
+      <details class="card mt-4" data-conteudo-manual ${!gerado && plat ? '' : ''}><summary class="cursor-pointer font-semibold">Editar os textos à mão (sem IA)</summary>
+        ${plat ? formularioConteudoHtml(c, cfg) : '<p class="hint mt-2">Escolha a plataforma no passo 3.</p>'}</details>
+      ${plat ? `<div class="card mt-4" data-cartao-depoimentos><h3 class="mb-1 font-semibold"><i class="fa-solid fa-star-half-stroke mr-1 text-amber-500"></i> Depoimentos do site</h3>
+        <p class="caption mb-2">As provas em texto do perfil de marca entram sozinhas e sempre atualizadas. Aqui você escolhe como cada print aparece e traz criativos aprovados.</p>
+        ${!provas.length ? '<p class="hint">Nenhum print de prova social guardado ainda (passo 2).</p>'
+          : !custom ? '<p class="hint">No pacote, os prints vão para a seção "Clientes reais" do tema (passo 6 diz onde).</p>'
+          : `<div class="grid gap-2 sm:grid-cols-2">${provas.map((m) => `<div class="flex gap-2 rounded-lg border border-slate-200 p-2 text-sm"><img src="${esc(m.borrada?.url || m.url)}" alt="Print de prova social" class="h-20 w-20 shrink-0 rounded border object-cover" loading="lazy">
+            <div class="min-w-0 flex-1"><p class="line-clamp-2 text-slate-600">${esc(m.citacao || m.descricao || 'Print de prova social')}</p>
+              <select class="input mt-1 !py-1 text-xs" data-exibir-prova="${esc(m.id)}" title="Como este print aparece nos depoimentos do site">${opcoes(EXIBICOES_PROVA, exibirAtual(m))}</select></div></div>`).join('')}</div>
+            <button class="btn-primary btn-sm mt-3" data-salvar-provas-site><i class="fa-solid fa-floppy-disk"></i> Salvar a escolha nos depoimentos</button>`}
+        <div class="mt-3 border-t border-slate-100 pt-3"><p class="text-sm font-medium">Criativos aprovados como prova social</p>
+          ${marcados.length ? `<p class="hint">${marcados.map((cr) => esc(cr.nome)).join(', ')}</p><button class="btn-ghost btn-sm mt-1" data-sync-prova><i class="fa-solid fa-arrows-rotate"></i> Atualizar depoimentos com estes ${marcados.length} criativo(s)</button>`
+            : '<p class="hint">Nenhum criativo aprovado marcado "Usar como prova social no site" (aba Criativos).</p>'}</div></div>` : ''}
+      ${site?.pacote ? `<details class="card mt-4"><summary class="cursor-pointer font-semibold">Banners e briefing do tema${custom ? ' <span class="text-sm font-normal text-slate-500">(do pacote, não aparece neste site)</span>' : ''}</summary>${pacoteHTML(site.pacote)}</details>` : ''}
+      <div data-ancora="ajuste" data-ajuste></div>`;
+
+    on(alvo, 'click', '[data-gerar-site]', (b) => gerarComIa(b));
+    if (gerado) {
+      if (custom) { const ifr = $('[data-previa-custom]', alvo); if (ifr) ifr.srcdoc = html(); } else ligarPreviaLoja(alvo, gerarPreviaLojaHTML(dadosPacote()));
+      ligarAjustesRapidos();
+      if (mostrarDepoisDeGerar.has(cliente.id)) { mostrarDepoisDeGerar.delete(cliente.id); mostrarResultado($('[data-area-resultado]', alvo), 'Pronto: site gerado. A prévia está aqui; ajuste à vontade e depois vá para "Aprovar".'); }
+    }
+    on(alvo, 'click', '[data-mostrar-previa-loja]', (b) => { const a = $('[data-area-previa-loja]', alvo); a.classList.toggle('hidden'); b.innerHTML = a.classList.contains('hidden') ? '<i class="fa-solid fa-eye"></i> Ver prévia' : '<i class="fa-solid fa-eye-slash"></i> Esconder prévia'; });
+    on(alvo, 'click', '[data-preview]', () => abrirNovaAba());
+    if (plat) ligarFormularioConteudo(c, cfg);
+    on(alvo, 'click', '[data-salvar-provas-site]', (b) => ocupado(b, async () => {
+      const novos = provas.map((m) => depoimentoDeProva(m, $(`[data-exibir-prova="${m.id}"]`, alvo)?.value || ''));
+      const depoimentos = mesclarProvasNoSite(c.depoimentos, novos);
+      const provasOcultas = provas.filter((m, i) => !novos[i]).map((m) => m.id); // "Não usar": nem o print, nem o texto dele
+      await salvarEVersionar({ conteudo: { ...c, depoimentos, provasOcultas } }, 'Depoimentos a partir de prints de prova social');
+      toast(`Depoimentos atualizados: ${novos.filter(Boolean).length} print(s) no site.`); recarregar();
+    }));
+    on(alvo, 'click', '[data-sync-prova]', (b) => ocupado(b, async () => {
+      const novos = marcados.map((cr) => criativoParaDepoimento(cliente, cr));
+      await salvarSite({ conteudo: { ...c, depoimentos: mesclarDepoimentos(c.depoimentos, novos) } });
+      toast(`Prova social atualizada: ${novos.length} criativo(s).`); recarregar();
+    }));
+    on(alvo, 'click', '[data-sincronizar-modos]', (b) => ocupado(b, async () => {
+      await salvarEVersionar({ pacote: aplicarBaseNoPacote(site.pacote, baseDoCustom(site)) }, 'Recebeu o texto e as cores do site personalizado', 'pacote');
+      toast('Pacote atualizado com o texto e as cores do site personalizado.'); recarregar();
+    }));
+    on(alvo, 'click', '[data-sincronizar-inverso]', (b) => ocupado(b, async () => {
+      await salvarEVersionar(aplicarBaseNoCustom(site.conteudo || {}, site.config || {}, baseDoPacote(site)), 'Recebeu o texto e as cores do pacote', 'custom');
+      toast('Site personalizado atualizado com o texto e as cores do pacote.'); recarregar();
+    }));
+    if (gerado || (custom && produtos.length)) {
+      montarAjusteSite($('[data-ajuste]', alvo), { cliente, produtos, modo: modoV, get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML, previaPacote })
+        .catch((e) => { console.warn('[ajuste do site]', e); $('[data-ajuste]', alvo).innerHTML = '<p class="hint text-rose-600">Não consegui abrir "Ajustar este site". Recarregue a página.</p>'; });
+    }
+  }
 
   // ---------- ajustes rápidos (sem IA): cada mudança vira versão nova e a prévia atualiza na hora ----------
-  const modoV = custom ? 'custom' : 'pacote';
   const ordemAtual = () => (custom ? normalizarLayout(site.layout).ordem : normalizarVisual(site.pacote?.visual).ordem);
   const ocultasAtuais = () => (custom ? normalizarLayout(site.layout).ocultos : normalizarVisual(site.pacote?.visual).ocultas);
   const nomeSecao = (k) => (custom ? nomeBloco(k) : nomeSecaoLoja(k));
@@ -346,12 +424,12 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const fotos = custom ? normalizarLayout(site.layout).ajusteFotos : normalizarVisual(site.pacote?.visual).ajusteFotos;
     const ordem = ordemAtual(), ocultas = ocultasAtuais();
     return `<details class="mt-3 rounded-lg border border-indigo-200 p-3" open data-ajustes-rapidos><summary class="cursor-pointer text-sm font-semibold"><i class="fa-solid fa-sliders"></i> Ajustes rápidos (sem IA)</summary>
-      <p class="hint mt-1">Cada escolha muda a prévia na hora e vira uma versão nova (dá para voltar em "Ajustar este site").${custom ? '' : ' Tudo aparece também em "O que colocar na plataforma".'}</p>
+      <p class="hint mt-1">Cada escolha muda a prévia na hora e vira uma versão nova (dá para voltar em "Ajustar este site", abaixo).</p>
       <div class="mt-2 grid gap-3 sm:grid-cols-2">
         <label class="text-sm">Imagem do banner<select class="input mt-0.5" data-ctl-banner ${bannerUsarEm?.por === 'manual' ? 'disabled' : ''}><option value="">Sem imagem (fundo de cor)</option>${imgs.map((m) => `<option value="${esc(m.id)}" ${m.id === bannerAtual ? 'selected' : ''}>${esc(rotuloFoto(m))}</option>`).join('')}</select>
-          <span class="hint" data-banner-origem>${bannerUsarEm?.por === 'manual' ? `Definida em Materiais do cliente: ${esc(rotuloFoto(bannerUsarEm))} ("Usar em: Banner"). Para trocar, mude lá.`
+          <span class="hint" data-banner-origem>${bannerUsarEm?.por === 'manual' ? `Definida em Materiais do cliente: ${esc(rotuloFoto(bannerUsarEm))} ("Usar em: Banner"). Para trocar, mude lá (passo 2).`
             : bannerUsarEm ? `No banner agora: ${esc(rotuloFoto(bannerUsarEm))} (definido pelo texto "Como eu quero o site"). Escolher aqui vale mais que o texto.`
-            : imgs.length ? 'Imagens de "Materiais do cliente".' : 'Envie uma imagem em "Materiais do cliente" para usar aqui.'}</span></label>
+            : imgs.length ? 'Imagens de "Materiais do cliente".' : 'Envie uma imagem em "Materiais do cliente" (passo 2) para usar aqui.'}</span></label>
         <fieldset class="text-sm"><legend>Fotos dos produtos</legend>${Object.entries(AJUSTES_FOTO).map(([k, t]) => `<label class="mr-3 inline-flex items-center gap-1"><input type="radio" name="ctl-fotos" value="${k}" data-ctl-fotos ${fotos === k ? 'checked' : ''}> ${t}</label>`).join('')}
           <span class="hint block">Inteiras: sem cortar nada. Preencher: ocupa o quadro (as bordas podem ser cortadas).</span></fieldset></div>
       <p class="mt-3 text-sm font-medium">Seções (ordem e visibilidade)</p>
@@ -360,170 +438,186 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <button type="button" class="btn-ghost btn-sm !px-2" data-ctl-subir="${k}" ${i ? '' : 'disabled'} aria-label="Subir ${esc(nomeSecao(k))}"><i class="fa-solid fa-arrow-up"></i></button>
         <button type="button" class="btn-ghost btn-sm !px-2" data-ctl-descer="${k}" ${i < ordem.length - 1 ? '' : 'disabled'} aria-label="Descer ${esc(nomeSecao(k))}"><i class="fa-solid fa-arrow-down"></i></button></li>`).join('')}</ol></details>`;
   }
-  const aplicarControle = async (ops) => {
-    const antes = estadoDoSite(site, modoV);
-    const r = aplicarOperacoes(antes, ops, { modo: modoV, materiais, produtos });
-    if (!r.mudancas.length) { toast(r.descartadas[0]?.motivo ? `Nada mudou: ${r.descartadas[0].motivo}.` : 'Nada mudou.', 'info'); return abrirResultado({ rolar: false }); }
-    const v = registrarVersao(site, { modo: modoV, estadoAntes: antes, estadoDepois: r.estado, resumo: resumoMudancas(r.mudancas), origem: 'controle' });
-    await salvarSite({ ...r.estado, ...v });
-    await abrirResultado({ rolar: false });
-    toast(`${resumoMudancas(r.mudancas)} (v${v.proximaVersao - 1}).`);
-  };
-  on(root, 'change', '[data-ctl-banner]', (s) => aplicarControle([{ op: 'imagem', bloco: custom ? 'hero' : 'banner', materialId: s.value || null }]));
-  on(root, 'change', '[data-ctl-fotos]', (r) => aplicarControle([{ op: 'fotos', ajuste: r.value }]));
-  on(root, 'change', '[data-ctl-mostrar]', (c) => aplicarControle([{ op: c.checked ? 'mostrar' : 'ocultar', bloco: c.dataset.ctlMostrar }]));
-  on(root, 'click', '[data-ctl-subir]', (b) => { const o = ordemAtual(), k = b.dataset.ctlSubir; aplicarControle([{ op: 'mover', bloco: k, antesDe: o[o.indexOf(k) - 1] }]); });
-  on(root, 'click', '[data-ctl-descer]', (b) => { const o = ordemAtual(), k = b.dataset.ctlDescer; aplicarControle([{ op: 'mover', bloco: k, depoisDe: o[o.indexOf(k) + 1] }]); });
-  // Clientes reais: borrar (cópia borrada; original guardado) e baixar
-  const recarregarMateriais = async () => { const novos = await db.listar(COL.materiais, { clienteId: cliente.id }); materiais.splice(0, materiais.length, ...novos); };
-  on(root, 'click', '[data-borrar-print]', (b) => ocupado(b, async () => {
-    const mat = materiais.find((x) => x.id === b.dataset.borrarPrint); if (!mat) return;
-    await abrirBorrar(cliente, mat, async () => { await recarregarMateriais(); await abrirResultado({ rolar: false }); });
-  }));
-  on(root, 'click', '[data-baixar-prints]', (b) => ocupado(b, async () => { await baixarPrintsZip(cliente, printsDoCliente(materiais)); await recarregarMateriais(); }));
-  on(root, 'click', '[data-baixar-por-lugar]', (b) => ocupado(b, async () => {
-    const prints = printsDoCliente(materiais);
-    if (!(await autorizarPrints(prints))) return; // prints e fotos com pessoa sem borrar: só com autorização
-    const arquivos = arquivosPorPasta(dadosDoPacote({ cliente, site, produtos, provas: prints, materiais }));
-    const pasta = `imagens-${slug(cliente.nome) || 'loja'}`, falhas = [], itens = [];
-    for (const a of arquivos) {
-      try { const r = await fetch(a.url); if (!r.ok) throw new Error(); itens.push({ nome: `${pasta}/${a.caminho}`, conteudo: new Uint8Array(await r.arrayBuffer()) }); } catch { falhas.push(a.caminho); }
-    }
-    if (!itens.length) throw new Error('Não consegui baixar nenhuma imagem agora. Tente de novo em instantes.');
-    baixarTexto(`${pasta}.zip`, criarZip(itens), 'application/zip');
-    if (falhas.length) toast(`${falhas.length} imagem(ns) não baixaram e ficaram fora do .zip:\n${falhas.join('\n')}`, 'erro');
-    else toast(`Baixado: ${itens.length} imagem(ns) em pastas (banner, produtos, clientes-reais, sobre, galeria). Veja em "O que colocar na plataforma" o que vai em cada lugar.`);
-  }));
-  on(root, 'click', '[data-baixar-banner]', (b) => ocupado(b, async () => {
-    const ban = dadosDoPacote({ cliente, site, produtos, materiais }).visual.banner; const r = await fetch(ban.url); if (!r.ok) throw new Error('Não consegui baixar a imagem do banner. Tente de novo.');
-    const bl = await r.blob(); baixarTexto(`banner-${slug(cliente.nome) || 'loja'}.${{ 'image/png': 'png', 'image/webp': 'webp' }[bl.type] || 'jpg'}`, new Uint8Array(await bl.arrayBuffer()), bl.type);
-  }));
-  on(root, 'click', '[data-ver-resultado]', (b) => ocupado(b, abrirResultado));
-  on(root, 'click', '[data-fechar-resultado]', () => { $('[data-resultado-site]', root).innerHTML = ''; });
-  on(root, 'click', '[data-mostrar-previa-loja]', (b) => { const a = $('[data-area-previa-loja]', root); a.classList.toggle('hidden'); b.innerHTML = a.classList.contains('hidden') ? '<i class="fa-solid fa-eye"></i> Ver prévia' : '<i class="fa-solid fa-eye-slash"></i> Esconder prévia'; });
-  on(root, 'click', '[data-copiar-item]', (b) => { const [gi, ii] = b.dataset.copiarItem.split('-').map(Number); const it = gruposCopiar[gi]?.itens[ii]; if (it) copiar(it.valor); });
-  on(root, 'click', '[data-link-resultado]', (b) => ocupado(b, async () => {
-    if (!(await autorizarPrints(printsDoCliente(materiais)))) return;
-    const { gerarLinkSite } = await import('./aprovacoes-site.js');
-    await gerarLinkSite(cliente, site, produtos);
-    toast('Link de aprovação criado. Copie o link ou a mensagem para o cliente.');
-    location.hash = `#/c/${cliente.id}/aprovacoes`;
-  }));
-  if (abrirResultadoDepois.has(cliente.id)) { abrirResultadoDepois.delete(cliente.id); abrirResultado(); }
-
-  on(root, 'click', '[data-salvar-provas-site]', (b) => ocupado(b, async () => {
-    const novos = provas.map((m) => depoimentoDeProva(m, $(`[data-exibir-prova="${m.id}"]`, root)?.value || ''));
-    const depoimentos = mesclarProvasNoSite(c.depoimentos, novos);
-    const provasOcultas = provas.filter((m, i) => !novos[i]).map((m) => m.id); // "Não usar": nem o print, nem o texto dele
-    await salvarEVersionar({ conteudo: { ...c, depoimentos, provasOcultas } }, 'Depoimentos a partir de prints de prova social');
-    toast(`Depoimentos atualizados: ${novos.filter(Boolean).length} print(s) no site. Confira em "Ver prévia".`); recarregar();
-  }));
-
-  on(root, 'click', '[data-sync-prova]', (b) => ocupado(b, async () => {
-    const novos = marcados.map((cr) => criativoParaDepoimento(cliente, cr));
-    const depoimentos = mesclarDepoimentos(c.depoimentos, novos);
-    await salvarSite({ conteudo: { ...c, depoimentos } });
-    toast(`Prova social atualizada: ${novos.length} criativo(s).`); recarregar();
-  }));
-
-  const lerConteudo = () => {
-    const v = lerForm($('#fc', root));
-    const escritos = listaDeLinhas(v.depoimentos).map((l) => { const [nome, ...t] = l.split('|'); return { nome: nome.trim(), texto: t.join('|').trim() }; }).filter((d) => d.texto);
-    // Preserva os depoimentos puxados de criativos: este formulário só edita os escritos à mão.
-    const dep = [...escritos, ...(c.depoimentos || []).filter(depoimentoGerido)];
-    return {
-      conteudo: { ...c, heroTitulo: v.heroTitulo, heroSubtitulo: v.heroSubtitulo, heroCta: v.heroCta, storytelling: v.storytelling, depoimentos: dep,
-        newsletterTitulo: v.newsletterTitulo, politicas: { trocas: v.trocas, envio: v.envio, privacidade: v.privacidade }, ...(custom ? { faq: textoParaFaq(v.faq) } : {}) },
-      config: { ...cfg, ...(custom ? { corPrimaria: v.corPrimaria, corFundo: v.corFundo, whatsapp: v.whatsapp, pagamentos: FORMAS_PAGAMENTO.map(([k]) => k).filter((k) => $('#fc', root).elements['pag_' + k]?.checked) } : {}) },
+  function ligarAjustesRapidos() {
+    const aplicarControle = async (ops) => {
+      const antes = estadoDoSite(site, modoV);
+      const r = aplicarOperacoes(antes, ops, { modo: modoV, materiais, produtos });
+      if (!r.mudancas.length) { toast(r.descartadas[0]?.motivo ? `Nada mudou: ${r.descartadas[0].motivo}.` : 'Nada mudou.', 'info'); return; }
+      const v = registrarVersao(site, { modo: modoV, estadoAntes: antes, estadoDepois: r.estado, resumo: resumoMudancas(r.mudancas), origem: 'controle' });
+      await salvarSite({ ...r.estado, ...v });
+      toast(`${resumoMudancas(r.mudancas)} (v${v.proximaVersao - 1}).`);
+      recarregar();
     };
-  };
-  on(root, 'submit', '#fc', async (f, ev) => { ev.preventDefault(); await ocupado(f.querySelector('[type=submit]'), async () => { await salvarEVersionar(lerConteudo(), 'Edição no formulário "Conteúdo da loja"'); toast('Conteúdo salvo.'); recarregar(); }); });
-
-  on(root, 'click', '[data-ia]', (b) => gerarComIa(b));
-  montarPerguntasSite($('[data-perguntas]', root), ctxPerguntas, { aberto: progressoSite(cliente, site, produtos) < TOTAL_PERGUNTAS && !site.exportadoEm });
-  on(root, 'click', '[data-faq-manual]', () => {
-    const t = $('#fc [name=faq]', root);
-    t.value = [t.value.trim(), perguntasDasObjecoes(cliente)].filter(Boolean).join('\n');
-    toast('Perguntas colocadas. Escreva a resposta depois do | e clique em "Salvar conteúdo".', 'info');
-  });
-  on(root, 'click', '[data-faq-ia]', (b) => ocupado(b, async () => {
-    const faq = await gerarFaqSite({ cliente, produtos, politicas: c.politicas || {} });
-    $('#fc [name=faq]', root).value = faqParaTexto(faq);
-    toast(`A IA escreveu ${faq.length} pergunta(s). Revise e clique em "Salvar conteúdo".`, 'info');
-  }));
-
-  // Sempre o estado ACEITO (conteúdo + cores + layout dos ajustes); uma mudança proposta em aberto nunca entra no download.
-  const matsCom = (usosFotos) => (usosFotos ? comUsos(materiais, patchesDe(usosFotos)) : materiais);
-  const htmlDe = (e, extra = {}) => { const mats = matsCom(e.usosFotos); return gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(printsDoCliente(mats), e.conteudo?.depoimentos), materiais: mats, ...extra }); };
-  const previaPacote = (pacote, usosFotos) => { const mats = matsCom(usosFotos); return gerarPreviaLojaHTML(dadosDoPacote({ cliente, site: { ...site, pacote }, produtos, provas: printsDoCliente(mats), materiais: mats })); };
-  const html = (extra) => htmlDe({ conteudo: site.conteudo, config: site.config, layout: site.layout }, extra);
-  if (custom ? (temCustom(site) || produtos.length) : site.pacote) {
-    montarAjusteSite($('[data-ajuste]', root), { cliente, produtos, modo: custom ? 'custom' : 'pacote', get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML, previaPacote })
-      .catch((e) => { console.warn('[ajuste do site]', e); $('[data-ajuste]', root).innerHTML = '<p class="hint text-rose-600">Não consegui abrir "Ajustar este site". Recarregue a página.</p>'; });
+    on(alvo, 'change', '[data-ctl-banner]', (s) => aplicarControle([{ op: 'imagem', bloco: custom ? 'hero' : 'banner', materialId: s.value || null }]));
+    on(alvo, 'change', '[data-ctl-fotos]', (r) => aplicarControle([{ op: 'fotos', ajuste: r.value }]));
+    on(alvo, 'change', '[data-ctl-mostrar]', (c) => aplicarControle([{ op: c.checked ? 'mostrar' : 'ocultar', bloco: c.dataset.ctlMostrar }]));
+    on(alvo, 'click', '[data-ctl-subir]', (b) => { const o = ordemAtual(), k = b.dataset.ctlSubir; aplicarControle([{ op: 'mover', bloco: k, antesDe: o[o.indexOf(k) - 1] }]); });
+    on(alvo, 'click', '[data-ctl-descer]', (b) => { const o = ordemAtual(), k = b.dataset.ctlDescer; aplicarControle([{ op: 'mover', bloco: k, depoisDe: o[o.indexOf(k) + 1] }]); });
   }
-  const marcarExportado = () => salvarSite({ exportadoEm: new Date().toISOString(), status: site.status === 'rascunho' ? 'pronto' : site.status });
-  on(root, 'click', '[data-baixar-site]', async () => {
-    baixarTexto(`${slug(cliente.nome) || 'loja'}-index.html`, html(), 'text/html;charset=utf-8');
-    await marcarExportado(); recarregar();
-  });
-  on(root, 'click', '[data-baixar-zip]', async () => {
-    if (!(await autorizarPrints(printsDoCliente(materiais)))) return; // prints sem borrar só com autorização
-    const pasta = pastaDoSite(cliente);
-    // O logo vai DENTRO da pasta, com os bytes originais (sem converter), e o site aponta para ele.
-    const logo = await arquivoDoLogo(cliente);
-    if (cliente.logoArquivo && !logo) toast('Não consegui baixar o arquivo do logo agora: o site aponta para o endereço dele na internet.', 'info');
-    baixarTexto(`${pasta}.zip`, criarZip([{ nome: `${pasta}/index.html`, conteudo: html(logo ? { logoUrl: logo.nome } : {}) }, ...(logo ? [{ nome: `${pasta}/${logo.nome}`, conteudo: logo.bytes }] : [])]), 'application/zip');
-    await marcarExportado();
-    toast('Pasta do site baixada. Próximo passo: "Como publicar este site", logo abaixo.', 'info');
-    recarregar();
-  });
-  // Prévia isolada: o site roda num iframe sandbox (origem própria, sem acesso aos dados/login do painel). Antes ele
-  // era escrito direto numa aba com a MESMA origem do painel — scripts do cliente (Pixel, Hotjar, Tawk.to) rodariam
-  // com acesso ao armazenamento do painel. No iframe o carrinho e o aviso de cookies funcionam, só não guardam a escolha.
-  on(root, 'click', '[data-preview]', () => {
+
+  // ---------- "Conteúdo da loja" (o caminho sem IA) ----------
+  function formularioConteudoHtml(c, cfg) {
+    return `<form id="fc" class="mt-3 space-y-3"><p class="caption">Preencha à mão e clique em "Salvar conteúdo". "Gerar site" (acima) escreve estes campos com a IA. Depoimentos: os reais (provas em texto, prints, criativos) entram sozinhos; sem nenhuma prova, a IA escreve modelos marcados "[MODELO – substituir]".</p>
+      <div><label class="label">Título do banner (hero)</label><input class="input" name="heroTitulo" value="${esc(c.heroTitulo)}"></div>
+      <div><label class="label">Subtítulo</label><input class="input" name="heroSubtitulo" value="${esc(c.heroSubtitulo)}"></div>
+      <div><label class="label">Texto do botão do banner</label><input class="input" name="heroCta" value="${esc(c.heroCta)}"></div>
+      <div><label class="label">História da marca</label><textarea class="input" rows="4" name="storytelling">${esc(c.storytelling)}</textarea></div>
+      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções</summary><div class="mt-3 space-y-3">
+        ${custom ? `<div class="grid grid-cols-2 gap-3"><div><label class="label">Cor principal</label><input type="color" class="h-10 w-full rounded" name="corPrimaria" value="${esc(cfg.corPrimaria || '#4f46e5')}"></div>
+          <div><label class="label">Cor de fundo</label><input type="color" class="h-10 w-full rounded" name="corFundo" value="${esc(cfg.corFundo || '#ffffff')}"></div></div>
+          <div><label class="label">WhatsApp (com DDD)</label><input class="input" name="whatsapp" value="${esc(cfg.whatsapp)}" placeholder="5511999999999"></div>` : ''}
+        <div><label class="label">Depoimentos escritos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => !depoimentoGerido(d) && d.origem !== 'prova_texto').map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
+          <p class="hint">Use depoimentos reais. Os que começam com "[MODELO" foram escritos pela IA só porque ainda não havia prova social: troque por reais. As provas em texto do perfil de marca, os prints e os criativos não aparecem aqui: são lidos da fonte.</p></div>
+        ${custom ? `<div><label class="label">Perguntas frequentes (uma por linha: pergunta | resposta)</label><textarea class="input" rows="4" name="faq" placeholder="E se não servir? | A troca é grátis em até 30 dias.">${esc(faqParaTexto(c.faq || []))}</textarea>
+          <p class="hint">Pergunta sem resposta não aparece. ${objecoesDe(cliente).length ? `Base: as ${objecoesDe(cliente).length} objeção(ões) do perfil de marca.` : 'Sem objeções no perfil de marca: com o campo vazio, a seção não aparece.'}</p>
+          ${objecoesDe(cliente).length ? `<div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ia btn-sm" data-faq-ia title="Só a FAQ: não mexe no resto do conteúdo"><i class="fa-solid fa-wand-magic-sparkles"></i> Escrever só a FAQ com IA</button>
+            <button type="button" class="btn-ghost btn-sm" data-faq-manual title="Coloca as objeções como perguntas; você escreve as respostas">Montar perguntas das objeções (sem IA)</button></div>` : ''}</div>
+        <div><label class="label">Formas de pagamento no selo "Compra segura"</label><div class="flex flex-wrap gap-3 text-sm">${FORMAS_PAGAMENTO.map(([k, t]) => `<label class="flex items-center gap-1"><input type="checkbox" name="pag_${k}" ${(cfg.pagamentos || PAGAMENTOS_PADRAO).includes(k) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
+          <p class="hint">Marque só o que o checkout do cliente aceita de verdade.</p></div>` : ''}
+        <div><label class="label">Newsletter — título</label><input class="input" name="newsletterTitulo" value="${esc(c.newsletterTitulo)}"></div>
+        <div><label class="label">Política de trocas</label><textarea class="input" rows="2" name="trocas">${esc(c.politicas?.trocas)}</textarea></div>
+        <div><label class="label">Política de envio</label><textarea class="input" rows="2" name="envio">${esc(c.politicas?.envio)}</textarea></div>
+        <div><label class="label">Política de privacidade</label><textarea class="input" rows="2" name="privacidade">${esc(c.politicas?.privacidade)}</textarea></div>
+      </div></details>
+      <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar conteúdo</button></form>`;
+  }
+  function ligarFormularioConteudo(c, cfg) {
+    const lerConteudo = () => {
+      const v = lerForm($('#fc', alvo));
+      const escritos = listaDeLinhas(v.depoimentos).map((l) => { const [nome, ...t] = l.split('|'); return { nome: nome.trim(), texto: t.join('|').trim() }; }).filter((d) => d.texto);
+      // Este formulário só edita os escritos à mão: criativos, prints e provas do perfil continuam como estão.
+      const dep = [...escritos, ...(c.depoimentos || []).filter((d) => depoimentoGerido(d) || d.origem === 'prova_texto')];
+      return {
+        conteudo: { ...c, heroTitulo: v.heroTitulo, heroSubtitulo: v.heroSubtitulo, heroCta: v.heroCta, storytelling: v.storytelling, depoimentos: dep,
+          newsletterTitulo: v.newsletterTitulo, politicas: { trocas: v.trocas, envio: v.envio, privacidade: v.privacidade }, ...(custom ? { faq: textoParaFaq(v.faq) } : {}) },
+        config: { ...cfg, ...(custom ? { corPrimaria: v.corPrimaria, corFundo: v.corFundo, whatsapp: v.whatsapp, pagamentos: FORMAS_PAGAMENTO.map(([k]) => k).filter((k) => $('#fc', alvo).elements['pag_' + k]?.checked) } : {}) },
+      };
+    };
+    on(alvo, 'submit', '#fc', async (f, ev) => { ev.preventDefault(); await ocupado(f.querySelector('[type=submit]'), async () => { await salvarEVersionar(lerConteudo(), 'Edição no formulário "Conteúdo da loja"'); toast('Conteúdo salvo.'); recarregar(); }); });
+    on(alvo, 'click', '[data-faq-manual]', () => {
+      const t = $('#fc [name=faq]', alvo);
+      t.value = [t.value.trim(), perguntasDasObjecoes(cliente)].filter(Boolean).join('\n');
+      toast('Perguntas colocadas. Escreva a resposta depois do | e clique em "Salvar conteúdo".', 'info');
+    });
+    on(alvo, 'click', '[data-faq-ia]', (b) => ocupado(b, async () => {
+      const faq = await gerarFaqSite({ cliente, produtos, politicas: c.politicas || {} });
+      $('#fc [name=faq]', alvo).value = faqParaTexto(faq);
+      toast(`A IA escreveu ${faq.length} pergunta(s). Revise e clique em "Salvar conteúdo".`, 'info');
+    }));
+  }
+
+  // Prévia isolada: o site roda num iframe sandbox (origem própria, sem acesso aos dados/login do painel).
+  function abrirNovaAba() {
     const w = window.open('', '_blank');
     if (!w) return toast('O navegador bloqueou a nova aba. Libere pop-ups para este endereço e tente de novo.', 'erro');
     w.document.open();
     w.document.write(`<!doctype html><meta charset="utf-8"><title>Prévia — ${esc(cliente.nome)}</title><style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%}</style>
 <iframe sandbox="allow-scripts allow-popups allow-forms allow-modals" srcdoc="${esc(html())}"></iframe>`);
     w.document.close();
-  });
-  on(root, 'click', '[data-trazer-pacote]', async (b) => ocupado(b, async () => {
-    await salvarSite({ ...aplicarBaseNoCustom(site.conteudo || {}, site.config || {}, baseDoPacote(site)), avisoModosVisto: false, baseReaproveitadaEm: new Date().toISOString() });
-    toast('Texto, perguntas frequentes e cor principal trazidos do pacote. Revise e clique em "Salvar conteúdo" se mudar algo.'); recarregar();
-  }));
-  on(root, 'click', '[data-sincronizar-modos]', (b) => ocupado(b, async () => {
-    await salvarEVersionar({ pacote: aplicarBaseNoPacote(site.pacote, baseDoCustom(site)) }, 'Recebeu o texto e as cores do site personalizado', 'pacote');
-    toast('Pacote atualizado com o texto e as cores do formulário. Baixe os banners e o manual de novo para entregar a versão nova.'); recarregar();
-  }));
-  on(root, 'click', '[data-sincronizar-inverso]', (b) => ocupado(b, async () => {
-    await salvarEVersionar(aplicarBaseNoCustom(site.conteudo || {}, site.config || {}, baseDoPacote(site)), 'Recebeu o texto e as cores do pacote', 'custom');
-    toast('Site personalizado atualizado com o texto e as cores do pacote. Baixe a pasta do site de novo para entregar.'); recarregar();
-  }));
-  $('[data-aviso-modos]', root)?.addEventListener('toggle', (e) => { if (!e.target.open && !site.avisoModosVisto) salvarSite({ avisoModosVisto: true }); });
-  on(root, 'change', '[data-link]', (i) => salvarSite({ linkPublicado: i.value.trim(), ...(i.value.trim() ? { status: 'publicado' } : {}) }).then(() => toast('Link salvo.')));
-  on(root, 'change', '[data-status]', (s) => salvarSite({ status: s.value }).then(recarregar));
-  on(root, 'change', '[data-plat]', (s) => salvarSite({ plataforma: s.value }).then(recarregar));
+  }
 
-  on(root, 'click', '[data-csv]', async () => {
-    const lista = comTextosDoPacote(produtosComFotos(produtos, materiais), site.pacote); // descrições/SEO do pacote; fotos na ordem de "Usar em"
-    const csv = site.plataforma === 'shopify' ? csvShopify(lista, cliente) : csvNuvemshop(lista, cliente);
-    baixarTexto(`catalogo-${site.plataforma}-${slug(cliente.nome)}.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
-    await salvarSite({ exportadoEm: new Date().toISOString() }); toast('CSV gerado. Confira as colunas no passo a passo do manual.'); recarregar();
-  });
-  on(root, 'click', '[data-pacote]', (b) => gerarComIa(b));
-  on(root, 'click', '[data-baixar-logo]', (b) => ocupado(b, async () => {
-    const logo = await arquivoDoLogo(cliente);
-    if (!logo) throw new Error('Não consegui baixar o logo agora. Tente de novo.');
-    baixarTexto(`${slug(cliente.nome) || 'loja'}-${logo.nome}`, logo.bytes, cliente.logoArquivo.tipo);
-  }));
-  on(root, 'click', '[data-baixar-pacote]', () => baixarTexto(`pacote-${slug(cliente.nome)}.txt`, pacoteTexto(site.pacote), 'text/plain;charset=utf-8'));
+  // ==================== 5. Aprovar ====================
+  async function passo5() {
+    alvo.innerHTML = `<p class="caption mb-3">O link mostra o site como está agora; o cliente abre sem login e clica em Aprovar ou Pedir ajuste. ${!gerado ? '<b>Gere o site no passo 4 antes de mandar o link.</b>' : ''}</p><div data-aprovacoes-passo></div>`;
+    const { view: aprovacoesView } = await import('./aprovacoes-site.js');
+    await aprovacoesView($('[data-aprovacoes-passo]', alvo), cliente);
+  }
 
-  on(root, 'click', '[data-manual]', async () => {
-    const versao = (site.versaoManual || 0) + 1;
-    (await (custom ? manualCustom : manualPacote)({ cliente, site, produtos, versao })).salvar(`manual-entrega-${slug(cliente.nome)}-v${versao}.pdf`);
-    await salvarSite({ versaoManual: versao }); toast(`Manual v${versao} gerado.`); recarregar();
-  });
+  // ==================== 6. Subir na plataforma ====================
+  async function passo6() {
+    const lista = etapas[5].checklist || [];
+    const prints = printsDoCliente(materiais);
+    const d = !custom && gerado ? dadosPacote() : null;
+    const grupos = d ? gruposPlataforma(d) : [];
+    const nomeP = plat ? PLATAFORMAS_SITE.find(([k]) => k === plat)[1] : '';
+    const grupoHTML = (g, gi) => `<details class="rounded-lg border border-slate-200 p-2" ${gi < 3 ? 'open' : ''} data-grupo-plataforma="${esc(g.id)}"><summary class="cursor-pointer text-sm font-semibold">${esc(g.titulo)}</summary>
+      <p class="hint mt-1"><i class="fa-solid fa-location-arrow"></i> Onde colocar: <b data-caminho>${esc(g.caminho)}</b></p>
+      <ul class="mt-1 space-y-1">${g.itens.map((it, ii) => `<li class="flex items-start justify-between gap-2 rounded bg-slate-50 p-2 text-sm"><div class="min-w-0"><p class="text-xs text-slate-500">${esc(it.rotulo)}</p>
+        ${it.tipo === 'imagem' ? `<img src="${esc(it.valor)}" alt="" class="mt-1 max-h-12" style="background:repeating-conic-gradient(#cbd5e1 0% 25%,#fff 0% 50%) 50%/12px 12px">` : `<p class="whitespace-pre-wrap">${esc(it.valor.length > 400 ? it.valor.slice(0, 400) + '…' : it.valor)}</p>`}</div>
+        ${it.tipo === 'imagem' ? '' : `<button type="button" class="btn-ghost btn-sm shrink-0" data-copiar-item="${gi}-${ii}"><i class="fa-solid fa-copy"></i> Copiar</button>`}</li>`).join('')}</ul></details>`;
+    alvo.innerHTML = `<div class="card"><h3 class="font-semibold">${plat ? `${esc(nomeP)}${nomeTema(site) ? ` · tema ${esc(nomeTema(site))}` : ''}` : 'Plataforma não escolhida'}</h3>
+        ${!plat ? `<p class="mt-1 text-sm text-amber-800">Escolha a plataforma no passo 3 para ver os caminhos certos. <a class="underline" href="${rotaDoPasso(cliente.id, 3)}">Ir para o passo 3</a></p>`
+          : custom ? '<p class="caption">Site personalizado: não há plataforma. Baixe a pasta e siga "Como publicar este site", abaixo.</p>'
+          : !gerado ? `<p class="mt-1 text-sm text-amber-800">Gere o pacote no passo 4 para ver o que colocar em cada lugar. <a class="underline" href="${rotaDoPasso(cliente.id, 4)}">Ir para o passo 4</a></p>`
+          : `<p class="hint mb-2">Cada conteúdo, agrupado pelo lugar onde entra na ${esc(nomeP)}. Os produtos também vão no CSV.</p><div class="space-y-2" data-o-que-colocar>${grupos.map(grupoHTML).join('')}</div>`}</div>
+      <div class="card mt-4"><h3 class="font-semibold">Downloads</h3><div class="mt-2 flex flex-wrap gap-2" data-downloads>
+        ${custom ? `<button type="button" class="btn-primary" data-baixar-zip ${produtos.length && gerado ? '' : 'disabled'}><i class="fa-solid fa-file-zipper"></i> Pasta do site (.zip)</button>
+          <button type="button" class="btn-ghost" data-baixar-site ${produtos.length && gerado ? '' : 'disabled'}><i class="fa-solid fa-download"></i> Só o index.html</button>
+          <button type="button" class="btn-ghost" data-preview ${gerado ? '' : 'disabled'}><i class="fa-solid fa-eye"></i> Ver prévia em nova aba</button>`
+        : `<button type="button" class="btn-primary" data-csv ${produtos.length && plat ? '' : 'disabled'}><i class="fa-solid fa-file-csv"></i> Catálogo (CSV${plat ? ` ${esc(nomeP)}` : ''})</button>
+          ${site?.pacote ? '<button type="button" class="btn-ghost" data-baixar-pacote><i class="fa-solid fa-download"></i> Banners e briefing (.txt)</button>' : ''}
+          ${cliente.logoArquivo ? '<button type="button" class="btn-ghost" data-baixar-logo><i class="fa-solid fa-copyright"></i> Logo (original)</button>' : ''}
+          ${d?.visual?.banner?.url ? '<button type="button" class="btn-ghost" data-baixar-banner><i class="fa-solid fa-image"></i> Imagem do banner</button>' : ''}
+          ${prints.length ? '<button type="button" class="btn-ghost" data-baixar-prints><i class="fa-solid fa-images"></i> Prints de clientes (.zip)</button>' : ''}
+          ${d && arquivosPorPasta(d).length ? `<button type="button" class="btn-primary" data-baixar-por-lugar title="banner/, produtos/<nome do produto>/, clientes-reais/ (cópias borradas), sobre/ e galeria/"><i class="fa-solid fa-folder-tree"></i> Imagens por lugar (.zip, ${arquivosPorPasta(d).length} arquivo(s))</button>` : ''}`}
+        <button type="button" class="btn-ghost" data-manual ${plat ? '' : 'disabled'}><i class="fa-solid fa-file-pdf"></i> Manual de entrega (PDF)</button></div></div>
+      ${custom ? comoPublicarHTML(cliente) : ''}
+      <div class="card mt-4" data-ancora="publicado"><h3 class="font-semibold">Loja no ar</h3>
+        <div class="mt-2 grid gap-3 sm:grid-cols-2"><div><label class="label">Endereço da loja já publicada</label><input class="input" name="link" data-link value="${esc(site?.linkPublicado)}" placeholder="https://…">
+          <p class="hint">A aba Campanhas sugere este link como destino dos anúncios${custom ? ', e o site baixado de novo já sai com a prévia certa para o WhatsApp' : ''}.</p></div>
+          <div><label class="label">Status</label><select class="input" data-status ${site ? '' : 'disabled'}>${opcoes(STATUS_SITE, site?.status)}</select></div></div></div>
+      <div class="card mt-4" data-checklist-final><h3 class="font-semibold">Checklist final</h3><ul class="mt-2 space-y-1 text-sm">${lista.map((x) => `<li class="flex flex-wrap items-center gap-2" data-check="${x.id}" data-ok="${x.ok}">
+        <i class="fa-solid ${x.ok ? 'fa-circle-check text-emerald-600' : 'fa-circle-xmark text-amber-600'}"></i><span class="flex-1">${esc(x.texto)}</span>${x.ok ? '' : `<span class="text-xs text-amber-800">${esc(x.falta)}</span>`}</li>`).join('')}</ul></div>`;
+    const marcarExportado = () => salvarSite({ exportadoEm: new Date().toISOString(), status: site?.status === 'rascunho' ? 'pronto' : site?.status });
+    on(alvo, 'click', '[data-copiar-item]', (b) => { const [gi, ii] = b.dataset.copiarItem.split('-').map(Number); const it = grupos[gi]?.itens[ii]; if (it) copiar(it.valor); });
+    on(alvo, 'click', '[data-baixar-site]', async () => { baixarTexto(`${slug(cliente.nome) || 'loja'}-index.html`, html(), 'text/html;charset=utf-8'); await marcarExportado(); recarregar(); });
+    on(alvo, 'click', '[data-baixar-zip]', async () => {
+      if (!(await autorizarPrints(printsDoCliente(materiais)))) return; // prints sem borrar só com autorização
+      const pasta = pastaDoSite(cliente);
+      const logo = await arquivoDoLogo(cliente); // o logo vai DENTRO da pasta, com os bytes originais
+      if (cliente.logoArquivo && !logo) toast('Não consegui baixar o arquivo do logo agora: o site aponta para o endereço dele na internet.', 'info');
+      baixarTexto(`${pasta}.zip`, criarZip([{ nome: `${pasta}/index.html`, conteudo: html(logo ? { logoUrl: logo.nome } : {}) }, ...(logo ? [{ nome: `${pasta}/${logo.nome}`, conteudo: logo.bytes }] : [])]), 'application/zip');
+      await marcarExportado(); toast('Pasta do site baixada. Próximo passo: "Como publicar este site", logo abaixo.', 'info'); recarregar();
+    });
+    on(alvo, 'click', '[data-preview]', () => abrirNovaAba());
+    on(alvo, 'click', '[data-csv]', async () => {
+      if (!plat || custom) return toast('Escolha a plataforma (Shopify ou Nuvemshop) no passo 3: o CSV muda de formato.', 'erro');
+      const listaCsv = comTextosDoPacote(produtosComF(), site.pacote); // descrições/SEO do pacote; fotos na ordem de "Usar em"
+      const csv = plat === 'shopify' ? csvShopify(listaCsv, cliente) : csvNuvemshop(listaCsv, cliente);
+      baixarTexto(`catalogo-${plat}-${slug(cliente.nome)}.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
+      await salvarSite({ exportadoEm: new Date().toISOString() }); toast('CSV gerado. Confira as colunas no passo a passo do manual.'); recarregar();
+    });
+    on(alvo, 'click', '[data-baixar-logo]', (b) => ocupado(b, async () => {
+      const logo = await arquivoDoLogo(cliente);
+      if (!logo) throw new Error('Não consegui baixar o logo agora. Tente de novo.');
+      baixarTexto(`${slug(cliente.nome) || 'loja'}-${logo.nome}`, logo.bytes, cliente.logoArquivo.tipo);
+    }));
+    on(alvo, 'click', '[data-baixar-pacote]', () => baixarTexto(`pacote-${slug(cliente.nome)}.txt`, pacoteTexto(site.pacote), 'text/plain;charset=utf-8'));
+    on(alvo, 'click', '[data-baixar-prints]', (b) => ocupado(b, async () => baixarPrintsZip(cliente, printsDoCliente(materiais))));
+    on(alvo, 'click', '[data-baixar-banner]', (b) => ocupado(b, async () => {
+      const ban = dadosPacote().visual.banner; const r = await fetch(ban.url); if (!r.ok) throw new Error('Não consegui baixar a imagem do banner. Tente de novo.');
+      const bl = await r.blob(); baixarTexto(`banner-${slug(cliente.nome) || 'loja'}.${{ 'image/png': 'png', 'image/webp': 'webp' }[bl.type] || 'jpg'}`, new Uint8Array(await bl.arrayBuffer()), bl.type);
+    }));
+    on(alvo, 'click', '[data-baixar-por-lugar]', (b) => ocupado(b, async () => {
+      if (!(await autorizarPrints(printsDoCliente(materiais)))) return; // prints e fotos com pessoa sem borrar: só com autorização
+      const arquivos = arquivosPorPasta(dadosPacote());
+      const pasta = `imagens-${slug(cliente.nome) || 'loja'}`, falhas = [], itens = [];
+      for (const a of arquivos) {
+        try { const r = await fetch(a.url); if (!r.ok) throw new Error(); itens.push({ nome: `${pasta}/${a.caminho}`, conteudo: new Uint8Array(await r.arrayBuffer()) }); } catch { falhas.push(a.caminho); }
+      }
+      if (!itens.length) throw new Error('Não consegui baixar nenhuma imagem agora. Tente de novo em instantes.');
+      baixarTexto(`${pasta}.zip`, criarZip(itens), 'application/zip');
+      if (falhas.length) toast(`${falhas.length} imagem(ns) não baixaram e ficaram fora do .zip:\n${falhas.join('\n')}`, 'erro');
+      else toast(`Baixado: ${itens.length} imagem(ns) em pastas (banner, produtos, clientes-reais, sobre, galeria).`);
+    }));
+    on(alvo, 'click', '[data-manual]', async () => {
+      if (!plat) return toast('Escolha a plataforma no passo 3: o manual muda conforme ela.', 'erro');
+      const versao = (site.versaoManual || 0) + 1;
+      (await (custom ? manualCustom : manualPacote)({ cliente, site, produtos: produtosComF(), versao })).salvar(`manual-entrega-${slug(cliente.nome)}-v${versao}.pdf`);
+      await salvarSite({ versaoManual: versao }); toast(`Manual v${versao} gerado.`); recarregar();
+    });
+    on(alvo, 'change', '[data-link]', (i) => salvarSite({ linkPublicado: i.value.trim(), ...(i.value.trim() ? { status: 'publicado' } : {}) }).then(() => { toast('Link salvo.'); recarregar(); }));
+    on(alvo, 'change', '[data-status]', (s) => salvarSite({ status: s.value }).then(recarregar));
+    on(root, 'click', '[data-concluir]', () => {
+      const pend = lista.filter((x) => !x.ok);
+      if (pend.length) { toast(`Ainda falta: ${pend.map((x) => x.texto.toLowerCase()).join('; ')}.`, 'erro'); $('[data-checklist-final]', alvo)?.scrollIntoView({ block: 'center' }); return; }
+      mostrarResultado($('[data-checklist-final]', alvo), 'Tudo certo: a loja deste cliente está montada e no ar.');
+    });
+  }
+
+  // Por último: os passos usam as funções e constantes definidas acima.
+  const PASSOS = { 1: passo1, 2: passo2, 3: passo3, 4: passo4, 5: passo5, 6: passo6 };
+  await PASSOS[passo]();
 });
 
 /** Nome da pasta do site dentro do .zip (e do .zip em si). */

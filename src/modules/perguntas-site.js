@@ -23,7 +23,7 @@ export const respostasSite = (cliente, site, produtos = [], materiais = 0) => re
 export const progressoSite = (cliente, site, produtos, materiais = 0) => Object.values(respostasSite(cliente, site, produtos, materiais)).filter(Boolean).length;
 
 /**
- * O mesmo card fora da aba Site/Loja (aba Criativos): carrega o site e os produtos sozinho. Sem "Gerar site".
+ * O mesmo card fora da aba Site/Loja (aba Criativos): carrega o site e os produtos sozinho. Sem botão de ir para o site.
  * O documento do site só é criado se alguma resposta precisar dele (pagamento, modo do site, "ainda não tem pixel").
  */
 export async function montarQuestionarioNaAba(alvo, cliente, recarregar) {
@@ -53,9 +53,9 @@ const ROTULO = {
 };
 
 /**
- * Monta o card no `alvo`. ctx: { cliente, site, produtos, salvarSite(patch), recarregar(), gerar?(botao) }.
- * `aberto` = começa expandido (na 1ª vez e enquanto faltar resposta). Sem `gerar` (aba Criativos), o botão
- * "Gerar site com essas respostas" não aparece.
+ * Monta o card no `alvo`. ctx: { cliente, site, produtos, salvarSite(patch), recarregar(), irParaGerar?() }.
+ * `aberto` = começa expandido (na 1ª vez e enquanto faltar resposta). O único "Gerar site" fica no passo 4 ("Gerar e
+ * ajustar"); aqui, com `irParaGerar`, só o atalho para lá.
  */
 // Aberto/fechado escolhido pela pessoa, por cliente: responder algumas perguntas recarrega a aba e o card não pode fechar sozinho.
 const abertoPorCliente = new Map();
@@ -114,8 +114,8 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
     <div class="mt-3" data-respostas-cliente></div>
     ${BLOCOS_Q.map(([b, titulo]) => `<h4 class="mt-4 text-sm font-semibold uppercase tracking-wide text-slate-500">${titulo}</h4><ol class="mt-2 space-y-2">
       ${PERGUNTAS.filter((p) => p.bloco === b).map((p) => (p.id === 'presenca' ? perguntaZeroHtml(cliente, p.n) : pergunta(p.id, CORPO[p.id]()))).join('')}</ol>`).join('')}
-    ${ctx.gerar ? `<div class="mt-3 rounded-lg bg-slate-50 p-3"><p class="caption mb-2"><b>Gerar site com essas respostas:</b> usa a IA para escrever os textos no modo escolhido na pergunta 18 — no site personalizado: banner, história, depoimentos (os reais das provas sociais; modelos marcados só se não houver nenhuma), políticas e a FAQ a partir das objeções; no pacote: banners, briefing do tema e textos das páginas. Depois é só revisar e baixar abaixo. Prefere sem IA? Preencha "Conteúdo da loja" à mão.</p>
-      <button type="button" class="btn-ia" data-gerar-respostas><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar site com essas respostas</button></div>` : ''}
+    ${ctx.irParaGerar ? `<div class="mt-3 rounded-lg bg-slate-50 p-3"><p class="caption mb-2">Respostas salvas direto no perfil, nos produtos e no cadastro. Para gerar o site com elas, vá para o passo 4.</p>
+      <button type="button" class="btn-ghost" data-ir-gerar><i class="fa-solid fa-arrow-right"></i> Ir para Gerar e ajustar</button></div>` : ''}
   </details>`;
 
   const pintar = () => {
@@ -138,7 +138,7 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
   $('[data-perguntas-site]', alvo).addEventListener('toggle', (e) => abertoPorCliente.set(cliente.id, e.target.open));
   ligarPerguntaZero(alvo, ctx);
   ligarProvaSocial($('[data-pergunta="provas"]', alvo), ctx);
-  ligarLogo($('[data-logo-q9]', alvo), cliente, () => { pintar(); ctx.recarregar?.(); }); // recarrega a aba: o painel "Material para montar o site" também conta o logo
+  ligarLogo($('[data-logo-q9]', alvo), cliente, () => { pintar(); ctx.recarregar?.(); }); // recarrega a aba: o passo "Materiais" também conta o logo
   montarRespostasCliente($('[data-respostas-cliente]', alvo), { ...ctx, get site() { return ctx.site; }, get qtdMateriais() { return qtdMateriais; } });
 
   // Confirmar (ou editar) um campo preenchido automaticamente tira a etiqueta: a partir daí ele conta como dado da pessoa.
@@ -199,13 +199,10 @@ export function montarPerguntasSite(alvo, ctx, { aberto: abertoPadrao = true } =
   on(alvo, 'change', '[data-pagamento]', async (s) => { await ctx.salvarSite({ pagamentoPreferido: s.value || null }); pintar(); toast('Forma de pagamento anotada: o manual de entrega vai destacá-la.'); });
   on(alvo, 'change', '[data-formato]', async (i) => {
     const escolha = FORMATOS_SITE.find(([k]) => k === i.value)[2];
-    await ctx.salvarSite(escolha); toast(escolha.modo === 'custom' ? 'Modo: site personalizado.' : `Modo: pacote para ${escolha.plataforma === 'shopify' ? 'Shopify' : 'Nuvemshop'}.`);
+    await ctx.salvarSite({ ...escolha, plataformaConfirmada: true }); toast(escolha.modo === 'custom' ? 'Modo: site personalizado.' : `Modo: pacote para ${escolha.plataforma === 'shopify' ? 'Shopify' : 'Nuvemshop'}.`);
     ctx.recarregar(); // o resto da aba muda conforme o modo
   });
   on(alvo, 'click', '[data-novo-prod]', () => abrirProduto(cliente, null, ctx.recarregar));
   on(alvo, 'click', '[data-editar-prod]', (b) => abrirProduto(cliente, produtos.find((p) => p.id === b.dataset.editarProd), ctx.recarregar));
-  on(alvo, 'click', '[data-gerar-respostas]', (b) => {
-    if (!ctx.site?.modo) { toast('Responda a pergunta 18 primeiro: ela decide se é site personalizado ou pacote de plataforma.', 'erro'); $('[data-pergunta="formato"]', alvo).scrollIntoView({ block: 'center' }); return; }
-    ctx.gerar(b);
-  });
+  on(alvo, 'click', '[data-ir-gerar]', () => ctx.irParaGerar());
 }

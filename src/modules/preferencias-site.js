@@ -1,4 +1,4 @@
-// "Como eu quero o site" e o que o operador gostou no site de referência (painel "Material para montar o site").
+// "Como eu quero o site" e o que o operador gostou no site de referência (passo 3 de "Montar site").
 // Fica em cliente.preferenciasSite e entra em TODA geração e ajuste do site, nos dois modos (core/ia.js
 // contextoPreferencias), acima dos padrões da IA e abaixo das regras do app. Da referência: só estrutura e estilo.
 import { db, COL } from '../core/storage.js';

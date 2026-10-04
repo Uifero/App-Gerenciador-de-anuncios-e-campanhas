@@ -13,12 +13,12 @@ import { esc, $, on, modal, toast, ocupado, confirmar, baixarTexto } from '../co
 
 export const AVISO_ANVISA = 'Atenção: depoimentos de resultado em suplementos podem ser questionados pela Anvisa; confirme com o cliente.';
 
-/** Bloco "Clientes reais" do painel "Site gerado": um cartão por print, com o estado de privacidade e o "Borrar". */
+/** Bloco "Clientes reais" do passo 2 de "Montar site": um cartão por print, com o estado de privacidade e o "Borrar". */
 export function printsPainelHtml(cliente, prints = []) {
   const estado = (p) => (p.protegido ? '<span class="tag tag-ok">dados protegidos</span>' : p.precisaAutorizacao === false ? '<span class="tag">foto sem pessoa</span>' : p.autorizado ? '<span class="tag tag-info">sem borrar · autorizado</span>' : '<span class="tag tag-warn">sem borrar</span>');
   return `<div data-prints-painel>
     ${ehProdutoSaude(cliente) ? `<p class="mb-2 rounded bg-amber-50 p-2 text-xs text-amber-800" data-aviso-anvisa><i class="fa-solid fa-circle-info"></i> ${AVISO_ANVISA}</p>` : ''}
-    ${prints.length ? `<p class="hint mb-2">Os prints reais de clientes (Materiais e Provas sociais, sem repetir o mesmo arquivo) aparecem na seção "Clientes reais", logo depois do banner. Mude a posição em "Seções" acima. Antes de publicar, borre nome, número e foto de quem aparece: o site usa a cópia borrada e o original fica guardado.</p>
+    ${prints.length ? `<p class="hint mb-2">Os prints reais de clientes (Materiais e Provas sociais, sem repetir o mesmo arquivo) aparecem na seção "Clientes reais", logo depois do banner. A posição muda em "Ajustes rápidos" (passo 4). Antes de publicar, borre nome, número e foto de quem aparece: o site usa a cópia borrada e o original fica guardado.</p>
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">${prints.map((p, i) => `<div class="rounded-lg border border-slate-200 p-1 text-xs" data-print="${esc(p.id)}">
         <img src="${esc(p.url)}" alt="Print ${i + 1}" class="h-28 w-full rounded bg-white object-contain">
         <div class="mt-1 flex flex-wrap items-center gap-1">${p.codigo ? `<span class="tag tag-info">${esc(p.codigo)}</span>` : ''}${estado(p)}</div>
@@ -34,8 +34,8 @@ export async function autorizarPrints(prints = []) {
   const faltam = printsSemAutorizacao(prints);
   for (const [i, p] of faltam.entries()) {
     const qual = p.foto ? `foto${p.codigo ? ` ${p.codigo}` : ''} que mostra pessoa` : `print${p.codigo ? ` ${p.codigo}` : ''} sem borrar`;
-    const ok = await confirmar(`Você tem autorização desses clientes para mostrar ${p.foto ? 'as fotos' : 'os prints'}? (${qual}, ${i + 1} de ${faltam.length}; dá para borrar no painel "Site gerado" > Clientes reais)`, 'Tenho autorização');
-    if (!ok) { toast('Nada foi gerado. Borre os dados do print (painel "Site gerado" > Clientes reais) ou confirme a autorização.', 'info'); return false; }
+    const ok = await confirmar(`Você tem autorização desses clientes para mostrar ${p.foto ? 'as fotos' : 'os prints'}? (${qual}, ${i + 1} de ${faltam.length}; dá para borrar no passo 2 de "Montar site", em Clientes reais)`, 'Tenho autorização');
+    if (!ok) { toast('Nada foi gerado. Borre os dados do print (passo 2 de "Montar site", em Clientes reais) ou confirme a autorização.', 'info'); return false; }
     await db.atualizar(COL.materiais, p.id, { autorizado: true, autorizadoEm: new Date().toISOString() });
     p.autorizado = true;
   }

@@ -1,4 +1,4 @@
-// Gravar os prints de prova social revisados (pergunta 10 e painel "Material para montar o site"). A ordem protege o dado:
+// Gravar os prints de prova social revisados (pergunta 10 e passo 2 de "Montar site"). A ordem protege o dado:
 //  1) cada print marcado "guardar" vai para Materiais por salvarMaterial (mesmo Storage, mesmas regras de sempre);
 //  2) só depois o texto dele entra no campo "provas sociais" — print que falhou ao guardar NÃO gera texto;
 //  3) texto que já existe (o mesmo print lido de novo) não entra outra vez, e a impressão digital de cada print

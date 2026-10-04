@@ -126,7 +126,7 @@ describe('nenhuma operação apaga material sem ser o apagar com confirmação',
       const src = readFileSync(p, 'utf8');
       for (const m of src.matchAll(/removerMaterial\(([^;]*?)\);/g)) {
         if (/export async function/.test(src.slice(Math.max(0, m.index - 30), m.index))) continue;
-        expect(m[1], `${rel(p)}: removerMaterial sem motivo`).toMatch(/confirmado: true|trocando: /);
+        expect(m[1], `${rel(p)}: removerMaterial sem motivo`).toMatch(/confirmado: true|trocando: |desfazendoMigracao: true/);
         if (/confirmado: true/.test(m[1])) expect(src.slice(Math.max(0, m.index - 600), m.index), `${rel(p)}: apagar sem confirmar()`).toMatch(/confirmar\(/);
       }
     }

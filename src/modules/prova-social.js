@@ -1,5 +1,5 @@
 // "Prova social (imagem)": prints de avaliação/elogio (Google, marketplace, WhatsApp, qualquer lugar). Aparece na
-// pergunta 10 do questionário e no painel "Material para montar o site" (aba Site/Loja) — o mesmo componente.
+// pergunta 10 do questionário e no passo 2 de "Montar site" (aba Site/Loja) — o mesmo componente.
 // Com IA: a IA lê cada print (mesmo mecanismo de imagem do Diagnóstico e dos prints do Instagram), resume em uma
 // linha e aponta onde há dado pessoal de terceiros (nome, telefone, foto). Sem IA: a pessoa escreve o resumo.
 // Nos dois casos há uma revisão antes de gravar: o resumo é editável e o print mostra as tarjas pretas que serão
@@ -102,7 +102,7 @@ function abrirRevisao(preparados, leituras, comIa, ctx, limparEnvio) {
         <button type="button" class="text-xs text-indigo-600 underline" data-desfazer="${i}">Tirar as tarjas que eu desenhei</button></div></div>`).join('')}
     <p class="hidden whitespace-pre-wrap rounded bg-rose-50 p-2 text-sm font-medium text-rose-800" data-erro-provas role="alert"></p>
     <div class="flex flex-wrap gap-2"><button class="btn-primary" data-aplicar-provas><i class="fa-solid fa-check"></i> Acrescentar ao perfil e guardar os prints</button></div>
-    <p class="hint">Próximo passo: os prints guardados aparecem no painel "Material para montar o site" e no cartão "Prints de prova social no site", onde você escolhe se entram no site como imagem real, como texto ou os dois.</p></div>`, { largo: true, aoFechar: () => { if (mudou) ctx.recarregar?.(); } });
+    <p class="hint">Próximo passo: os prints guardados aparecem no passo 2 de "Montar site" (Clientes reais, para borrar) e no passo 4 (Depoimentos do site), onde você escolhe se entram no site como imagem real, como texto ou os dois.</p></div>`, { largo: true, aoFechar: () => { if (mudou) ctx.recarregar?.(); } });
 
   const imgs = [];
   const pintar = (i) => {

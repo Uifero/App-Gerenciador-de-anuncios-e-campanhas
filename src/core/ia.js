@@ -598,7 +598,7 @@ const linhaBase = (base) => (base && (base.heroTitulo || base.storytelling)
   : '');
 
 /**
- * "Como eu quero o site" + site de referência (painel "Material para montar o site"). Vale mais que os padrões da IA e
+ * "Como eu quero o site" + site de referência (passo 3 de "Montar site"). Vale mais que os padrões da IA e
  * fica abaixo das regras do app. Da referência, só estrutura e estilo: nunca texto, imagem, logo ou marca dela.
  */
 export function contextoPreferencias(cliente) {

@@ -1,4 +1,4 @@
-// Envio do logo do cliente, o mesmo componente em três lugares: pergunta 9, painel "Material para montar o site" e
+// Envio do logo do cliente, o mesmo componente em três lugares: pergunta 9, passo 2 de "Montar site" e
 // Estúdio (etapa Materiais / botão "Logo do cliente" na aba Criativos). Usa salvarLogo (lib/materiais.js): o arquivo
 // vai original, um logo atual por cliente, e trocar pede confirmação.
 import { salvarLogo, validarLogo, ACEITA_LOGO } from '../lib/materiais.js';

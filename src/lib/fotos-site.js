@@ -265,7 +265,8 @@ const nomeDoCaminho = (s) => decodeURIComponent(String(s || '').split('?')[0].sp
  */
 export function fotosDoProduto(produto, materiais = []) {
   const ligadas = usaveis(materiais).map((m) => ({ m, e: usosDe(m).produtos.find((p) => p.id === produto.id) })).filter((x) => x.e);
-  const proprias = (produto.fotos || []).filter((f) => f?.url).map((f) => ({ ...f, nome: f.nome || nomeDoCaminho(f.path || f.url) }));
+  // Depois da migração (planoMigracao), as fotos do produto vivem em Materiais: o campo antigo fica guardado, sem uso.
+  const proprias = produto.fotosMigradas ? [] : (produto.fotos || []).filter((f) => f?.url).map((f) => ({ ...f, nome: f.nome || nomeDoCaminho(f.path || f.url) }));
   if (!ligadas.length) return proprias;
   const principal = ligadas.filter((x) => x.e.principal).sort((a, b) => (a.e.por === 'manual' ? -1 : 0) - (b.e.por === 'manual' ? -1 : 0) || porCodigo(a.m, b.m))[0];
   const resto = ligadas.filter((x) => x !== principal).sort((a, b) => (a.e.por === 'manual' ? 0 : 1) - (b.e.por === 'manual' ? 0 : 1) || (a.e.ordem || 999) - (b.e.ordem || 999) || porCodigo(a.m, b.m)); // seletor antes do texto
@@ -311,3 +312,34 @@ export function arquivosPorPasta(d) {
   add('galeria', d.galeria || []);
   return out;
 }
+
+// ---------- migração: fotos do campo do produto -> Materiais (um lugar só) ----------
+const TIPO_EXT = { png: 'image/png', webp: 'image/webp', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
+/**
+ * O que falta migrar: para cada foto do campo antigo `produto.fotos`, um registro em Materiais apontando para o MESMO
+ * arquivo (mesma url e path: nada é copiado nem movido), já ligado ao produto na mesma ordem, com a 1ª como foto
+ * principal (era a capa). Idempotente: produto já migrado ou foto que já tem registro migrado não entra de novo.
+ * Devolve { criar: [dados do material], marcar: [produtoId], jaMigrados }.
+ */
+export function planoMigracao(produtos = [], materiais = [], clienteId = '') {
+  const criar = [], marcar = []; let jaMigrados = 0;
+  for (const p of produtos) {
+    if (p.fotosMigradas) { jaMigrados++; continue; }
+    (p.fotos || []).filter((f) => f?.url).forEach((f, i) => {
+      if (materiais.some((m) => m.migradoDe?.produtoId === p.id && m.url === f.url)) return;
+      const nome = nomeDoCaminho(f.path || f.url);
+      criar.push({
+        clienteId, url: f.url, path: f.path || null, nome, nomeOriginal: nome, origem: 'envio', tipo: TIPO_EXT[extDe(nome, f.url)] || 'image/jpeg',
+        migradoDe: { produtoId: p.id, indice: i },
+        usos: normalizarUsos({ produtos: [{ id: p.id, ordem: i + 1, principal: i === 0, por: 'manual' }] }),
+      });
+    });
+    marcar.push(p.id);
+  }
+  return { criar, marcar, jaMigrados };
+}
+/** Ordem para a próxima foto ligada a um produto (depois da última). */
+export const proximaOrdem = (materiais = [], produtoId) => 1 + Math.max(0, ...materiais.flatMap((m) => usosDe(m).produtos.filter((p) => p.id === produtoId).map((p) => p.ordem)));
+/** Tira de todas as fotos o vínculo com um produto apagado (o arquivo continua em Materiais). [{ id, usos }]. */
+export const semProduto = (materiais = [], produtoId) => materiais.filter((m) => usosDe(m).produtos.some((p) => p.id === produtoId))
+  .map((m) => { const u = usosDe(m); u.produtos = u.produtos.filter((p) => p.id !== produtoId); return { id: m.id, usos: u }; });
