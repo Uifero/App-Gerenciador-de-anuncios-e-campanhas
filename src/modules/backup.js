@@ -1,5 +1,6 @@
 // Backup/exportação em JSON: o app inteiro ou um cliente (com tudo o que está ligado a ele).
-// Não inclui os arquivos do Storage (só os links) nem os links de aprovação (são segredos de acesso).
+// Não inclui os arquivos do Storage (só os links) nem os links de aprovação (são segredos de acesso). As imagens do
+// diagnóstico entram: ficam no próprio banco (gcc_diagnostico_imagens), não no Storage.
 import { db, COL } from '../core/storage.js';
 import { baixarTexto, toast } from '../core/ui.js';
 import { slug } from '../lib/csv.js';
@@ -9,9 +10,9 @@ import { registrarBackup } from './configuracoes.js';
 export async function montarBackup(cliente = null) {
   const f = cliente ? { clienteId: cliente.id } : undefined;
   const ler = (col) => db.listar(col, f);
-  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, usoApi, respostas, materiais, aprovacoes] = await Promise.all([
+  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, usoApi, respostas, materiais, aprovacoes, diagnosticos, diagnosticoImagens] = await Promise.all([
     ler(COL.criativos), ler(COL.hooks), ler(COL.referencias), ler(COL.campanhas), ler(COL.resultados), ler(COL.produtos), ler(COL.sites), ler(COL.usoApi), ler(COL.respostas),
-    ler(COL.materiais), ler(COL.aprovacoes),
+    ler(COL.materiais), ler(COL.aprovacoes), ler(COL.diagnosticos), ler(COL.diagnosticoImagens),
   ]);
   const colecoes = {
     [COL.clientes]: cliente ? [cliente] : await db.listar(COL.clientes),
@@ -20,6 +21,8 @@ export async function montarBackup(cliente = null) {
     [COL.resultados]: resultados, [COL.produtos]: produtos, [COL.sites]: sites, [COL.usoApi]: usoApi,
     // Materiais (fotos salvas, prints de prova social e o logo): o registro com o link do arquivo no Storage.
     [COL.materiais]: materiais,
+    // Diagnósticos (dados e resultado) e as imagens anexadas a eles.
+    [COL.diagnosticos]: diagnosticos, [COL.diagnosticoImagens]: diagnosticoImagens,
     // Links de aprovação (site e criativos): datas, versão, status e a resposta copiada no link. O id é o token (segredo de
     // acesso), então fica de fora, como nas respostas — por isso estes registros são só para consulta, não se restauram.
     [COL.aprovacoes]: aprovacoes.map(({ id, substituidoPor, ...resto }) => resto),
@@ -81,6 +84,8 @@ export function resumoRestauracao(dados) {
  * Restaura um backup: grava cada documento de volta na mesma coleção e com o mesmo id, por CIMA de qualquer
  * documento existente com esse id (upsert — é uma restauração, não uma mesclagem). Mantém `criadoEm`/`atualizadoEm`
  * originais (grava com `db.definir`, que não mexe em datas). Devolve o total de documentos restaurados.
+ * Exceção: o token do link de aprovação do criativo não está no arquivo (segredo); se o criativo ainda existe no banco
+ * com um token, ele é mantido — senão a resposta do cliente a um link ainda ativo deixaria de chegar ao painel.
  */
 export async function restaurarBackup(dados) {
   let total = 0;
@@ -88,6 +93,10 @@ export async function restaurarBackup(dados) {
     if (col === COL.respostas) continue; // sem id/token no arquivo: não é possível restaurar com segurança
     for (const { id, ...doc } of itens || []) {
       if (!id) continue;
+      if (col === COL.criativos && !doc.aprovacaoToken) {
+        const atual = await db.obter(col, id).catch(() => null);
+        if (atual?.aprovacaoToken) doc.aprovacaoToken = atual.aprovacaoToken;
+      }
       await db.definir(col, id, doc);
       total++;
     }

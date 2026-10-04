@@ -8,6 +8,7 @@ vi.mock('../core/storage.js', () => ({
   COL: COL_FAKE,
   db: {
     definir: vi.fn(async (col, id, dados) => { (bancos[col] ||= new Map()).set(id, dados); }),
+    obter: vi.fn(async (col, id) => { const d = bancos[col]?.get(id); return d ? { id, ...d } : null; }),
   },
 }));
 

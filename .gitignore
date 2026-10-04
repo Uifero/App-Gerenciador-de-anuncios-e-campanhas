@@ -18,3 +18,6 @@ server/.uso-videos.json
 
 # Núcleo do ffmpeg.wasm (~32 MB): recriado por "npm install" (script postinstall), não entra no Git
 public/ffmpeg/
+
+# Backup real de produção para teste local: contém dados de clientes, nunca entra no Git
+backup-teste/

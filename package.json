@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "start": "NODE_ENV=production node server/index.js",
     "test": "vitest run",
+    "test:regras": "node scripts/testar-regras.mjs",
     "postinstall": "node scripts/copiar-ffmpeg-core.mjs"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "papaparse": "^5.7.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/vite": "^4.3.3",
     "concurrently": "^10.0.5",
     "tailwindcss": "^4.3.3",

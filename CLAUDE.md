@@ -4,6 +4,8 @@ Responda em português do Brasil.
 
 ## Comandos (npm)
 - `npm test` (vitest) · `npm run build` (vite) · `npm run dev` (web + servidor de IA :8787)
+- `npm run test:regras`: regras do Firestore/Storage no emulador local (projeto `demo-`, sem produção; precisa de Java 21+, usa `~/.jdk/` se não houver no PATH). Rodar sempre que mexer em `firestore.rules`/`storage.rules` e ao fechar fase.
+- Backup real para teste fica em `backup-teste/` (no `.gitignore`, nunca commitar); `tests/restauracao.test.js` restaura e audita no modo demo, só contagens.
 - Teste local sem Firebase: `VITE_DEMO_MODE=1 npx vite --port 5199 --strictPort` + `DEV_AUTH_BYPASS=1 node server/index.js`; no navegador `localStorage.gcc_demo_user='1'`, dados em `gccdb_<coleção>`.
 
 ## Restrições que não mudam
@@ -24,4 +26,4 @@ Responda em português do Brasil.
 ## Esforço
 For small, well-scoped fixes (bug fix, text/label change, moving a button, small UI tweak), work efficiently and avoid unnecessary exploration of unrelated files. For architecturally significant changes, take the time needed to investigate properly first.
 
-Ao terminar uma fase: `npm test` + teste real no navegador, commit claro e push.
+Ao terminar uma fase: `npm test` + `npm run test:regras` + teste real no navegador, commit claro e push.
