@@ -80,7 +80,10 @@ describe('escolhas visuais no molde do pacote', () => {
 
   it('imagem do banner vinda dos Materiais; sem escolha, banner de cor como antes', () => {
     const h = gerarPreviaLojaHTML(comVisual({ banner: { materialId: 'm1', url: 'https://cdn.exemplo/banner.jpg', nome: 'banner.jpg' } }));
-    expect(h).toContain(`<div class="banner com-img" style="background-image:linear-gradient(#0007,#0007),url('https://cdn.exemplo/banner.jpg')">`);
+    // Site de antes, com UMA imagem escolhida nos ajustes rápidos: continua com ela, agora como slide único (sem setas).
+    expect(h).toContain('<div class="banner com-carrossel"><div class="car car-1"');
+    expect(h).toContain('<img src="https://cdn.exemplo/banner.jpg"');
+    expect(h).not.toContain('class="car-seta"');
     expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos }))).toContain('<div class="banner"><div class="wrap">');
   });
 

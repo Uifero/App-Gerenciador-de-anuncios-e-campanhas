@@ -7,6 +7,7 @@
 //    é a que vai para o site; o original fica guardado.
 import { tipoMaterial } from './prova-social.js';
 import { usosDe, temCodigo } from './fotos-site.js';
+import { focoDe } from './medidas-site.js';
 
 export const SECOES_LOJA = [
   ['banner', 'Banner'], ['provas', 'Clientes reais'], ['produtos', 'Produtos'], ['confianca', 'Compra segura'],
@@ -50,11 +51,13 @@ export function printsDoCliente(materiais = []) {
     const k = chaveArquivo(m), atual = porChave.get(k);
     if (!atual || (printProtegido(m) && !printProtegido(atual))) porChave.set(k, m);
   }
-  return [...porChave.values()].sort((a, b) => String(a.criadoEm || '').localeCompare(String(b.criadoEm || ''))).map((m) => {
+  // Ordem escolhida (arrastar no seletor / ordem do texto); sem ordem, a de envio.
+  const ordem = (m) => usosDe(m).ordem.clientes || 0;
+  return [...porChave.values()].sort((a, b) => ordem(a) - ordem(b) || String(a.criadoEm || '').localeCompare(String(b.criadoEm || ''))).map((m) => {
     const print = tipoMaterial(m) === 'prova_social';
     return {
       id: m.id, url: m.borrada?.url || m.url, original: m.url, protegido: printProtegido(m), autorizado: Boolean(m.autorizado),
-      legenda: m.fonteProva || 'Cliente', codigo: m.codigo || '', nome: m.nomeOriginal || m.nome || '',
+      legenda: m.fonteProva || 'Cliente', codigo: m.codigo || '', nome: m.nomeOriginal || m.nome || '', foco: focoDe(m),
       // Print sem borrar sempre pede autorização; foto só quando mostra pessoa ("Mostra pessoa" no seletor).
       precisaAutorizacao: !printProtegido(m) && (print || usosDe(m).pessoa), foto: !print,
     };

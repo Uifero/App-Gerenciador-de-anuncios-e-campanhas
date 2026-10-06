@@ -3,7 +3,9 @@
 import { esc } from '../core/ui.js';
 import { rastreamentoDe, codigoHead, codigoCheckout, CHAVE_CONSENTIMENTO, textoAvisoCookies } from './rastreamento.js';
 import { normalizarLayout, tituloBloco } from './site-blocos.js';
-import { produtosComFotos, imagemDoLugar, fotosDoUso } from './fotos-site.js';
+import { produtosComFotos, imagemDoLugar, fotosDoUso, slidesDoBanner } from './fotos-site.js';
+import { medidasDe, posicaoCss } from './medidas-site.js';
+import { carrosselHtml, carrosselCss } from './carrossel.js';
 import { depoimentosVivos } from './prova-social.js';
 
 /** Formas de pagamento que o selo "compra segura" pode mostrar (ícones genéricos desenhados aqui, sem logo de bandeira). */
@@ -44,6 +46,9 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
   // "Usar em" das fotos dos Materiais (lib/fotos-site.js): fotos dos produtos, banner, história e galeria. O seletor vence a
   // escolha direta (ajustes rápidos), que vence o texto "Como eu quero o site".
   const produtos = produtosComFotos(produtosBase || [], materiais);
+  // Banner: carrossel com as fotos de "Usar em" (ou a imagem única dos ajustes rápidos, como nos sites de antes).
+  const slides = slidesDoBanner(materiais, L.imagens.hero);
+  const med = medidasDe(null);
   for (const [bloco, uso] of [['hero', 'banner'], ['marca', 'sobre']]) { const img = imagemDoLugar(materiais, uso, L.imagens[bloco]); if (img) L.imagens[bloco] = img; }
   const galeria = fotosDoUso(materiais, 'galeria');
   const visivel = (k) => !L.ocultos.includes(k);
@@ -65,7 +70,7 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
     const foto = p.fotos?.[0]?.url;
     const vars = (p.variacoes || []).filter((v) => v.nome && v.valores?.length);
     return `<article class="card" data-cat="${esc(p.categoria)}">
-      <div class="ph">${foto ? `<img src="${esc(foto)}" alt="${esc(p.nome)}" loading="lazy">` : '<span>sem foto</span>'}${p.precoPromocional ? '<b class="badge">OFERTA</b>' : ''}</div>
+      <div class="ph">${foto ? `<img src="${esc(foto)}" alt="${esc(p.nome)}" loading="lazy"${p.fotos[0].foco && L.ajusteFotos !== 'contain' ? ` style="object-position:${posicaoCss(p.fotos[0].foco)}"` : ''}>` : '<span>sem foto</span>'}${p.precoPromocional ? '<b class="badge">OFERTA</b>' : ''}</div>
       <h3>${esc(p.nome)}</h3>
       <p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>
       ${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}
@@ -75,20 +80,22 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
   // Depoimentos lidos da fonte (perfil de marca, prints com a cópia borrada), não da cópia da última geração.
   const deps = depoimentosVivos({ cliente, materiais, guardados: c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => !L.depoimentosOcultos.includes(d.texto));
   const alturaHero = { curto: '40px', alto: '140px' }[L.variacoes.hero?.altura] || '';
-  const imgHero = L.imagens.hero?.url, imgMarca = L.imagens.marca?.url;
+  const imgMarca = L.imagens.marca?.url;
 
   const destinoCta = visivel('vendidos') ? '#vendidos' : '#catalogo';
   const prints = (provas || []).filter((p) => p?.url);
   const blocoHTML = {
     // Prints reais de clientes: toque/clique abre a imagem inteira (legível no celular). Nunca editamos o conteúdo do print.
-    provas: () => (prints.length ? `<section id="clientes-reais" class="provas"><div class="wrap"><h2>${esc(tituloBloco(L, 'provas'))}</h2><div class="prints">${prints.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener" title="Toque para ampliar"><img src="${esc(p.url)}" alt="Print de cliente real${p.legenda ? ` (${esc(p.legenda)})` : ''}" loading="lazy"></a>`).join('')}</div><p class="dica-print">Toque no print para ampliar.</p></div></section>` : ''),
-    hero: () => `<div id="topo" class="hero"${alturaHero || imgHero ? ` style="${alturaHero ? `padding:${alturaHero} 0;` : ''}${imgHero ? `background:linear-gradient(#0008,#0008),url('${esc(imgHero)}') center/cover;` : ''}"` : ''}><div class="wrap"><h1>${esc(c.heroTitulo || cliente.nome)}</h1><p>${esc(c.heroSubtitulo || cliente.nicho)}</p><a href="${destinoCta}">${esc(c.heroCta || 'Ver produtos')}</a></div></div>`,
+    provas: () => (prints.length ? `<section id="clientes-reais" class="provas"><div class="wrap"><h2>${esc(tituloBloco(L, 'provas'))}</h2><div class="prints">${prints.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener" title="Toque para ampliar"><img src="${esc(p.url)}" alt="${p.foto ? 'Foto de cliente real' : 'Print de cliente real'}${p.legenda ? ` (${esc(p.legenda)})` : ''}" loading="lazy"${p.foto ? ` class="foto-cliente" style="object-position:${posicaoCss(p.foco)}"` : ''}></a>`).join('')}</div><p class="dica-print">Toque no print para ampliar.</p></div></section>` : ''),
+    hero: () => { const texto = `<h1>${esc(c.heroTitulo || cliente.nome)}</h1><p>${esc(c.heroSubtitulo || cliente.nicho)}</p><a href="${destinoCta}">${esc(c.heroCta || 'Ver produtos')}</a>`;
+      return slides.length ? `<div id="topo" class="hero com-carrossel">${carrosselHtml({ slides, medida: med.banner, conteudo: texto, id: 'bn', alt: cliente.nome })}</div>`
+        : `<div id="topo" class="hero"${alturaHero ? ` style="padding:${alturaHero} 0;"` : ''}><div class="wrap">${texto}</div></div>`; },
     categorias: () => (categorias.length && visivel('catalogo') ? `<section id="categorias"><div class="wrap"><h2>${esc(tituloBloco(L, 'categorias'))}</h2><div class="cats"><button data-filtro="">Todas</button>${categorias.map((x) => `<button data-filtro="${esc(x)}">${esc(x)}</button>`).join('')}</div></div></section>` : ''),
     vendidos: () => `<section id="vendidos" class="alt"><div class="wrap"><h2>${esc(tituloBloco(L, 'vendidos'))}</h2>${produtos.length ? grade(maisVendidos, 'vendidos') : '<p>Cadastre produtos para exibi-los aqui.</p>'}</div></section>`,
     sale: () => (promo.length ? `<section id="sale"><div class="wrap"><h2>${esc(tituloBloco(L, 'sale'))}</h2>${grade(promo, 'sale')}</div></section>` : ''),
     catalogo: () => `<section id="catalogo" class="${promo.length ? 'alt' : ''}"><div class="wrap"><h2>${esc(tituloBloco(L, 'catalogo'))}</h2><div id="catalogoGrade">${grade(produtos, 'catalogo')}</div></div></section>`,
-    marca: () => (c.storytelling ? `<section id="marca"><div class="wrap"><h2>${esc(tituloBloco(L, 'marca'))}</h2>${imgMarca ? `<img class="story-img" src="${esc(imgMarca)}" alt="${esc(cliente.nome)}" loading="lazy">` : ''}<div class="story">${esc(c.storytelling)}</div></div></section>` : '<span id="marca"></span>'),
-    galeria: () => (galeria.length ? `<section id="galeria"><div class="wrap"><h2>${esc(tituloBloco(L, 'galeria'))}</h2><div class="galeria">${galeria.map((f) => `<img src="${esc(f.url)}" alt="${esc(cliente.nome)}" loading="lazy">`).join('')}</div></div></section>` : ''),
+    marca: () => (c.storytelling ? `<section id="marca"><div class="wrap"><h2>${esc(tituloBloco(L, 'marca'))}</h2>${imgMarca ? `<img class="story-img" src="${esc(imgMarca)}" alt="${esc(cliente.nome)}" loading="lazy" style="object-position:${posicaoCss(L.imagens.marca.foco)}">` : ''}<div class="story">${esc(c.storytelling)}</div></div></section>` : '<span id="marca"></span>'),
+    galeria: () => (galeria.length ? `<section id="galeria"><div class="wrap"><h2>${esc(tituloBloco(L, 'galeria'))}</h2><div class="galeria">${galeria.map((f) => `<img src="${esc(f.url)}" alt="${esc(cliente.nome)}" loading="lazy" style="object-position:${posicaoCss(f.foco)}">`).join('')}</div></div></section>` : ''),
     depoimentos: () => (deps.length ? `<section class="alt"><div class="wrap"><h2>${esc(tituloBloco(L, 'depoimentos'))}</h2><div class="dep">${deps.map((d) => `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.origem === 'prova_social' ? 'Print de avaliação real de cliente' : d.nome)}" class="dep-midia${d.origem === 'prova_social' ? ' dep-print' : ''}" loading="lazy">`) : ''}${d.exibir === 'print' ? '' : `“${esc(d.texto)}”`}<cite>— ${esc(d.nome)}</cite></blockquote>`).join('')}</div>
 <!-- ATENÇÃO: depoimentos escritos à mão (sem foto/vídeo anexado) podem ser MODELOS — troque por depoimentos reais antes de publicar. Os que têm foto/vídeo vieram de criativos aprovados ou de prints de avaliação reais (com dados pessoais cobertos) guardados no app. --></div></section>` : ''),
     faq: () => (faq.length ? `<section id="faq" class="alt"><div class="wrap faq"><h2>${esc(tituloBloco(L, 'faq'))}</h2>${faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div></section>` : ''),
@@ -118,8 +125,8 @@ section{padding:48px 0}section h2{font-size:26px;margin:0 0 20px}.alt{background
 .cats{display:flex;flex-wrap:wrap;gap:10px}.cats button{border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:8px 18px;cursor:pointer}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}.card{background:#fff;border-radius:14px;padding:12px;box-shadow:0 1px 4px #0001}
 .ph{position:relative;aspect-ratio:1;background:var(--suave);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#9ca3af}.ph img{width:100%;height:100%;object-fit:${L.ajusteFotos === 'contain' ? 'contain' : 'cover'}}
-.prints{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px}.prints a{flex:0 0 auto;scroll-snap-align:start}.prints img{height:min(420px,70vh);max-width:80vw;width:auto;object-fit:contain;border-radius:12px;border:1px solid #0001;background:#fff;display:block}.dica-print{font-size:13px;color:#6b7280;margin:8px 0 0}
-.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}.galeria img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;display:block}
+.prints{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px}.prints a{flex:0 0 auto;scroll-snap-align:start}.prints img{height:min(420px,70vh);aspect-ratio:${med.clientes.desktop.l}/${med.clientes.desktop.a};max-width:80vw;width:auto;object-fit:contain;border-radius:12px;border:1px solid #0001;background:#fff;display:block}.dica-print{font-size:13px;color:#6b7280;margin:8px 0 0}.prints img.foto-cliente{object-fit:cover}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}.galeria img{width:100%;aspect-ratio:${med.galeria.desktop.l}/${med.galeria.desktop.a};object-fit:cover;border-radius:12px;display:block}
 .badge{position:absolute;top:8px;left:8px;background:#dc2626;color:#fff;font-size:11px;padding:3px 8px;border-radius:999px}
 .card h3{font-size:15px;margin:10px 0 4px}.preco{margin:0 0 8px;font-weight:700}.preco s{color:#9ca3af;font-weight:400;margin-right:6px}
 select{width:100%;margin-bottom:6px;padding:6px;border:1px solid #d1d5db;border-radius:8px}
@@ -135,7 +142,9 @@ footer{background:#111827;color:#d1d5db;padding:40px 0;font-size:14px}footer h4{
 .item{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid #eee;font-size:14px}#rodape{padding:16px;border-top:1px solid #eee}
 .nota{font-size:12px;color:#6b7280;margin-top:6px}
 .grid.cols2{grid-template-columns:repeat(2,1fr)}.grid.cols3{grid-template-columns:repeat(3,1fr)}.grid.cols4{grid-template-columns:repeat(4,1fr)}@media(max-width:640px){.grid.cols3,.grid.cols4{grid-template-columns:repeat(2,1fr)}}
-.story-img{width:100%;max-width:720px;max-height:360px;object-fit:cover;border-radius:14px;margin-bottom:16px}
+.story-img{width:100%;max-width:720px;aspect-ratio:${med.sobre.desktop.l}/${med.sobre.desktop.a};object-fit:cover;border-radius:14px;margin-bottom:16px}@media(max-width:640px){.story-img{aspect-ratio:${med.sobre.mobile.l}/${med.sobre.mobile.a}}}
+.hero.com-carrossel{padding:0;background:#111}.car-texto h1{font-size:clamp(28px,5vw,48px);margin:0 0 12px}.car-texto p{font-size:18px;opacity:.95;max-width:600px;margin:0 auto 24px}.car-texto a{display:inline-block;background:#fff;color:#111;padding:12px 28px;border-radius:999px;font-weight:700;text-decoration:none}
+${slides.length ? carrosselCss({ n: slides.length, id: 'bn' }) : ''}
 .faq{max-width:760px}.faq details{background:#fff;border-radius:12px;padding:14px 18px;margin-bottom:10px;box-shadow:0 1px 4px #0001}.faq summary{cursor:pointer;font-weight:600}.faq p{margin:10px 0 0;line-height:1.6;white-space:pre-line}
 .selo{margin-top:10px;padding:10px;border:1px solid #e5e7eb;border-radius:10px;font-size:12px;color:#374151}.selo svg{width:18px;height:18px;flex:none}
 .selo .l{display:flex;align-items:center;gap:6px}.selo .pags{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;color:#6b7280}

@@ -22,7 +22,8 @@ import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, moeda, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado, confirmar } from '../core/ui.js';
 import { dadosDoPacote, gruposPlataforma, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
-import { lerReferencias, aplicarReferencias, comUsos, produtosComFotos, imagemDoLugar, arquivosPorPasta, rotuloFoto, temCodigo, resumoUsos, porCodigo } from '../lib/fotos-site.js';
+import { lerReferencias, aplicarReferencias, comUsos, produtosComFotos, imagemDoLugar, arquivosPorPasta, rotuloFoto, temCodigo, resumoUsos, porCodigo, slidesDoBanner } from '../lib/fotos-site.js';
+import { desenharArquivo, limparCache } from '../lib/recortes-canvas.js';
 import { garantirCodigos, salvarUsos, desfazerMigracaoFotos } from '../lib/materiais.js';
 import { preferenciasHtml, referenciaExtraHtml, ligarPreferencias, resultadoFotosTextoHtml } from './preferencias-site.js';
 import { provaSocialHtml, ligarProvaSocial } from './prova-social.js';
@@ -424,13 +425,16 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const imgs = imagensParaBanner(materiais);
     const bannerAtual = custom ? normalizarLayout(site.layout).imagens.hero?.materialId : normalizarVisual(site.pacote?.visual).banner?.materialId;
     const bannerUsarEm = imagemDoLugar(materiais, 'banner', custom ? normalizarLayout(site.layout).imagens.hero : normalizarVisual(site.pacote?.visual).banner);
+    const slidesBanner = slidesDoBanner(materiais, custom ? normalizarLayout(site.layout).imagens.hero : normalizarVisual(site.pacote?.visual).banner);
+    const codigosSlides = slidesBanner.map((sl, i) => `${i + 1}) ${sl.fotos.map((f) => f.codigo || f.nome).join(' + ')}`).join(', ');
     const fotos = custom ? normalizarLayout(site.layout).ajusteFotos : normalizarVisual(site.pacote?.visual).ajusteFotos;
     const ordem = ordemAtual(), ocultas = ocultasAtuais();
     return `<details class="mt-3 rounded-lg border border-indigo-200 p-3" open data-ajustes-rapidos><summary class="cursor-pointer text-sm font-semibold"><i class="fa-solid fa-sliders"></i> Ajustes rápidos (sem IA)</summary>
       <p class="hint mt-1">Cada escolha muda a prévia na hora e vira uma versão nova (dá para voltar em "Ajustar este site", abaixo).</p>
       <div class="mt-2 grid gap-3 sm:grid-cols-2">
         <label class="text-sm">Imagem do banner<select class="input mt-0.5" data-ctl-banner ${bannerUsarEm?.por === 'manual' ? 'disabled' : ''}><option value="">Sem imagem (fundo de cor)</option>${imgs.map((m) => `<option value="${esc(m.id)}" ${m.id === bannerAtual ? 'selected' : ''}>${esc(rotuloFoto(m))}</option>`).join('')}</select>
-          <span class="hint" data-banner-origem>${bannerUsarEm?.por === 'manual' ? `Definida em Materiais do cliente: ${esc(rotuloFoto(bannerUsarEm))} ("Usar em: Banner"). Para trocar, mude lá (passo 2).`
+          <span class="hint" data-banner-origem>${bannerUsarEm && slidesBanner.length > 1 ? `Carrossel com ${slidesBanner.length} slides (${esc(codigosSlides)}), ${bannerUsarEm.por === 'manual' ? 'definido em Materiais do cliente ("Usar em: Banner"). Ordem e "Juntar fotos": em Materiais (passo 2).' : 'definido pelo texto "Como eu quero o site". Escolher aqui vale mais que o texto.'}`
+            : bannerUsarEm?.por === 'manual' ? `Definida em Materiais do cliente: ${esc(rotuloFoto(bannerUsarEm))} ("Usar em: Banner"). Para trocar, mude lá (passo 2).`
             : bannerUsarEm ? `No banner agora: ${esc(rotuloFoto(bannerUsarEm))} (definido pelo texto "Como eu quero o site"). Escolher aqui vale mais que o texto.`
             : imgs.length ? 'Imagens de "Materiais do cliente".' : 'Envie uma imagem em "Materiais do cliente" (passo 2) para usar aqui.'}</span></label>
         <fieldset class="text-sm"><legend>Fotos dos produtos</legend>${Object.entries(AJUSTES_FOTO).map(([k, t]) => `<label class="mr-3 inline-flex items-center gap-1"><input type="radio" name="ctl-fotos" value="${k}" data-ctl-fotos ${fotos === k ? 'checked' : ''}> ${t}</label>`).join('')}
@@ -552,7 +556,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           ${cliente.logoArquivo ? '<button type="button" class="btn-ghost" data-baixar-logo><i class="fa-solid fa-copyright"></i> Logo (original)</button>' : ''}
           ${d?.visual?.banner?.url ? '<button type="button" class="btn-ghost" data-baixar-banner><i class="fa-solid fa-image"></i> Imagem do banner</button>' : ''}
           ${prints.length ? '<button type="button" class="btn-ghost" data-baixar-prints><i class="fa-solid fa-images"></i> Prints de clientes (.zip)</button>' : ''}
-          ${d && arquivosPorPasta(d).length ? `<button type="button" class="btn-primary" data-baixar-por-lugar title="banner/, produtos/<nome do produto>/, clientes-reais/ (cópias borradas), sobre/ e galeria/"><i class="fa-solid fa-folder-tree"></i> Imagens por lugar (.zip, ${arquivosPorPasta(d).length} arquivo(s))</button>` : ''}`}
+          ${d && arquivosPorPasta(d).length ? `<button type="button" class="btn-primary" data-baixar-por-lugar title="Cada foto já recortada no tamanho do lugar e do aparelho: banner/ (banner-1-desktop.jpg, banner-1-mobile.jpg...), produtos/<nome do produto>/, clientes-reais/ (cópias borradas), sobre/ e galeria/"><i class="fa-solid fa-folder-tree"></i> Imagens por lugar (.zip, ${arquivosPorPasta(d).length} arquivo(s))</button>` : ''}`}
         <button type="button" class="btn-ghost" data-manual ${plat ? '' : 'disabled'}><i class="fa-solid fa-file-pdf"></i> Manual de entrega (PDF)</button></div></div>
       ${custom ? comoPublicarHTML(cliente) : ''}
       <div class="card mt-4" data-ancora="publicado"><h3 class="font-semibold">Loja no ar</h3>
@@ -595,13 +599,19 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       if (!(await autorizarPrints(printsDoCliente(materiais)))) return; // prints e fotos com pessoa sem borrar: só com autorização
       const arquivos = arquivosPorPasta(dadosPacote());
       const pasta = `imagens-${slug(cliente.nome) || 'loja'}`, falhas = [], itens = [];
-      for (const a of arquivos) {
-        try { const r = await fetch(a.url); if (!r.ok) throw new Error(); itens.push({ nome: `${pasta}/${a.caminho}`, conteudo: new Uint8Array(await r.arrayBuffer()) }); } catch { falhas.push(a.caminho); }
-      }
+      // Cada arquivo já recortado no tamanho do lugar e do aparelho (ponto focal dentro); os originais não mudam.
+      const prog = b.closest('[data-downloads]')?.parentElement;
+      try {
+        for (const [i, a] of arquivos.entries()) {
+          b.textContent = `Recortando ${i + 1} de ${arquivos.length}…`;
+          try { itens.push({ nome: `${pasta}/${a.caminho}`, conteudo: await desenharArquivo(a) }); } catch { falhas.push(a.caminho); }
+        }
+      } finally { limparCache(); }
+      if (prog && itens.length) mostrarResultado(prog, `Baixado: ${itens.length} arquivo(s) já no tamanho de cada lugar (banner-1-desktop.jpg, banner-1-mobile.jpg, produto-1.jpg...). Os originais continuam em Materiais.`);
       if (!itens.length) throw new Error('Não consegui baixar nenhuma imagem agora. Tente de novo em instantes.');
       baixarTexto(`${pasta}.zip`, criarZip(itens), 'application/zip');
       if (falhas.length) toast(`${falhas.length} imagem(ns) não baixaram e ficaram fora do .zip:\n${falhas.join('\n')}`, 'erro');
-      else toast(`Baixado: ${itens.length} imagem(ns) em pastas (banner, produtos, clientes-reais, sobre, galeria).`);
+      else toast(`Baixado: ${itens.length} imagem(ns) recortadas por lugar e aparelho (banner, produtos, clientes-reais, sobre, galeria). Veja em "O que colocar na plataforma" qual arquivo vai em cada slide e posição.`);
     }));
     on(alvo, 'click', '[data-manual]', async () => {
       if (!plat) return toast('Escolha a plataforma no passo 3: o manual muda conforme ela.', 'erro');

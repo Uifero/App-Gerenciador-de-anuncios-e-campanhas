@@ -631,6 +631,20 @@ export async function lerReferenciaPrint({ cliente, imagem }) {
   return String(dados?.estrutura || '').trim();
 }
 
+/**
+ * Ponto principal de uma foto (rosto ou produto) para os recortes do site. Só uma SUGESTÃO: o operador confirma ou
+ * clica em outro ponto (o caminho sem IA é o clique). Usa a mesma tarefa de leitura de prints com imagem (leitura_prints).
+ * Devolve { x, y, oque } (0 a 1, a partir do canto de cima à esquerda) ou null.
+ */
+export async function sugerirFocoFoto({ cliente, imagem }) {
+  const system = 'Você aponta o ponto mais importante de uma foto de loja para que recortes (banner largo, quadrado, vertical) nunca o cortem. Responde só com o que vê.';
+  const pedido = `Onde está o ponto principal desta foto? Prioridade: rosto de pessoa (o centro do rosto); sem pessoa, o produto. Coordenadas relativas de 0 a 1 (x da esquerda para a direita, y de cima para baixo). Saída JSON: {"x": number, "y": number, "oque": "rosto" | "produto" | "outro"}. ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'leitura_prints', cliente, system, messages: [{ role: 'user', content: pedido }], imagens: [imagem] });
+  const x = Number(dados?.x), y = Number(dados?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return null;
+  return { x, y, oque: ['rosto', 'produto'].includes(dados?.oque) ? dados.oque : 'outro' };
+}
+
 /** `semDepoimentos`: o cliente já tem prova social real — a IA não escreve depoimento-modelo (lib/prova-social.js montarDepoimentos). */
 export async function gerarConteudoSite({ cliente, produtos, base = null, semDepoimentos = false, materiais = [] }) {
   const system = 'Você é copywriter de e-commerce.';

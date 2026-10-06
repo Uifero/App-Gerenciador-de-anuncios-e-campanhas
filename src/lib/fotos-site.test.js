@@ -28,12 +28,12 @@ describe('códigos estáveis (F1, F2...)', () => {
 });
 
 describe('seletor "Usar em" (escolha manual)', () => {
-  it('banner é um só; produto com posição e foto principal única', () => {
+  it('banner aceita várias (carrossel, na ordem marcada); produto com posição e foto principal única', () => {
     let lista = [foto('m1', 'F1'), foto('m2', 'F2'), foto('m3', 'F3')];
     lista = comUsos(lista, mudarUso(lista, 'm1', { uso: 'banner' }));
     lista = comUsos(lista, mudarUso(lista, 'm2', { uso: 'banner' }));
-    expect(usosDe(lista[0]).banner).toBeUndefined();
-    expect(usosDe(lista[1]).banner).toBe('manual');
+    expect(usosDe(lista[0])).toMatchObject({ banner: 'manual', ordem: { banner: 1 } });
+    expect(usosDe(lista[1])).toMatchObject({ banner: 'manual', ordem: { banner: 2 } });
     lista = comUsos(lista, mudarUso(lista, 'm2', { uso: 'produto', produtoId: 'p1' }));
     lista = comUsos(lista, mudarUso(lista, 'm3', { uso: 'produto', produtoId: 'p1', principal: true }));
     expect(usosDe(lista[1]).produtos[0]).toMatchObject({ id: 'p1', ordem: 1, principal: false, por: 'manual' });
@@ -94,7 +94,7 @@ describe('prioridade: o seletor vence o texto', () => {
     const r = aplicarReferencias(base, refs, { produtos });
     expect(r.patches).toEqual([]);
     expect(r.conflitos).toHaveLength(3);
-    expect(r.conflitos[0]).toMatch(/no seletor o banner é F2: vale o seletor/);
+    expect(r.conflitos[0]).toMatch(/o banner já foi escolhido no seletor \(F2\): vale o seletor/);
     expect(r.conflitos[1]).toMatch(/F5 está "Não usar no site": vale o seletor/);
     expect(r.conflitos[2]).toMatch(/tirada no seletor/);
   });
@@ -160,8 +160,8 @@ describe('pastas do pacote', () => {
       galeria: [],
     };
     expect(arquivosPorPasta(d).map((x) => x.caminho)).toEqual([
-      'banner/01-F3-banner-loja.jpg', 'produtos/thermora-azul/01-F5-frente.png', 'produtos/thermora-azul/02-propria.jpg',
-      'produtos/thermora-azul-2/01-F9-c.jpg', 'clientes-reais/01-F8-print.png', 'sobre/01-F2-s.webp',
+      'banner/banner-1-desktop.jpg', 'banner/banner-1-mobile.jpg', 'produtos/thermora-azul/produto-1.jpg', 'produtos/thermora-azul/produto-2.jpg',
+      'produtos/thermora-azul-2/produto-1.jpg', 'clientes-reais/cliente-1.jpg', 'sobre/sobre-1-desktop.jpg', 'sobre/sobre-1-mobile.jpg',
     ]);
     expect(arquivosPorPasta(d).find((x) => x.caminho.startsWith('clientes-reais')).url).toBe('https://x/borrada.jpg');
   });

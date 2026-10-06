@@ -22,7 +22,7 @@ const materiais = [
 describe('site personalizado', () => {
   it('banner, fotos dos produtos na ordem, história e galeria vêm do "Usar em"', () => {
     const html = gerarSiteHTML({ cliente, produtos, conteudo: { heroTitulo: 'Oi', storytelling: 'Nossa história' }, layout: { imagens: { hero: { materialId: 'mX', url: 'https://x/direta.jpg', nome: 'direta' } } }, materiais, provas: printsDoCliente(materiais) });
-    expect(html).toContain("url('https://x/m1.jpg')"); // seletor vence a escolha direta
+    expect(html).toMatch(/class="car-slide"[^>]*><img src="https:\/\/x\/m1\.jpg"/); // seletor vence a escolha direta
     expect(html).not.toContain('direta.jpg');
     expect(html).toContain('<img src="https://x/m2.jpg" alt="Thermora"'); // foto principal do Thermora
     expect(html).toContain('<img src="https://x/m4.jpg" alt="Garrafa"'); // posição 1 da Garrafa
@@ -43,21 +43,22 @@ describe('pacote', () => {
   it('"O que colocar na plataforma": arquivos por produto e por seção, com código e nome original', () => {
     const g = Object.fromEntries(gruposPlataforma(d).map((x) => [x.id, x]));
     const fotosThermora = g['produto-0'].itens.find((i) => i.rotulo.startsWith('Fotos'));
-    expect(fotosThermora.valor).toBe('1. F2 — m2-original.jpg (principal)\n2. foto da aba Produtos — propria.jpg');
-    expect(g['produto-1'].itens.find((i) => i.rotulo.startsWith('Fotos')).valor).toBe('1. F4 — m4-original.jpg (principal)\n2. F3 — m3-original.jpg');
-    expect(g['visual-banner'].itens.find((i) => i.rotulo.startsWith('Arquivo')).valor).toBe('F1 — m1-original.jpg');
-    expect(g['fotos-sobre'].itens[0].valor).toBe('1. F6 — m6-original.jpg');
-    expect(g['fotos-galeria'].itens[0].valor).toBe('1. F6 — m6-original.jpg');
-    expect(g.provas.itens.find((i) => i.rotulo === 'Arquivos').valor).toContain('F5 — m5-original.jpg');
+    expect(fotosThermora.valor).toBe('1. produtos/thermora/produto-1.jpg ← F2 — m2-original.jpg (principal)\n2. produtos/thermora/produto-2.jpg ← propria.jpg');
+    expect(g['produto-1'].itens.find((i) => i.rotulo.startsWith('Fotos')).valor).toBe('1. produtos/garrafa/produto-1.jpg ← F4 — m4-original.jpg (principal)\n2. produtos/garrafa/produto-2.jpg ← F3 — m3-original.jpg');
+    expect(g['produto-0'].itens.find((i) => i.rotulo === 'Tamanho das fotos').valor).toMatch(/^Produto: 1200×1200\. Medida: padrão do app/); // plataforma não confirmada: padrão do app
+    expect(g['visual-banner'].itens.find((i) => i.rotulo === 'Slide 1').valor).toBe('Computador: banner/banner-1-desktop.jpg (1920×800)\nCelular: banner/banner-1-mobile.jpg (1080×1350)\nFotos: F1 — m1-original.jpg');
+    expect(g['fotos-sobre'].itens[0].valor).toBe('1. sobre/sobre-1-desktop.jpg ← F6 — m6-original.jpg\n1. sobre/sobre-1-mobile.jpg (celular) ← F6 — m6-original.jpg');
+    expect(g['fotos-galeria'].itens[0].valor).toBe('1. galeria/galeria-1.jpg ← F6 — m6-original.jpg');
+    expect(g.provas.itens.find((i) => i.rotulo.startsWith('Arquivos')).valor).toContain('clientes-reais/cliente-1.jpg ← F5 — m5-original.jpg');
   });
   it('prévia e pastas do .zip', () => {
     const h = gerarPreviaLojaHTML(d);
-    expect(h).toContain("url('https://x/m1.jpg')");
+    expect(h).toContain('<div class="car-slide" style="--i:0" data-slide="1"><img src="https://x/m1.jpg"');
     expect(h).toContain('class="galeria-fotos"');
     expect(arquivosPorPasta(d).map((x) => x.caminho)).toEqual([
-      'banner/01-F1-m1-original.jpg', 'produtos/thermora/01-F2-m2-original.jpg', 'produtos/thermora/02-propria.jpg',
-      'produtos/garrafa/01-F4-m4-original.jpg', 'produtos/garrafa/02-F3-m3-original.jpg', 'clientes-reais/01-F5-m5-original.jpg',
-      'sobre/01-F6-m6-original.jpg', 'galeria/01-F6-m6-original.jpg',
+      'banner/banner-1-desktop.jpg', 'banner/banner-1-mobile.jpg', 'produtos/thermora/produto-1.jpg', 'produtos/thermora/produto-2.jpg',
+      'produtos/garrafa/produto-1.jpg', 'produtos/garrafa/produto-2.jpg', 'clientes-reais/cliente-1.jpg',
+      'sobre/sobre-1-desktop.jpg', 'sobre/sobre-1-mobile.jpg', 'galeria/galeria-1.jpg',
     ]);
   });
   it('clientes-reais usa a cópia borrada', () => {
@@ -80,9 +81,10 @@ describe('"Ajustar este site" e as fotos', () => {
     expect(r.mudancas[0]).toBe('Foto F3: passa a ir em "Banner" (escolha sua, igual ao seletor "Usar em")');
     const depois = comUsos(materiais, Object.entries(r.estado.usosFotos).map(([id, usos]) => ({ id, usos })));
     expect(usosDe(depois.find((m) => m.id === 'm3')).banner).toBe('manual');
-    expect(usosDe(depois.find((m) => m.id === 'm1')).banner).toBeUndefined();
+    expect(usosDe(depois.find((m) => m.id === 'm1')).banner).toBe('manual'); // o banner é carrossel: F3 entra depois de F1
     const html = gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo, materiais: depois });
-    expect(html).toContain("url('https://x/m3.jpg')");
+    expect(html).toContain('data-carrossel="2"');
+    expect(html.indexOf('https://x/m1.jpg')).toBeLessThan(html.indexOf('https://x/m3.jpg'));
   });
   it('código ou produto que não existe é recusado com motivo', () => {
     const r = aplicarOperacoes({ pacote: {} }, [{ op: 'foto', codigo: 'F20', uso: 'banner' }, { op: 'foto', codigo: 'F3', uso: 'produto', produto: 'Inexistente' }], { modo: 'pacote', materiais, produtos });

@@ -8,10 +8,12 @@
 //    > referência no texto "Como eu quero o site" ("texto"). Gerar de novo só refaz as marcas "texto"; nunca mexe nas
 //    "manual". Tirar uma escolha no seletor deixa a marca em `bloqueados`, para o texto não colocá-la de volta.
 import { tipoMaterial } from './prova-social.js';
+import { focoDe, ehVertical, planoArquivos } from './medidas-site.js';
 
 export const USOS_FOTO = [['banner', 'Banner'], ['produto', 'Produto'], ['clientes', 'Clientes reais'], ['sobre', 'Sobre a loja/história'], ['galeria', 'Galeria'], ['nao', 'Não usar no site']];
 export const nomeUso = (k) => (USOS_FOTO.find(([u]) => u === k) || [, k])[1];
 const SIMPLES = ['banner', 'clientes', 'sobre', 'galeria', 'nao'];
+const ORDENAVEIS = ['banner', 'clientes', 'sobre', 'galeria'];
 export const DEFINIDO_TEXTO = 'definido pelo texto';
 
 const txt = (v) => String(v ?? '').trim();
@@ -48,6 +50,11 @@ export function normalizarUsos(u = {}) {
   }));
   r.pessoa = Boolean(u?.pessoa);
   r.bloqueados = [...new Set((Array.isArray(u?.bloqueados) ? u.bloqueados : []).map(String))];
+  // Posição da foto em cada lugar com várias fotos (banner = ordem dos slides do carrossel). 0 = sem posição (vai no fim).
+  r.ordem = {};
+  for (const k of ORDENAVEIS) { const n = Number(u?.ordem?.[k]); if (n > 0) r.ordem[k] = Math.round(n); }
+  // "Juntar fotos" no banner: esta foto abre o slide e as de `juntar` (1 ou 2) entram lado a lado com ela.
+  r.juntar = [...new Set((Array.isArray(u?.juntar) ? u.juntar : []).map(String))].slice(0, 2);
   return r;
 }
 export const usosDe = (m) => normalizarUsos(m?.usos);
@@ -60,7 +67,7 @@ const igual = (a, b) => JSON.stringify(normalizarUsos(a)) === JSON.stringify(nor
 /**
  * Mudança feita no seletor "Usar em" (escolha manual). `uso`: banner | produto | clientes | sobre | galeria | nao.
  * Para produto: `produtoId`, e opcionalmente `ordem` e `principal`. Devolve os materiais que mudaram: [{ id, usos }].
- * Banner é um só (marcar uma foto tira o banner das outras); "Foto principal" é uma só por produto; "Não usar" tira
+ * Banner aceita várias fotos (carrossel): a nova entra no fim. "Foto principal" é uma só por produto; "Não usar" tira
  * os outros usos da foto (e marcar outro uso tira o "Não usar").
  */
 export function mudarUso(materiais = [], id, { uso, ligado = true, produtoId = null, ordem, principal } = {}) {
@@ -84,13 +91,13 @@ export function mudarUso(materiais = [], id, { uso, ligado = true, produtoId = n
         if (principal !== undefined) e.principal = Boolean(principal);
         if (e.principal) for (const [outro, x] of mapa) if (outro !== id) x.produtos.forEach((p) => { if (p.id === produtoId) p.principal = false; });
       } else {
+        if (ORDENAVEIS.includes(uso) && !u[uso]) u.ordem[uso] = proximaPosicao(mapa, uso);
         u[uso] = 'manual';
-        if (uso === 'banner') for (const [outro, x] of mapa) if (outro !== id) delete x.banner;
       }
     }
   } else {
     if (uso === 'produto') u.produtos = u.produtos.filter((p) => p.id !== produtoId);
-    else delete u[uso];
+    else { delete u[uso]; delete u.ordem[uso]; if (uso === 'banner') u.juntar = []; }
     if (!u.bloqueados.includes(chave)) u.bloqueados.push(chave);
   }
   return mudados(materiais, mapa);
@@ -102,6 +109,44 @@ export function mudarPessoa(materiais = [], id, pessoa) {
   mapa.get(id).pessoa = Boolean(pessoa);
   return mudados(materiais, mapa);
 }
+/**
+ * Nova ordem das fotos de um lugar (arrastar no seletor): `ids` na ordem desejada. `lugar`: banner | clientes | sobre |
+ * galeria | produto (com `produtoId`; a 1ª vira a "Foto principal"). Fotos do lugar que não vieram em `ids` vão para o
+ * fim, na ordem de antes. Arrastar é escolha do operador: as marcas desse lugar viram "manual" (o texto não as refaz).
+ * Devolve [{ id, usos }].
+ */
+export function reordenar(materiais = [], lugar, ids = [], produtoId = null) {
+  const mapa = new Map(materiais.map((m) => [m.id, usosDe(m)]));
+  const atuais = lugar === 'produto'
+    ? fotosDoProduto({ id: produtoId, fotosMigradas: true }, materiais).map((f) => f.materialId)
+    : imagensDoUso(materiais, lugar).map((f) => f.materialId);
+  // Clientes reais também tem os prints de prova social (entram pelo tipo, sem marca "Usar em"): valem os ids pedidos.
+  if (lugar === 'clientes') ids.map(String).forEach((id) => { if (mapa.has(id) && !atuais.includes(id)) atuais.push(id); });
+  const ordem = [...ids.map(String).filter((id) => atuais.includes(id)), ...atuais.filter((id) => !ids.map(String).includes(id))];
+  ordem.forEach((id, i) => {
+    const u = mapa.get(id);
+    if (lugar === 'produto') { const e = u.produtos.find((p) => p.id === produtoId); if (e) { e.ordem = i + 1; e.principal = i === 0; e.por = 'manual'; } }
+    else { u.ordem[lugar] = i + 1; if (u[lugar]) u[lugar] = 'manual'; }
+  });
+  return mudados(materiais, mapa);
+}
+/**
+ * "Juntar fotos" no banner: `ids` (2 ou 3 fotos que já estão no banner) viram UM slide, lado a lado, na ordem dada.
+ * A 1ª guarda as outras em `juntar`; nenhuma outra foto continua juntando estas. `ids` com 1 foto = separar.
+ */
+export function juntarNoBanner(materiais = [], ids = []) {
+  const mapa = new Map(materiais.map((m) => [m.id, usosDe(m)]));
+  const lista = [...new Set(ids.map(String))].filter((id) => mapa.get(id)?.banner).slice(0, 3);
+  if (!lista.length) return [];
+  for (const [, u] of mapa) u.juntar = u.juntar.filter((j) => !lista.includes(j));
+  for (const id of lista) mapa.get(id).juntar = [];
+  if (lista.length > 1) mapa.get(lista[0]).juntar = lista.slice(1);
+  return mudados(materiais, mapa);
+}
+/** Separa o slide aberto por `id`: cada foto volta a ser um slide. */
+export const separarNoBanner = (materiais = [], id) => juntarNoBanner(materiais, [id]);
+/** Posição depois da última foto do lugar (fotos antigas sem posição também contam). */
+const proximaPosicao = (mapa, uso) => { const no = [...mapa.values()].filter((x) => x[uso]); return 1 + Math.max(no.length, ...no.map((x) => x.ordem[uso] || 0)); };
 const mudados = (materiais, mapa) => materiais.filter((m) => mapa.has(m.id) && !igual(m.usos, mapa.get(m.id))).map((m) => ({ id: m.id, usos: normalizarUsos(mapa.get(m.id)) }));
 /** Aplica os patches numa cópia da lista (para prévia e para atualizar a tela sem reler o banco). */
 export const comUsos = (materiais = [], patches = []) => materiais.map((m) => { const p = patches.find((x) => x.id === m.id); return p ? { ...m, usos: p.usos } : m; });
@@ -190,7 +235,7 @@ export function lerReferencias(texto, { materiais = [], produtos = [] } = {}) {
 export function aplicarReferencias(materiais = [], refs = [], { direta = {}, produtos = [] } = {}) {
   const mapa = new Map(materiais.map((m) => {
     const u = usosDe(m);
-    for (const k of SIMPLES) if (u[k] === 'texto') delete u[k];
+    for (const k of SIMPLES) if (u[k] === 'texto') { delete u[k]; delete u.ordem[k]; }
     u.produtos = u.produtos.filter((p) => p.por !== 'texto');
     return [m.id, u];
   }));
@@ -224,14 +269,12 @@ export function aplicarReferencias(materiais = [], refs = [], { direta = {}, pro
     if (u[r.uso] === 'manual') continue; // já escolhido assim no seletor
     if (r.uso === 'banner' || r.uso === 'sobre') {
       const outraManual = [...mapa].find(([id, x]) => id !== r.materialId && x[r.uso] === 'manual');
-      if (r.uso === 'banner' && outraManual) { conflitos.push(`O texto pede ${quer}, mas no seletor o banner é ${cod(outraManual[0])}: vale o seletor.`); continue; }
+      if (r.uso === 'banner' && outraManual) { conflitos.push(`O texto pede ${quer}, mas o banner já foi escolhido no seletor (${[...mapa].filter(([, x]) => x.banner === 'manual').map(([id]) => cod(id)).join(', ')}): vale o seletor. Para somar ao carrossel, marque ${r.codigo} em "Usar em: Banner".`); continue; }
       const d = direta?.[r.uso];
       if (d && d.materialId !== r.materialId && !outraManual) { conflitos.push(`O texto pede ${quer}, mas ${r.uso === 'banner' ? 'a imagem do banner' : 'a imagem da história'} já foi escolhida à mão nos ajustes ("${d.nome || 'imagem'}"): vale essa escolha. Para trocar, marque ${r.codigo} em "Usar em" ou mude nos ajustes rápidos.`); continue; }
-      if (r.uso === 'banner') {
-        const outraTexto = [...mapa].find(([id, x]) => id !== r.materialId && x.banner === 'texto');
-        if (outraTexto) { conflitos.push(`O texto pede mais de uma foto no banner: vale a primeira (${cod(outraTexto[0])}); ${r.codigo} ficou de fora.`); continue; }
-      }
     }
+    // Várias fotos no mesmo lugar (carrossel do banner, Clientes reais, Galeria): a ordem do texto vira a ordem do site.
+    if (ORDENAVEIS.includes(r.uso)) u.ordem[r.uso] = proximaPosicao(mapa, r.uso);
     u[r.uso] = 'texto';
     aplicadas.push(`${r.codigo} → ${nomeUso(r.uso)}`);
   }
@@ -240,22 +283,64 @@ export function aplicarReferencias(materiais = [], refs = [], { direta = {}, pro
 
 // ---------- o que vai para o site ----------
 const usaveis = (materiais) => materiais.filter((m) => temCodigo(m) && !naoUsa(m));
-const comoImagem = (m) => ({ materialId: m.id, url: m.url, nome: nomeArquivo(m), codigo: m.codigo || '' });
+// foco = ponto principal marcado em Materiais (lib/medidas-site.js); largura/altura medidas no envio (podem faltar).
+const comoImagem = (m) => ({ materialId: m.id, url: m.url, nome: nomeArquivo(m), codigo: m.codigo || '', foco: focoDe(m), ...(m.largura ? { largura: m.largura, altura: m.altura } : {}) });
+// Sem posição (fotos marcadas antes do carrossel) = antes das posicionadas, por código.
+const porOrdem = (uso) => (a, b) => (usosDe(a).ordem[uso] || 0) - (usosDe(b).ordem[uso] || 0) || porCodigo(a, b);
 
 /**
- * Imagem de um lugar único (banner ou história): a do seletor; senão a escolha direta do modo (`direta`, fica como
- * está: devolve null); senão a do texto. Devolve { materialId, url, nome, codigo, por } ou null.
+ * Fotos de um lugar, na ordem do site: as do seletor; sem nenhuma do seletor, as do texto. Em banner e Sobre, a escolha
+ * direta do modo (`direta`, ajustes rápidos) vence o texto: devolve [] e quem chama usa a direta como está.
+ * Cada uma: { materialId, url, nome, codigo, foco, largura?, altura?, por }.
  */
-export function imagemDoLugar(materiais = [], uso, direta = null) {
-  const lista = usaveis(materiais).filter((m) => usosDe(m)[uso]).sort(porCodigo);
-  const manual = lista.find((m) => usosDe(m)[uso] === 'manual');
-  if (manual) return { ...comoImagem(manual), por: 'manual' };
-  if (direta?.url) return null;
-  const texto = lista[0];
-  return texto ? { ...comoImagem(texto), por: 'texto' } : null;
+export function imagensDoUso(materiais = [], uso, direta = null) {
+  const lista = usaveis(materiais).filter((m) => usosDe(m)[uso]).sort(porOrdem(uso));
+  const manuais = lista.filter((m) => usosDe(m)[uso] === 'manual');
+  if (manuais.length) return manuais.map((m) => ({ ...comoImagem(m), por: 'manual' }));
+  if (direta?.url) return [];
+  return lista.map((m) => ({ ...comoImagem(m), por: 'texto' }));
 }
-/** Todas as fotos de um uso (Sobre, Galeria...), em ordem de código. */
-export const fotosDoUso = (materiais = [], uso) => usaveis(materiais).filter((m) => usosDe(m)[uso]).sort(porCodigo).map(comoImagem);
+/** A 1ª imagem de um lugar (banner ou história), com a mesma prioridade de imagensDoUso; null quando vale a direta ou não há. */
+export const imagemDoLugar = (materiais = [], uso, direta = null) => imagensDoUso(materiais, uso, direta)[0] || null;
+/** Todas as fotos de um uso (Sobre, Galeria...), na ordem escolhida (arrastar / ordem do texto) e depois por código. */
+export const fotosDoUso = (materiais = [], uso) => usaveis(materiais).filter((m) => usosDe(m)[uso]).sort(porOrdem(uso)).map(comoImagem);
+
+/**
+ * Slides do carrossel do banner: [{ fotos: [imagem, ...], junto }]. "Juntar fotos" põe 2 ou 3 fotos lado a lado num
+ * slide só (as que entram juntas não viram slide próprio). Sem foto em "Usar em", a escolha direta (`direta`: a imagem
+ * única dos ajustes rápidos, como nos sites antigos) vira um slide.
+ */
+export function slidesDoBanner(materiais = [], direta = null) {
+  const fotos = imagensDoUso(materiais, 'banner', direta);
+  if (!fotos.length) {
+    if (!direta?.url) return [];
+    const m = materiais.find((x) => x.id === direta.materialId);
+    return [{ fotos: [{ ...direta, codigo: direta.codigo || m?.codigo || '', foco: focoDe(m || direta) }], junto: false }];
+  }
+  const porId = new Map(fotos.map((f) => [f.materialId, f]));
+  const usos = new Map(materiais.map((m) => [m.id, usosDe(m)]));
+  const dentro = new Set();
+  for (const f of fotos) if (!dentro.has(f.materialId)) for (const j of usos.get(f.materialId).juntar) if (porId.has(j) && j !== f.materialId) dentro.add(j);
+  return fotos.filter((f) => !dentro.has(f.materialId)).map((f) => {
+    const juntas = usos.get(f.materialId).juntar.filter((j) => porId.has(j) && j !== f.materialId).map((j) => porId.get(j));
+    return { fotos: [f, ...juntas], junto: juntas.length > 0 };
+  });
+}
+/**
+ * Sugestão de "Juntar fotos": slide com UMA foto em pé no banner (largo) seria muito cortado. Junta com a(s) próxima(s)
+ * foto(s) em pé que estão sozinhas. Devolve [{ ids: [2 ou 3 ids], codigos }] (só sugere; o operador escolhe).
+ */
+export function sugestoesJuntar(slides = []) {
+  const sozinhaEmPe = (s) => s.fotos.length === 1 && ehVertical(s.fotos[0]);
+  const out = [];
+  for (let i = 0; i < slides.length; i++) {
+    if (!sozinhaEmPe(slides[i])) continue;
+    const grupo = [slides[i]];
+    for (let k = i + 1; k < slides.length && grupo.length < 3 && sozinhaEmPe(slides[k]); k++) grupo.push(slides[k]);
+    if (grupo.length > 1) { out.push({ ids: grupo.map((s) => s.fotos[0].materialId), codigos: grupo.map((s) => s.fotos[0].codigo) }); i += grupo.length - 1; }
+  }
+  return out;
+}
 
 const nomeDoCaminho = (s) => decodeURIComponent(String(s || '').split('?')[0].split('/').pop() || '').replace(/^\d{10,}_/, '') || 'foto';
 /**
@@ -270,7 +355,7 @@ export function fotosDoProduto(produto, materiais = []) {
   if (!ligadas.length) return proprias;
   const principal = ligadas.filter((x) => x.e.principal).sort((a, b) => (a.e.por === 'manual' ? -1 : 0) - (b.e.por === 'manual' ? -1 : 0) || porCodigo(a.m, b.m))[0];
   const resto = ligadas.filter((x) => x !== principal).sort((a, b) => (a.e.por === 'manual' ? 0 : 1) - (b.e.por === 'manual' ? 0 : 1) || (a.e.ordem || 999) - (b.e.ordem || 999) || porCodigo(a.m, b.m)); // seletor antes do texto
-  const f = ({ m }) => ({ url: m.url, path: m.path, nome: nomeArquivo(m), codigo: m.codigo || '', materialId: m.id });
+  const f = ({ m }) => ({ url: m.url, path: m.path, nome: nomeArquivo(m), codigo: m.codigo || '', materialId: m.id, foco: focoDe(m) });
   return [...(principal ? [f(principal)] : []), ...proprias, ...resto.map(f)];
 }
 export const produtosComFotos = (produtos = [], materiais = []) => produtos.map((p) => ({ ...p, fotos: fotosDoProduto(p, materiais) }));
@@ -286,32 +371,14 @@ export function resumoUsos(m, produtos = []) {
 }
 
 // ---------- pacote: o que vai em cada lugar e as pastas do .zip ----------
-const pastaSegura = (s) => sem(s).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'item';
 const extDe = (nome, url) => { const e = /\.([a-z0-9]{2,4})$/i.exec(String(nome || '').split('?')[0]) || /\.([a-z0-9]{2,4})(?:\?|$)/i.exec(String(url || '').split('?')[0]); return e ? e[1].toLowerCase() : 'jpg'; };
-const arquivoNoZip = (pasta, i, x) => {
-  const base = pastaSegura(String(x.nome || 'foto').replace(/\.[a-z0-9]{2,4}$/i, ''));
-  return `${pasta}/${String(i + 1).padStart(2, '0')}-${x.codigo ? `${x.codigo}-` : ''}${base}.${extDe(x.nome, x.url)}`;
-};
 
 /**
- * Lista de arquivos do .zip "Imagens por lugar": banner/, produtos/<nome do produto>/ (na ordem do site),
- * clientes-reais/ (a cópia borrada quando houver), sobre/ e galeria/. `d` = dadosDoPacote. Cada item:
- * { caminho, url, codigo, nome }.
+ * Lista de arquivos do .zip "Imagens por lugar": banner/ (banner-1-desktop.jpg, banner-1-mobile.jpg...),
+ * produtos/<nome do produto>/ (na ordem do site), clientes-reais/ (a cópia borrada quando houver), sobre/ e galeria/,
+ * cada um já recortado no tamanho do lugar e do aparelho (lib/medidas-site.js planoArquivos). `d` = dadosDoPacote.
  */
-export function arquivosPorPasta(d) {
-  const out = [];
-  const add = (pasta, lista) => lista.filter((x) => x?.url).forEach((x, i) => out.push({ caminho: arquivoNoZip(pasta, i, x), url: x.url, codigo: x.codigo || '', nome: x.nome || '' }));
-  if (d.visual?.banner?.url) add('banner', [d.visual.banner]);
-  const usadas = new Set();
-  for (const p of d.produtos || []) {
-    let pasta = `produtos/${pastaSegura(p.nome)}`; while (usadas.has(pasta)) pasta += '-2'; usadas.add(pasta);
-    add(pasta, p.arquivos || []);
-  }
-  add('clientes-reais', (d.provas || []).map((x) => ({ url: x.url, codigo: x.codigo, nome: x.nome || 'print' })));
-  add('sobre', d.sobreImagens || []);
-  add('galeria', d.galeria || []);
-  return out;
-}
+export const arquivosPorPasta = (d) => planoArquivos(d);
 
 // ---------- migração: fotos do campo do produto -> Materiais (um lugar só) ----------
 const TIPO_EXT = { png: 'image/png', webp: 'image/webp', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
