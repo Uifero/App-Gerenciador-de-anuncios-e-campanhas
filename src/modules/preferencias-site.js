@@ -138,7 +138,7 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
     const btn = $('[data-ler-ref-print]', alvo);
     await ocupado(btn || caixa, async () => {
       const bl = await (await fetch(p.url)).blob();
-      const prep = await prepararImagem(new File([bl], p.nome || 'referencia.jpg', { type: bl.type || 'image/jpeg' }), 1568, 0.85);
+      const prep = await prepararImagem(new File([bl], p.nome || 'referencia.jpg', { type: bl.type || 'image/jpeg' }), 1092, 0.85); // só estrutura e estilo (nada de texto miúdo): 1092 px usa ~metade dos tokens de 1568
       const estrutura = await lerReferenciaPrint({ cliente, imagem: { media_type: prep.media_type, data: prep.data } });
       if (!estrutura) throw new Error('Não consegui ler o print agora. Descreva no campo "O que eu gostei nesse site".');
       await salvarPrefs(cliente, { referenciaLeitura: estrutura });

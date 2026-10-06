@@ -10,6 +10,7 @@ import { medidasDe, posicaoCss, textoMedida, nomeLugar } from './medidas-site.js
 import { carrosselHtml, carrosselCss } from './carrossel.js';
 import { plataformaDoSite, nomeTema } from './etapas-site.js';
 import { depoimentosVivos } from './prova-social.js';
+import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
 
 const txt = (v) => String(v ?? '').trim();
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -18,6 +19,7 @@ const moeda = (n) => (Number(n) > 0 ? `R$ ${Number(n).toFixed(2).replace('.', ',
 
 export const LEGENDA_PREVIA_PACOTE = 'Prévia aproximada. O visual final depende do tema escolhido na Nuvemshop/Shopify; textos, fotos, preços e ordem das seções são os que vão para a loja.';
 export const TEXTO_COMPRA_DESATIVADA = 'Prévia, compra desativada';
+const NOME_PAG = { cartao: 'Cartão de crédito', pix: 'Pix', boleto: 'Boleto' };
 
 /** Junta o que vai para a loja: textos do pacote, conteúdo/políticas do formulário, produtos reais (com SEO do pacote), logo e cores. */
 /** `provas` = prints reais de clientes (lib/visual-site.js printsDoCliente), já na cópia borrada quando houver. */
@@ -36,6 +38,8 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
   const banners = (p.banners || []).filter((b) => txt(b?.titulo));
   return {
     visual,
+    // Frete grátis, pagamento, colunas, botão, página do produto e "Compre junto" (plano do pedido, lib/plano-site.js).
+    recursos: normalizarRecursos(p.recursos),
     sobreImagens: fotosDoUso(materiais, 'sobre'),
     galeria: fotosDoUso(materiais, 'galeria'),
     provas: (provas || []).filter((x) => x?.url),
@@ -57,7 +61,7 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
     // Lidos agora da fonte: provas em texto do perfil de marca, prints (cópia borrada) e escritos à mão (lib/prova-social.js).
     depoimentos: depoimentosVivos({ cliente, materiais, guardados: p.depoimentos?.length ? p.depoimentos : c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => txt(d?.texto)),
     produtos: comTextosDoPacote(produtosComFotos(produtos, materiais), p).filter((x) => txt(x?.nome)).map((x) => ({
-      nome: txt(x.nome), descricao: txt(x.descricao), preco: Number(x.preco) || null, precoPromocional: Number(x.precoPromocional) || null,
+      id: x.id || '', nome: txt(x.nome), descricao: txt(x.descricao), formula: txt(x.formula), beneficios: txt(x.beneficios), modoUso: txt(x.modoUso), preco: Number(x.preco) || null, precoPromocional: Number(x.precoPromocional) || null,
       variacoes: (x.variacoes || []).filter((v) => v?.nome && v.valores?.length), fotos: (x.fotos || []).map((f) => f?.url).filter(Boolean),
       arquivos: (x.fotos || []).filter((f) => f?.url).map((f) => ({ url: f.url, nome: f.nome || 'foto', codigo: f.codigo || '', foco: f.foco || null })),
       seoTitulo: txt(x.seoTitulo), seoDescricao: txt(x.seoDescricao), categoria: txt(x.categoria),
@@ -181,15 +185,28 @@ export function gerarPreviaLojaHTML(d) {
   const pos = (f) => (f?.foco && d.visual.ajusteFotos !== 'contain' ? ` style="object-position:${posicaoCss(f.foco)}"` : '');
   const foto = (x, cls = '') => (x.fotos[0] ? `<img src="${esc(x.fotos[0])}" alt="${esc(x.nome)}" class="${cls}"${pos(x.arquivos?.[0])}>` : `<div class="semfoto ${cls}">sem foto</div>`);
   const marca = d.logoUrl ? `<img src="${esc(d.logoUrl)}" alt="${esc(d.nomeLoja)}" class="logo">` : `<span class="nome">${esc(d.nomeLoja)}</span>`;
-  const cabecalho = `<header><div class="wrap"><a href="#inicio" class="marca">${marca}</a><nav><a href="#inicio">Início</a><a href="#produtos">Produtos</a>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Dúvidas</a>' : ''}</nav><span class="sacola" title="${esc(TEXTO_COMPRA_DESATIVADA)}">Carrinho (0)</span></div></header>`;
-  const rodape = `<footer><div class="wrap"><div>${marca}</div><div><b>Institucional</b>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Perguntas frequentes</a>' : ''}${d.politicas.trocas ? '<span>Trocas e devoluções</span>' : ''}${d.politicas.envio ? '<span>Envio</span>' : ''}${d.politicas.privacidade ? '<span>Privacidade</span>' : ''}</div><div><b>Compra segura</b><span>Pagamento e frete configurados na plataforma</span></div></div><p class="aviso">${esc(LEGENDA_PREVIA_PACOTE)}</p></footer>`;
+  const cabecalho = `${d.recursos?.freteGratis ? `<div class="barra-frete" data-barra-frete>Frete grátis acima de ${esc(reais(d.recursos.freteGratis.valor))}</div>` : ''}<header><div class="wrap"><a href="#inicio" class="marca">${marca}</a><nav><a href="#inicio">Início</a><a href="#produtos">Produtos</a>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Dúvidas</a>' : ''}</nav><span class="sacola" title="${esc(TEXTO_COMPRA_DESATIVADA)}">Carrinho (0)</span></div></header>`;
+  const rodape = `<footer><div class="wrap"><div>${marca}</div><div><b>Institucional</b>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Perguntas frequentes</a>' : ''}${d.politicas.trocas ? '<span>Trocas e devoluções</span>' : ''}${d.politicas.envio ? '<span>Envio</span>' : ''}${d.politicas.privacidade ? '<span>Privacidade</span>' : ''}</div><div><b>Compra segura</b><span>Pagamento e frete configurados na plataforma</span>${d.recursos?.pagamentos?.length ? `<span class="pags" data-pagamentos-rodape>${d.recursos.pagamentos.map((k) => `<span>${esc(NOME_PAG[k] || k)}</span>`).join('')}</span>` : ''}</div></div><p class="aviso">${esc(LEGENDA_PREVIA_PACOTE)}</p></footer>`;
+  const R = d.recursos || normalizarRecursos();
+  const pags = R.pagamentos.length ? `<div class="pags" data-pagamentos>${R.pagamentos.map((k) => `<span>${esc(NOME_PAG[k] || k)}</span>`).join('')}</div>` : '';
+  const avisoFrete = R.freteGratis ? `Frete grátis acima de ${esc(reais(R.freteGratis.valor))}` : '';
+  // Página do produto: com o plano pedindo, TODAS as fotos; sem, as 5 primeiras (como antes).
+  const miniaturas = (x) => (R.paginaProduto ? x.fotos.slice(1) : x.fotos.slice(1, 5));
+  const secoesProduto = (x) => R.secoesProduto.map((k) => (textoSecaoProduto(x, k) ? `<details class="secao-prod" open data-secao-produto="${k}"><summary>${esc(SECOES_PRODUTO[k])}</summary><p>${esc(textoSecaoProduto(x, k)).replace(/\n/g, '<br>')}</p></details>` : '')).join('');
+  const compreJunto = (x, i) => {
+    if (!R.compreJunto || d.produtos.length < 2) return '';
+    const s = sugeridoPara(x.id || String(i), d.produtos.map((p, k) => ({ ...p, id: p.id || String(k) })), R); if (!s) return '';
+    const k = d.produtos.findIndex((p) => (p.id || '') === (s.id || '') && p.nome === s.nome);
+    return `<div class="junto" data-compre-junto><p class="junto-t">Compre junto${R.compreJunto.onde === 'carrinho' ? ' <small>(na loja: sugestão no carrinho)</small>' : ''}</p>
+      <a href="#produto-${k}" class="junto-item">${s.fotos[0] ? `<img src="${esc(s.fotos[0])}" alt="">` : ''}<span>+ ${esc(s.nome)}<br><b>${esc(moeda(s.precoPromocional || s.preco) || 'Sob consulta')}</b></span></a></div>`;
+  };
   const paginasProduto = d.produtos.map((x, i) => `<section id="produto-${i}" class="pagina"><div class="wrap"><a href="#produtos" class="voltar">&larr; Voltar aos produtos</a>
-    <div class="pdp"><div class="galeria">${foto(x, 'principal')}${x.fotos.length > 1 ? `<div class="miniaturas">${x.fotos.slice(1, 5).map((u, k) => `<img src="${esc(u)}" alt=""${pos(x.arquivos?.[k + 1])}>`).join('')}</div>` : ''}</div>
-    <div><h1>${esc(x.nome)}</h1><p class="preco">${preco(x)}</p>
+    <div class="pdp"><div class="galeria">${foto(x, 'principal')}${x.fotos.length > 1 ? `<div class="miniaturas">${miniaturas(x).map((u, k) => `<img src="${esc(u)}" alt=""${pos(x.arquivos?.[k + 1])}>`).join('')}</div>` : ''}</div>
+    <div><h1>${esc(x.nome)}</h1><p class="preco">${preco(x)}</p>${avisoFrete ? `<p class="frete-pdp" data-frete-pdp>${avisoFrete}</p>` : ''}
       ${x.variacoes.map((v) => `<div class="var"><span>${esc(v.nome)}</span><div>${v.valores.map((val) => `<span class="chip">${esc(val)}</span>`).join('')}</div></div>`).join('')}
-      <button type="button" class="comprar" disabled data-compra-desativada>${esc(TEXTO_COMPRA_DESATIVADA)}</button>
-      ${x.descricao ? `<div class="desc">${esc(x.descricao).replace(/\n/g, '<br>')}</div>` : ''}</div></div></div></section>`).join('');
-  const grade = d.produtos.length ? d.produtos.map((x, i) => `<a class="card" href="#produto-${i}">${foto(x)}<span class="nomep">${esc(x.nome)}</span><span class="preco">${preco(x)}</span></a>`).join('') : '<p>Nenhum produto cadastrado.</p>';
+      <button type="button" class="comprar${R.botaoGrande ? ' grande' : ''}" disabled data-compra-desativada>${esc(TEXTO_COMPRA_DESATIVADA)}</button>${pags}
+      ${x.descricao ? `<div class="desc">${esc(x.descricao).replace(/\n/g, '<br>')}</div>` : ''}${secoesProduto(x)}${compreJunto(x, i)}</div></div></div></section>`).join('');
+  const grade = d.produtos.length ? d.produtos.map((x, i) => `<a class="card" href="#produto-${i}">${foto(x)}<span class="nomep">${esc(x.nome)}</span><span class="preco">${preco(x)}</span>${R.botaoGrande ? '<span class="comprar grande card-btn">Comprar</span>' : ''}</a>`).join('') : '<p>Nenhum produto cadastrado.</p>';
   const V = d.visual;
   const med = d.medidas || medidasDe(d.plataforma, d.tema);
   const slides = V.slides || [];
@@ -218,14 +235,20 @@ nav{display:flex;gap:16px;flex:1;flex-wrap:wrap}nav a{text-decoration:none;font-
 .banner{background:${cor};color:#fff;padding:56px 0;text-align:center}.banner h1{margin:0 0 8px;font-size:clamp(24px,4vw,40px)}.banner p{margin:0 0 18px;opacity:.92}
 .cta{display:inline-block;background:#fff;color:${cor};padding:12px 22px;border-radius:6px;font-weight:700;text-decoration:none}
 h2{margin:36px 0 14px;font-size:22px}.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
-.card{text-decoration:none;display:flex;flex-direction:column;gap:6px}.card img,.card .semfoto{width:100%;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:6px;background:#f3f4f6}
+.card{text-decoration:none;display:flex;flex-direction:column;gap:6px}
+.barra-frete{background:${cor};color:#fff;text-align:center;font-size:13px;font-weight:600;padding:8px 12px}.frete-pdp{margin:-8px 0 12px;font-size:14px;color:${cor};font-weight:600}
+.pags{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}.pags span{border:1px solid #d1d5db;border-radius:4px;padding:3px 8px;font-size:12px;color:#374151;background:#fff}
+.comprar.grande{font-size:19px;padding:20px;border-radius:10px}.card-btn{display:block;text-align:center;background:${cor};color:#fff;margin:6px 0 0;cursor:default}
+.secao-prod{margin-top:12px;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px}.secao-prod p{margin:8px 0 0;line-height:1.6;font-size:15px}
+.junto{margin-top:20px;border:2px dashed ${cor};border-radius:8px;padding:12px}.junto-t{margin:0 0 8px;font-weight:700}.junto-item{display:flex;gap:12px;align-items:center;text-decoration:none}.junto-item img{width:72px;height:72px;object-fit:cover;border-radius:6px}
+${d.recursos?.colunasProdutos ? `.grade{grid-template-columns:repeat(${d.recursos.colunasProdutos},1fr)}@media(max-width:640px){.grade{grid-template-columns:repeat(${Math.min(2, d.recursos.colunasProdutos)},1fr)}}` : ''}.card img,.card .semfoto{width:100%;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:6px;background:#f3f4f6}
 .semfoto{display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px}.nomep{font-size:14px}.preco b{color:${cor}}.de{text-decoration:line-through;color:#9ca3af;font-size:13px}
 .confianca{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:32px}.confianca div{border:1px solid #e5e7eb;border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:4px;font-size:13px}
 .depos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}blockquote{margin:0;border:1px solid #e5e7eb;border-radius:6px;padding:12px;font-size:14px}cite{display:block;margin-top:6px;color:#6b7280;font-style:normal;font-size:12px}
 .sobre{line-height:1.6}details{border-bottom:1px solid #e5e7eb;padding:10px 0}summary{cursor:pointer;font-weight:600}
 .pagina{display:none;padding:20px 0 40px}.pagina:target{display:block}.pagina:target~.home{display:none}.voltar{font-size:14px}
 .pdp{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:14px}.principal{width:100%;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:8px;background:#f3f4f6}
-.miniaturas{display:flex;gap:8px;margin-top:8px}.miniaturas img{width:64px;height:64px;object-fit:${V.ajusteFotos};border-radius:4px}
+.miniaturas{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.miniaturas img{width:64px;height:64px;object-fit:${V.ajusteFotos};border-radius:4px}
 .pdp h1{margin:0 0 8px;font-size:26px}.pdp .preco{font-size:22px;margin:0 0 16px}.var{margin:10px 0}.var>span{font-size:13px;color:#6b7280;display:block;margin-bottom:6px}
 .chip{display:inline-block;border:1px solid #d1d5db;border-radius:4px;padding:6px 10px;margin:0 6px 6px 0;font-size:13px}
 .comprar{width:100%;margin:16px 0;padding:14px;border:0;border-radius:6px;background:#9ca3af;color:#fff;font-weight:700;font-size:15px;cursor:not-allowed}

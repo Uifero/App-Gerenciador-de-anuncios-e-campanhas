@@ -4,7 +4,7 @@
 // Aprovações do site); nenhum passo é trancado. Rota: #/c/<cliente>/site/<1-6>; sem número, abre no 1º com "Falta algo".
 // Nunca processa pagamento: só marca o ponto de encaixe de checkout de terceiros.
 import { db, COL } from '../core/storage.js';
-import { gerarConteudoSite, gerarTextosPacote, gerarFaqSite, objecoesDe } from '../core/ia.js';
+import { gerarConteudoSite, gerarTextosPacote, gerarFaqSite, objecoesDe, ajustarSite } from '../core/ia.js';
 import { gerarSiteHTML, faqValida, FORMAS_PAGAMENTO, PAGAMENTOS_PADRAO } from '../lib/sitegen.js';
 import { montarPerguntasSite, progressoSite, PAGAMENTOS_PRETENDIDOS, TOTAL_PERGUNTAS } from './perguntas-site.js';
 import { csvShopify, csvNuvemshop, slug, comTextosDoPacote } from '../lib/csv.js';
@@ -32,6 +32,9 @@ import { abrirMateriais } from './materiais-cliente.js';
 import { excluirMateriais } from './excluir-material.js';
 import { abrirProduto, garantirMigracaoFotos } from './produtos.js';
 import { ETAPAS, STATUS_ETAPA, statusEtapas, primeiraEtapaComFalta, plataformaDoSite, patchPlataforma, PLATAFORMAS_SITE, TEMAS_SHOPIFY, nomeTema } from '../lib/etapas-site.js';
+import { itensAceitos, aplicacaoDoPlano, checklistObrigatorio, itensFaltando, recursosDoSite, TIPOS_PEDIDO } from '../lib/plano-site.js';
+import { blocoAnaliseHtml, ligarAnalise, planoAplicado, conferenciaHtml, conferirPlano, abrirPlanoDaVersao, tarefasLojaHtml } from './plano-site.js';
+import { resumoBlocosSite } from './ajuste-site.js';
 
 /** { materialId: usos } (rascunho do "Ajustar este site") -> patches para comUsos. */
 const patchesDe = (usosFotos) => Object.entries(usosFotos || {}).map(([id, usos]) => ({ id, usos }));
@@ -127,9 +130,12 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   // "F3 no banner, F5 no Thermora" (texto "Como eu quero o site"): aplica como se fosse o seletor "Usar em", marcado
   // "definido pelo texto". Sem IA. O seletor e a escolha direta do modo vencem; conflito e código que não existe ficam
   // guardados no site (site.fotosTexto) e aparecem no passo 4 até a próxima aplicação.
+  // Com um plano aplicado para o texto atual ("Analisar meu pedido"), as fotos vêm SÓ dos itens aceitos do plano.
   const aplicarFotosTexto = async () => {
     const mats = await garantirCodigos(cliente, await db.listar(COL.materiais, { clienteId: cliente.id }));
-    const { refs, avisos } = lerReferencias(cliente.preferenciasSite?.texto || '', { materiais: mats, produtos });
+    const pl = planoAplicado(site);
+    const doPlano = pl && pl.base?.texto === String(cliente.preferenciasSite?.texto || '').trim();
+    const { refs, avisos } = doPlano ? { refs: aplicacaoDoPlano(itensAceitos(pl), { modo: modoV, materiais: mats, produtos }).refs, avisos: [] } : lerReferencias(cliente.preferenciasSite?.texto || '', { materiais: mats, produtos });
     const L = normalizarLayout(site?.layout);
     const direta = site?.modo === 'custom' ? { banner: L.imagens.hero || null, sobre: L.imagens.marca || null } : { banner: normalizarVisual(site?.pacote?.visual).banner };
     const r = aplicarReferencias(mats, refs, { direta, produtos });
@@ -143,10 +149,16 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   // O ÚNICO "Gerar site" (passo 4). Se o OUTRO modo já foi gerado e este ainda não, a base (textos principais, cores,
   // FAQ, depoimentos) vem de lá e é reaplicada por cima do que a IA escrever (lib/site-modos.js).
-  const gerarComIa = (b) => ocupado(b, async () => {
+  const gerarComIa = (b) => ocupado(b, () => gerarConteudo());
+  async function gerarConteudo({ irParaPasso4 = true } = {}) {
     if (!plat) { toast('Escolha a plataforma no passo 3 ("Como quero") antes de gerar.', 'erro'); return; }
     if (!produtos.length && !custom) { toast('Cadastre pelo menos um produto (passo 2) antes de gerar o pacote.', 'erro'); return; }
     await aplicarFotosTexto(); // antes da IA: a imagem do banner escolhida pelo texto não é trocada por ela
+    // Plano aplicado: os itens aceitos entram como lista OBRIGATÓRIA (lib/plano-site.js checklistObrigatorio).
+    // Com plano aplicado para o texto atual, só os itens aceitos valem: o texto bruto e as escolhas visuais da IA ficam de fora.
+    const plAplic = planoAplicado(site);
+    const planoVale = Boolean(plAplic && plAplic.base?.texto === String(cliente.preferenciasSite?.texto || '').trim());
+    const obrigatorios = checklistObrigatorio(itensAceitos(plAplic));
     const base = baseParaGerar(site, custom ? 'custom' : 'pacote');
     const reaproveitou = base ? { avisoModosVisto: false, baseReaproveitadaEm: new Date().toISOString() } : {};
     if (custom) {
@@ -154,27 +166,104 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       // Depoimentos: com prova social real (texto, prints, criativos, escritos à mão), só o real — a IA nem escreve
       // modelo. Sem nenhuma prova, os modelos da IA, sempre marcados "[MODELO – substituir…]" (lib/prova-social.js).
       const argsProva = { cliente, materiais, atuais: atual.depoimentos || [], provasOcultas: atual.provasOcultas || [] };
-      const { visual, ...r } = await gerarConteudoSite({ cliente, produtos, base, semDepoimentos: temProvaReal(argsProva), materiais: imagensParaBanner(materiais) });
+      const { visual, ...r } = await gerarConteudoSite({ cliente, produtos, base, semDepoimentos: temProvaReal(argsProva), materiais: imagensParaBanner(materiais), obrigatorios, semPreferencias: planoVale });
       const { depoimentos, usouModelos } = montarDepoimentos({ ...argsProva, modelosIa: r.depoimentos || [] });
       const gerado2 = { ...atual, ...r, depoimentos };
       const patch = base ? aplicarBaseNoCustom(gerado2, site.config || {}, base) : { conteudo: gerado2 };
-      const vis = aplicarOperacoes({ conteudo: patch.conteudo, config: patch.config || site.config || {}, layout: site.layout }, opsDoVisual(visual, 'custom', site, materiais), { modo: 'custom', materiais });
+      const vis = aplicarOperacoes({ conteudo: patch.conteudo, config: patch.config || site.config || {}, layout: site.layout }, opsDoVisual(planoVale ? null : visual, 'custom', site, materiais), { modo: 'custom', materiais });
       await salvarEVersionar({ ...patch, ...(vis.mudancas.length ? { layout: vis.estado.layout } : {}), ...reaproveitou }, 'Textos gerados de novo pela IA');
       toast(base ? 'Site gerado reaproveitando o texto, as cores e a FAQ do pacote que o cliente já viu. A IA só completou o que faltava.'
         : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. ${usouModelos ? 'Sem prova social cadastrada: os depoimentos são MODELOS marcados para substituir.' : `Depoimentos: só as ${depoimentos.length} prova(s) social(is) reais do cliente.`}`);
     } else {
-      const { visual, ...gerado2 } = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base, materiais: imagensParaBanner(materiais) });
+      const { visual, ...gerado2 } = await gerarTextosPacote({ cliente, produtos, plataforma: nomePlat(site.plataforma), base, materiais: imagensParaBanner(materiais), obrigatorios, semPreferencias: planoVale });
       // Descrições presas ao produto pelo id (renomear o produto não perde a descrição).
       const descricoesProdutos = (gerado2.descricoesProdutos || []).map((d) => ({ ...d, produtoId: produtos.find((p) => String(p.nome || '').toLowerCase() === String(d.nome || '').toLowerCase())?.id || null }));
       // As escolhas da prévia (banner, fotos, seções) continuam; as que as preferências pedirem entram por cima.
-      const novo = { ...(base ? aplicarBaseNoPacote({ ...gerado2, descricoesProdutos }, base) : { ...gerado2, descricoesProdutos }), ...(site.pacote?.visual ? { visual: site.pacote.visual } : {}) };
-      const vis = aplicarOperacoes({ pacote: novo }, opsDoVisual(visual, 'pacote', site, materiais), { modo: 'pacote', materiais });
+      const novo = { ...(base ? aplicarBaseNoPacote({ ...gerado2, descricoesProdutos }, base) : { ...gerado2, descricoesProdutos }), ...(site.pacote?.visual ? { visual: site.pacote.visual } : {}), ...(site.pacote?.recursos ? { recursos: site.pacote.recursos } : {}) };
+      const vis = aplicarOperacoes({ pacote: novo }, opsDoVisual(planoVale ? null : visual, 'pacote', site, materiais), { modo: 'pacote', materiais });
       await salvarEVersionar({ pacote: vis.estado.pacote, ...reaproveitou }, 'Pacote gerado de novo pela IA');
       toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado.' : 'Banners, briefing do tema e textos gerados.');
     }
+    if (planoAplicado(site)) await conferirDoSite(); // "Conferência do pedido" logo depois de gerar
+    mostrarDepoisDeGerar.add(cliente.id);
+    if (!irParaPasso4) return;
+    if (passoDaRota() === 4) recarregar(); else irPara(4);
+  }
+
+  // ---------- plano do pedido ("Analisar meu pedido", modules/plano-site.js) ----------
+  const ctxConferir = async () => {
+    const mats = await db.listar(COL.materiais, { clienteId: cliente.id });
+    materiais.splice(0, materiais.length, ...mats);
+    return { cliente, get site() { return site; }, salvarSite, modo: modoV, materiais: mats, produtos: produtosComFotos(produtosBase, mats) };
+  };
+  const conferirDoSite = async (op = {}) => conferirPlano(await ctxConferir(), op);
+  /** Aplica a ESTRUTURA dos itens (fotos por código, seções, recursos de loja) como uma versão nova. */
+  async function aplicarEstrutura(itens, resumo, extra = {}) {
+    const mats = await garantirCodigos(cliente, await db.listar(COL.materiais, { clienteId: cliente.id }));
+    const a = aplicacaoDoPlano(itens, { modo: modoV, materiais: mats, produtos, recursosAtuais: recursosDoSite(site, modoV) });
+    const L = normalizarLayout(site?.layout);
+    const direta = custom ? { banner: L.imagens.hero || null, sobre: L.imagens.marca || null } : { banner: normalizarVisual(site?.pacote?.visual).banner };
+    // Fotos: só as dos itens aceitos (as marcas antigas "definido pelo texto" saem); a escolha manual em "Usar em" vence.
+    // As refs de foto vêm do plano INTEIRO (aplicarReferencias troca todas as marcas de texto de uma vez).
+    const comFoto = itens.some((x) => ['banner_fotos', 'clientes_fotos', 'produto_fotos'].includes(x.tipo));
+    const refs = comFoto ? aplicacaoDoPlano(planoAplicado(site) ? itensAceitos(planoAplicado(site)) : itens, { modo: modoV, materiais: mats, produtos }).refs : [];
+    const rf = comFoto ? aplicarReferencias(mats, refs, { direta, produtos }) : { patches: [], conflitos: [], aplicadas: [] };
+    await salvarUsos(rf.patches);
+    materiais.splice(0, materiais.length, ...comUsos(mats, rf.patches));
+    document.dispatchEvent(new CustomEvent('gcc:materiais', { detail: { clienteId: cliente.id, lista: [...materiais] } }));
+    const antes = estadoDoSite(site, modoV);
+    const comRec = custom ? { ...antes, config: { ...antes.config, recursos: a.recursos, ...(a.pagamentosConfig ? { pagamentos: a.pagamentosConfig } : {}) } } : { pacote: { ...antes.pacote, recursos: a.recursos } };
+    const r = aplicarOperacoes(comRec, a.ops, { modo: modoV, materiais, produtos });
+    const v = registrarVersao(site, { modo: modoV, estadoAntes: antes, estadoDepois: r.estado, resumo, origem: 'plano', extra });
+    await salvarSite({ ...r.estado, ...v, ...(comFoto ? { fotosTexto: { em: new Date().toISOString(), aplicadas: rf.aplicadas, conflitos: rf.conflitos, avisos: [] } } : {}) });
+    return { conflitos: rf.conflitos, recusadas: r.descartadas.filter((d) => !/já est|já aparece|já é|já usa/.test(d.motivo)).map((d) => d.motivo) };
+  }
+  // "Aplicar o plano": só os itens e sugestões marcados. Estrutura primeiro (versão nova), depois os textos com a lista
+  // obrigatória ("Gerar site") e a conferência. Nada disso acontece antes deste clique.
+  async function aplicarPlano(plano) {
+    if (!plat) throw new Error('Escolha a plataforma (acima, em "Plataforma e tema") antes de aplicar o plano.');
+    const itens = itensAceitos(plano);
+    if (!itens.length) throw new Error('Marque pelo menos um item do plano para aplicar.');
+    if (!produtos.length && !custom) throw new Error('Cadastre pelo menos um produto (passo 2) antes de aplicar o plano.');
+    await salvarSite({ planoAplicado: plano.id, conferencia: null, planos: (site.planos || []).map((p) => (p.id === plano.id ? { ...p, aplicadoEm: new Date().toISOString() } : p)) });
+    const r = await aplicarEstrutura(itens, `Plano #${plano.n || ''} aplicado: ${itens.length} item(ns)`, { planoId: plano.id });
+    await gerarConteudo({ irParaPasso4: false });
+    const versao = Math.max(0, ...(site.versoesAjuste || []).filter((v) => v.modo === modoV).map((v) => v.n));
+    await salvarSite({ planos: (site.planos || []).map((p) => (p.id === plano.id ? { ...p, versao } : p)), versoesAjuste: (site.versoesAjuste || []).map((v) => (v.n === versao && v.modo === modoV ? { ...v, planoId: plano.id } : v)) });
+    if (r.conflitos.length || r.recusadas.length) await salvarSite({ conferencia: { ...site.conferencia, notas: [...(site.conferencia?.notas || []), ...r.conflitos, ...r.recusadas] } });
     mostrarDepoisDeGerar.add(cliente.id);
     if (passoDaRota() === 4) recarregar(); else irPara(4);
-  });
+  }
+  // "Corrigir o que faltou": só os itens Parcial/Não atendido. Estrutura: aplica de novo. Texto: a IA propõe uma mudança
+  // em "Ajustar este site" (Atual × Com a mudança), para aceitar. Dado que só o operador tem (fórmula etc.): diz onde preencher.
+  async function corrigirFaltou() {
+    const p = planoAplicado(site), conf = site?.conferencia;
+    if (!p || !conf) return;
+    const faltando = itensFaltando(itensAceitos(p), conf.resultados);
+    const ligada = (x) => !/não está ligada/.test(conf.resultados[x.id]?.motivo || '');
+    const semDado = faltando.filter((x) => x.tipo === 'secoes_produto' || (custom && x.tipo === 'pagina_produto' && ligada(x)));
+    const deTexto = faltando.filter((x) => !semDado.includes(x) && (conf.resultados[x.id]?.por !== 'codigo' || (x.tipo === 'pagina_produto' && ligada(x))));
+    const deEstrutura = faltando.filter((x) => !semDado.includes(x) && !deTexto.includes(x));
+    const avisos = [];
+    if (deEstrutura.length) { const r = await aplicarEstrutura(deEstrutura, `Corrigir o que faltou: ${deEstrutura.length} item(ns) do plano #${p.n || ''}`, { planoId: p.id }); avisos.push(...r.conflitos, ...r.recusadas); }
+    if (deTexto.length) {
+      const e = estadoDoSite(site, modoV);
+      const mensagem = `Corrija SÓ estes pedidos do plano, sem mexer em mais nada: ${deTexto.map((x) => `"${x.pedido || TIPOS_PEDIDO[x.tipo]}" (${x.como}; hoje: ${conf.resultados[x.id]?.motivo || 'não atendido'})`).join('; ')}`;
+      const ia = await ajustarSite({ cliente, modo: modoV, estado: e, mensagem: mensagem.slice(0, 1500), materiais: imagensParaBanner(materiais), produtos, resumoBlocos: custom ? resumoBlocosSite(e) : '' });
+      const r = ia.tipo === 'proposta' ? aplicarOperacoes({ ...e, usosFotos: {} }, ia.operacoes, { modo: modoV, materiais, produtos }) : null;
+      if (r?.aplicadas.length) {
+        const { usosFotos, ...estado } = r.estado;
+        await salvarSite({ rascunhoAjuste: { modo: modoV, estado, usosFotos: usosFotos || {}, origem: 'ia', criadoEm: new Date().toISOString(), mudancas: r.mudancas, descartadas: r.descartadas.map((d) => ({ op: d.op, motivo: d.motivo })) } });
+        avisos.push(`Os itens de texto (${deTexto.length}) viraram uma mudança proposta em "Ajustar este site", logo abaixo: confira "Atual × Com a mudança" e aceite. A conferência roda de novo ao aceitar.`);
+      } else avisos.push(`A IA não conseguiu corrigir o texto agora: ${ia.resposta}`);
+    }
+    if (semDado.length) avisos.push(`Precisa de dado real (a IA não inventa): ${semDado.map((x) => conf.resultados[x.id]?.motivo).join('; ')}. Preencha no produto (aba Produtos > Mais opções).`);
+    await conferirDoSite();
+    if (avisos.length) await salvarSite({ conferencia: { ...site.conferencia, notas: [...(site.conferencia?.notas || []), ...avisos] } });
+    recarregar();
+    mostrarResultado('[data-conferencia]', 'Correção feita: a conferência foi refeita.');
+  }
+
 
   // ---------- partes comuns ----------
   const matsCom = (usosFotos) => (usosFotos ? comUsos(materiais, patchesDe(usosFotos)) : materiais);
@@ -330,9 +419,11 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <div class="mt-4" data-como-quero>${preferenciasHtml(cliente, site?.fotosTexto)}
         <div class="card mt-4" data-ancora="referencia"><h3 class="font-semibold">Site de referência</h3>
           <input class="input mt-1" data-referencia-site value="${esc(cliente.siteReferencia || '')}" placeholder="https://… (um site que o cliente acha bonito)">
-          <p class="hint">O mesmo campo da pergunta 12. A IA usa só a estrutura e o estilo dele, nunca textos, imagens ou marca.</p>${referenciaExtraHtml(cliente)}</div></div>`;
+          <p class="hint">O mesmo campo da pergunta 12. A IA usa só a estrutura e o estilo dele, nunca textos, imagens ou marca.</p>${referenciaExtraHtml(cliente)}</div></div>
+      ${blocoAnaliseHtml(cliente, site)}`;
     const caixa = $('[data-como-quero]', alvo);
     ligarPreferencias(caixa, cliente, () => { const x = $('[data-referencia-extra]', caixa); if (x) x.outerHTML = referenciaExtraHtml(cliente); }, { aplicarFotosTexto: site?.modo ? aplicarFotosTexto : null });
+    ligarAnalise($('[data-analise-pedido]', alvo), { cliente, get site() { return site; }, salvarSite, produtos: produtosComF(), materiais, plataforma: plat, tema: String(site?.tema || ''), modo: modoV, aplicar: aplicarPlano });
     on(alvo, 'change', '[data-plataforma]', (i) => ocupado(i, async () => {
       const novo = i.value;
       await salvarSite({ ...patchPlataforma(novo), ...(novo === 'shopify' && !TEMAS_SHOPIFY.some(([k]) => k === site?.tema) ? { tema: null } : {}), ...(novo !== 'shopify' && TEMAS_SHOPIFY.some(([k]) => k === site?.tema) ? { tema: null } : {}) });
@@ -365,7 +456,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm" data-mostrar-previa-loja><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button>${custom ? '<button type="button" class="btn-ghost btn-sm" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button>' : ''}</div>
           <div class="mt-2" data-area-previa-loja>${custom ? '<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe>' : previaLojaHtml()}</div>
           ${ajustesRapidosHtml()}
-          ${resultadoFotosTextoHtml(site.fotosTexto)}</div>` : ''}</div>
+          ${resultadoFotosTextoHtml(site.fotosTexto)}${conferenciaHtml(site)}</div>` : ''}</div>
       <details class="card mt-4" data-conteudo-manual ${!gerado && plat ? '' : ''}><summary class="cursor-pointer font-semibold">Editar os textos à mão (sem IA)</summary>
         ${plat ? formularioConteudoHtml(c, cfg) : '<p class="hint mt-2">Escolha a plataforma no passo 3.</p>'}</details>
       ${plat ? `<div class="card mt-4" data-cartao-depoimentos><h3 class="mb-1 font-semibold"><i class="fa-solid fa-star-half-stroke mr-1 text-amber-500"></i> Depoimentos do site</h3>
@@ -388,6 +479,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ligarAjustesRapidos();
       if (mostrarDepoisDeGerar.has(cliente.id)) { mostrarDepoisDeGerar.delete(cliente.id); mostrarResultado($('[data-area-resultado]', alvo), 'Pronto: site gerado. A prévia está aqui; ajuste à vontade e depois vá para "Aprovar".'); }
     }
+    on(alvo, 'click', '[data-corrigir-faltou]', (b) => ocupado(b, () => corrigirFaltou()));
+    on(alvo, 'click', '[data-conferir-de-novo]', (b) => ocupado(b, async () => { await conferirDoSite(); recarregar(); mostrarResultado('[data-conferencia]', 'Conferência refeita.'); }));
+    on(alvo, 'click', '[data-ver-plano]', (b) => abrirPlanoDaVersao(site, b.dataset.verPlano, site.conferencia?.versao || null));
     on(alvo, 'click', '[data-mostrar-previa-loja]', (b) => { const a = $('[data-area-previa-loja]', alvo); a.classList.toggle('hidden'); b.innerHTML = a.classList.contains('hidden') ? '<i class="fa-solid fa-eye"></i> Ver prévia' : '<i class="fa-solid fa-eye-slash"></i> Esconder prévia'; });
     on(alvo, 'click', '[data-preview]', () => abrirNovaAba());
     if (plat) ligarFormularioConteudo(c, cfg);
@@ -412,7 +506,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       toast('Site personalizado atualizado com o texto e as cores do pacote.'); recarregar();
     }));
     if (gerado || (custom && produtos.length)) {
-      montarAjusteSite($('[data-ajuste]', alvo), { cliente, produtos, modo: modoV, get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML, previaPacote })
+      montarAjusteSite($('[data-ajuste]', alvo), { cliente, produtos, modo: modoV, get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML, previaPacote,
+        depoisDeMudar: async () => { if (planoAplicado(site)) await conferirDoSite().catch((e) => toast(`A conferência do pedido não rodou: ${e.message}`, 'erro')); },
+        verPlano: (id, n) => abrirPlanoDaVersao(site, id, n) })
         .catch((e) => { console.warn('[ajuste do site]', e); $('[data-ajuste]', alvo).innerHTML = '<p class="hint text-rose-600">Não consegui abrir "Ajustar este site". Recarregue a página.</p>'; });
     }
   }
@@ -452,6 +548,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       if (!r.mudancas.length) { toast(r.descartadas[0]?.motivo ? `Nada mudou: ${r.descartadas[0].motivo}.` : 'Nada mudou.', 'info'); return; }
       const v = registrarVersao(site, { modo: modoV, estadoAntes: antes, estadoDepois: r.estado, resumo: resumoMudancas(r.mudancas), origem: 'controle' });
       await salvarSite({ ...r.estado, ...v });
+      if (planoAplicado(site)) await conferirDoSite().catch(() => {});
       toast(`${resumoMudancas(r.mudancas)} (v${v.proximaVersao - 1}).`);
       recarregar();
     };
@@ -563,6 +660,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <div class="mt-2 grid gap-3 sm:grid-cols-2"><div><label class="label">Endereço da loja já publicada</label><input class="input" name="link" data-link value="${esc(site?.linkPublicado)}" placeholder="https://…">
           <p class="hint">A aba Campanhas sugere este link como destino dos anúncios${custom ? ', e o site baixado de novo já sai com a prévia certa para o WhatsApp' : ''}.</p></div>
           <div><label class="label">Status</label><select class="input" data-status ${site ? '' : 'disabled'}>${opcoes(STATUS_SITE, site?.status)}</select></div></div></div>
+      ${tarefasLojaHtml(site, plat, site?.tema)}
       <div class="card mt-4" data-checklist-final><h3 class="font-semibold">Checklist final</h3><ul class="mt-2 space-y-1 text-sm">${lista.map((x) => `<li class="flex flex-wrap items-center gap-2" data-check="${x.id}" data-ok="${x.ok}">
         <i class="fa-solid ${x.ok ? 'fa-circle-check text-emerald-600' : 'fa-circle-xmark text-amber-600'}"></i><span class="flex-1">${esc(x.texto)}</span>${x.ok ? '' : `<span class="text-xs text-amber-800">${esc(x.falta)}</span>`}</li>`).join('')}</ul></div>`;
     const marcarExportado = () => salvarSite({ exportadoEm: new Date().toISOString(), status: site?.status === 'rascunho' ? 'pronto' : site?.status });

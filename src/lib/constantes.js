@@ -100,6 +100,7 @@ export const TAREFAS_IA = {
   narracao: ['Roteiro de narração', 'criativos', 2500, 'Haiku'], faq: ['FAQ do site', 'site', 2500, 'Haiku'],
   leitura_site: ['Leitura do site do cliente', 'site', 4000, 'Sonnet'], leitura_web: ['Leitura do site pela busca', 'site', 4000, 'Sonnet'], leitura_prints: ['Leitura de prints do Instagram', 'site', 4000, 'Sonnet'], leitura_provas: ['Leitura de prints de prova social', 'site', 4000, 'Sonnet'], modelo_prompt: ['Preenchimento de modelo de prompt', 'criativos', 1500, 'Haiku'],
   ajuste_site: ['Ajuste do site (pedido pontual)', 'site', 3000, 'Haiku'], ajuste_site_amplo: ['Ajuste do site (pedido amplo)', 'site', 5000, 'Sonnet'],
+  plano_site: ['Análise do pedido do site (plano)', 'site', 6000, 'Sonnet'], conferencia_site: ['Conferência do pedido do site', 'site', 1500, 'Haiku'],
   leitura_respostas: ['Leitura da resposta do cliente', 'site', 6000, 'Haiku'], leitura_produtos: ['Produtos da resposta do cliente', 'site', 6000, 'Sonnet'],
   reparo: ['Correção de resposta da IA', 'criativos', 12000, 'Haiku'],
 };

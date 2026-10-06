@@ -4,6 +4,7 @@
 import { db, COL } from '../core/storage.js';
 import { TAREFAS_IA, CATEGORIAS_CUSTO } from '../lib/constantes.js';
 import { esc, confirmar, toast } from '../core/ui.js';
+import { porTarefaDoMes } from '../lib/custos-ia.js';
 
 export const AVISO_PCT = 80;
 // Coleção de arquivo do rollup mensal (não existe em core/storage.js: é só uma string "gcc_*", já coberta pela
@@ -159,7 +160,9 @@ export async function fecharMes(mes) {
   }
   const resumo = {
     mes, chamadas: regs.length, totalUsd, tokensEntrada: entrada, tokensSaida: saida, tokensCacheEscrita: cacheEscrita,
-    tokensCacheLeitura: cacheLeitura, buscasWeb, porCliente, porCategoria, fechadoEm: new Date().toISOString(),
+    tokensCacheLeitura: cacheLeitura, buscasWeb, porCliente, porCategoria,
+    // Por tarefa e provedor (assinatura x reserva): a página "Custos de IA" continua detalhando os meses fechados.
+    porTarefa: porTarefaDoMes(regs), fechadoEm: new Date().toISOString(),
   };
   await db.definir(COL_USO_RESUMO, mes, resumo, { silencioso: true });
   await Promise.all(regs.map((r) => db.remover(COL.usoApi, r.id)));

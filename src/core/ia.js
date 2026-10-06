@@ -20,25 +20,54 @@ export async function chamarClaude({ tarefa, cliente = null, estavel, system, me
   const cfg = await obterConfig();
   await verificarOrcamento(cliente, cfg); // exige confirmação manual se o orçamento do mês já estourou
   const token = await tokenAtual();
-  let r;
-  try {
-    r = await fetch('/api/claude', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      // imagens: [{ media_type, data (base64) }] — só o diagnóstico usa (o servidor recusa nas demais tarefas).
-      body: JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || undefined, webSearch, imagens }),
-    });
-  } catch {
-    throw new Error('Não consegui falar com o servidor de IA. Ele está rodando? Você pode usar a opção manual.');
-  }
-  const corpo = await r.json().catch(() => ({}));
+  // imagens: [{ media_type, data (base64) }] — só tarefas de leitura de imagem (o servidor recusa nas demais).
+  const corpoPedido = JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || undefined, webSearch, imagens, assincrono: true });
+  const { status, ok, corpo } = await pedirAoServidor(token, corpoPedido);
   if (corpo.uso) registrarUso({ cliente, tarefa, uso: corpo.uso }); // até respostas cortadas consumiram tokens (grava em segundo plano)
-  if (!r.ok) {
-    if (!corpo.erro && [502, 503, 504].includes(r.status)) throw new Error('O servidor de IA não respondeu. Confirme que ele está rodando (npm run dev) ou use a opção manual.');
-    throw new Error(corpo.erro || `Erro ${r.status} ao chamar a IA.`);
+  const provedor = corpo.provedor || corpo.uso?.provedor;
+  if (provedor) avisar('gcc:ia-provedor', { provedor, tarefa, em: new Date().toISOString() });
+  if (!ok) {
+    if (!corpo.erro && status >= 500) throw comDetalhe(new Error(ERRO_REDE), `HTTP ${status} sem corpo de erro`);
+    throw new Error(corpo.erro || `Erro ${status} ao chamar a IA.`);
   }
-  try { window.dispatchEvent(new Event('gcc:ia-ok')); } catch { /* fora do navegador */ } // o texto enviado já foi usado (ver core/salvamento.js)
+  avisar('gcc:ia-ok'); // o texto enviado já foi usado (ver core/salvamento.js)
   return corpo;
+}
+
+export const ERRO_REDE = 'Não consegui falar com o servidor do app. Se você acabou de atualizar, espere 30 segundos e tente de novo.';
+const comDetalhe = (e, detalhe) => Object.assign(e, { detalhe });
+const avisar = (nome, detail) => { try { window.dispatchEvent(new CustomEvent(nome, { detail })); } catch { /* fora do navegador */ } };
+const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
+export const ESPERA_CONSULTA_MS = 2000;
+
+/**
+ * Manda o pedido e espera a resposta sem segurar uma conexão aberta por minutos: o servidor devolve um id de trabalho
+ * e aqui consultamos o andamento a cada ~2 s (cada consulta é curta, então nenhum proxy corta). Falha de rede: uma nova
+ * tentativa automática; persistindo, a mensagem simples com o detalhe técnico guardado em `detalhe`.
+ * Durante a espera, dispara "gcc:ia-progresso" ({ segundos, etapa }) para os botões mostrarem que a IA ainda trabalha.
+ */
+export async function pedirAoServidor(token, corpoPedido, { fetchFn = (...a) => fetch(...a), espera = ESPERA_CONSULTA_MS } = {}) {
+  // Sem resposta do app (rede caiu, ou o proxy devolveu 500/502/503/504 sem o JSON do app: servidor reiniciando) = falha de rede.
+  const semApp = async (r) => { if (r.status >= 500 && !String(r.headers?.get?.('content-type') || '').includes('json')) throw new Error(`HTTP ${r.status} sem resposta do app (servidor parado ou reiniciando)`); return r; };
+  const tentar = async (fn) => {
+    try { return await semApp(await fn()); }
+    catch (e1) { await esperar(espera); try { return await semApp(await fn()); } catch (e2) { throw comDetalhe(new Error(ERRO_REDE), `${e2?.name || 'Erro'}: ${e2?.message || e1?.message || 'falha de rede'}`); } }
+  };
+  const cab = { Authorization: `Bearer ${token}` };
+  const r = await tentar(() => fetchFn('/api/claude', { method: 'POST', headers: { 'Content-Type': 'application/json', ...cab }, body: corpoPedido }));
+  let corpo = await r.json().catch(() => ({}));
+  if (r.status !== 202 || !corpo.trabalho) return { status: r.status, ok: r.ok, corpo }; // servidor antigo: resposta direta
+  const id = corpo.trabalho, inicio = Date.now();
+  for (;;) {
+    // A CLI tem 3 a 5 min e a API ~10 min: passou de 15 min, algo travou no servidor.
+    if (Date.now() - inicio > 15 * 60_000) throw comDetalhe(new Error('A IA não respondeu em 15 minutos. Tente de novo; se continuar, use o caminho sem IA desta tela.'), `trabalho ${id} sem resposta`);
+    await esperar(espera);
+    const c = await tentar(() => fetchFn(`/api/claude/trabalho/${encodeURIComponent(id)}`, { headers: cab }));
+    corpo = await c.json().catch(() => ({}));
+    if (!c.ok) return { status: c.status, ok: false, corpo };
+    if (corpo.pronto) return { status: corpo.status, ok: corpo.status >= 200 && corpo.status < 300, corpo: corpo.corpo || {} };
+    avisar('gcc:ia-progresso', { segundos: corpo.segundos ?? Math.round((Date.now() - inicio) / 1000), etapa: corpo.etapa || '' });
+  }
 }
 
 /**
@@ -645,10 +674,73 @@ export async function sugerirFocoFoto({ cliente, imagem }) {
   return { x, y, oque: ['rosto', 'produto'].includes(dados?.oque) ? dados.oque : 'outro' };
 }
 
+// ---------- "Analisar meu pedido" (plano antes de aplicar) e "Conferência do pedido" ----------
+const TIPOS_PLANO = `banner_fotos {"codigos":["F3",...]} (fotos do banner/carrossel, na ordem) | clientes_fotos {"codigos":[...]} (depoimentos/clientes reais em foto ou print) | produto_fotos {"produto":NOME,"codigos":[...]} | frete_gratis {"valor":número} | pagamentos {"formas":["cartao","pix","boleto"]} | colunas_produtos {"colunas":2|3|4} | botao_grande {} | pagina_produto {"descricaoDetalhada":true} (página do produto com todas as fotos e descrição longa) | secoes_produto {"secoes":["formula","beneficios","modo_uso"]} | faq {} | depoimentos_home {} | compre_junto {"onde":"produto"|"carrinho","produto":NOME,"sugerido":NOME} (cross-sell/upsell) | ordem_secoes {"ordem":[chaves]} | ocultar_secao {"secao":chave} | fotos_ajuste {"ajuste":"contain"|"cover"} | cores {"corPrimaria":"#rrggbb","corFundo":"#rrggbb"} | texto {} (títulos, chamadas, tom) | outro {}`;
+
+/**
+ * Lê "Como eu quero o site" (+ o que gostou na referência e a leitura do print) e devolve um PLANO item a item, sem
+ * aplicar nada. O app confere o plano depois (lib/plano-site.js normalizarPlano): códigos e produtos que não existem
+ * viram "Não dá para fazer" e o caminho de menu de cada item sai da tabela do app, nunca da IA.
+ */
+export async function analisarPedidoSite({ cliente, produtos = [], materiais = [], plataforma, tema = '', modo = 'pacote', secoes = [] }) {
+  const p = cliente?.preferenciasSite || {};
+  const system = 'Você é um consultor de lojas online. Você NÃO aplica nada: lê o pedido do operador e devolve um plano item a item, honesto sobre o que dá e o que não dá para fazer. Fala com uma pessoa leiga, em frases curtas, em português do Brasil.';
+  const fotos = materiais.filter((m) => m.codigo).slice(0, 60).map((m) => `${m.codigo}: ${m.nomeOriginal || m.nome || 'imagem'}`).join(' | ') || '(nenhuma foto com código)';
+  const prods = produtos.slice(0, 15).map((x) => `"${x.nome}"${x.preco ? ` R$ ${x.precoPromocional || x.preco}` : ''} · ${(x.fotos || []).length} foto(s) · descrição ${String(x.descricao || '').length > 120 ? 'longa' : x.descricao ? 'curta' : 'vazia'}${x.formula ? ' · tem fórmula' : ''}${x.beneficios ? ' · tem benefícios' : ''}`).join('\n') || '(nenhum produto)';
+  const pedido = `PEDIDO DO OPERADOR ("Como eu quero o site"): "${String(p.texto || '').trim().slice(0, 1500) || '(vazio)'}"
+${String(p.gostei || '').trim() ? `O que ele gostou no site de referência: "${String(p.gostei).trim().slice(0, 800)}"` : ''}
+${String(cliente?.siteReferencia || '').trim() ? `Site de referência: ${String(cliente.siteReferencia).trim()}` : ''}
+${String(p.referenciaLeitura || '').trim() ? `Estrutura e estilo lidos do print da referência: ${String(p.referenciaLeitura).trim().slice(0, 1200)}` : ''}
+
+PLATAFORMA: ${plataforma === 'custom' ? 'site personalizado (HTML gerado pelo app)' : plataforma ? `${plataforma}${tema ? `, tema ${tema}` : ''}` : 'ainda não escolhida'}
+Seções da home neste modelo (chaves): ${secoes.join(', ')}
+PRODUTOS CADASTRADOS:
+${prods}
+FOTOS DOS MATERIAIS (código: nome): ${fotos}
+
+Separe o pedido em itens (um por coisa pedida, na ordem do texto). Para cada item:
+- "pedido": as palavras do operador (trecho curto copiado do texto)
+- "tipo" e "params": um destes tipos: ${TIPOS_PLANO}
+- "como": como vai ficar no site, em 1 frase (seção, layout, fotos pelo código)
+- "status": "pronto" | "pergunta" (o pedido é ambíguo: faça UMA pergunta com 2 a 4 opções; cada opção pode trazer "como" e "params") | "impossivel" (diga o motivo em "motivo" e a alternativa mais próxima em "alternativa")
+Use só fotos, produtos e dados que existem acima. Fórmula, ingredientes, benefícios, preço, prazo e depoimento NUNCA são inventados: se faltar o dado, diga no "como" que ele precisa ser preenchido na aba Produtos.
+Depois, "sugestoes": até 5 ideias para a loja ficar mais profissional, pelo nicho do cliente e pela referência, que o operador NÃO pediu, cada uma com "texto", "motivo" (1 linha), "tipo" e "params" (mesmos tipos).
+Saída JSON: {"resumo": string (1 frase), "itens": [{"pedido","tipo","params","como","status","pergunta": {"texto","opcoes":[{"texto","como","params"}]} | null,"motivo","alternativa"}], "sugestoes": [{"texto","motivo","tipo","params"}]}
+${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'plano_site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
+  return dados || {};
+}
+
+/**
+ * Confere com a IA barata (Haiku) SÓ os itens do plano que o código não consegue conferir (texto, estilo, "outro").
+ * itens: [{ id, pedido, como }]; estado: resumo em texto do que o site mostra. Devolve { [id]: { status, motivo } }.
+ */
+export async function conferirPedidoIa({ cliente, itens = [], estado = '' }) {
+  if (!itens.length) return {};
+  const system = 'Você confere se um site atende a pedidos do operador. Responde só com o que vê no estado do site; na dúvida, "parcial".';
+  const pedido = `ESTADO DO SITE (textos e seções):
+${String(estado).slice(0, 6000)}
+
+PEDIDOS A CONFERIR:
+${itens.map((x) => `${x.id}: ${x.pedido} → ${x.como}`).join('\n')}
+
+Para cada pedido: "atendido", "parcial" ou "nao", com 1 linha curta de motivo em português do Brasil.
+Saída JSON: {"resultados": [{"id": string, "status": "atendido"|"parcial"|"nao", "motivo": string}]} ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'conferencia_site', cliente, system, messages: [{ role: 'user', content: pedido }] });
+  const out = {};
+  for (const x of Array.isArray(dados?.resultados) ? dados.resultados : []) {
+    if (!itens.some((i) => i.id === x?.id)) continue;
+    out[x.id] = { status: ['atendido', 'parcial', 'nao'].includes(x.status) ? x.status : 'parcial', motivo: String(x.motivo || '').trim().slice(0, 200), por: 'ia' };
+  }
+  return out;
+}
+
 /** `semDepoimentos`: o cliente já tem prova social real — a IA não escreve depoimento-modelo (lib/prova-social.js montarDepoimentos). */
-export async function gerarConteudoSite({ cliente, produtos, base = null, semDepoimentos = false, materiais = [] }) {
+/** `obrigatorios`: lista numerada dos itens aceitos do plano (lib/plano-site.js checklistObrigatorio); vazio = sem plano.
+ * `semPreferencias`: com plano aplicado, o texto bruto "Como eu quero o site" NÃO vai (só o que o operador aceitou no plano). */
+export async function gerarConteudoSite({ cliente, produtos, base = null, semDepoimentos = false, materiais = [], obrigatorios = '', semPreferencias = false }) {
   const system = 'Você é copywriter de e-commerce.';
-  const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.${linhaBase(base)}${contextoPreferencias(cliente)}${linhaImagens(materiais)}
+  const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.${linhaBase(base)}${semPreferencias ? '' : contextoPreferencias(cliente)}${linhaImagens(materiais)}${obrigatorios}
 Se couber neste cliente (opcional), organize o banner e a história como uma página de produto: título; prova social só se for real do perfil; uma frase de solução; 3 argumentos tirados das crenças e dores do público; texto curto.
 Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": ${semDepoimentos ? '[] (vazio: a loja já tem depoimentos reais, que o app coloca)' : '[{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais)'},"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)}), ${PEDIDO_VISUAL('hero, provas, categorias, vendidos, sale, catalogo, marca, galeria, depoimentos, faq, newsletter')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
@@ -676,9 +768,9 @@ Saída: array JSON de {"p","r"}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   return normalizarFaq(Array.isArray(dados) ? dados : dados?.faq);
 }
 
-export async function gerarTextosPacote({ cliente, produtos, plataforma, base = null, materiais = [] }) {
+export async function gerarTextosPacote({ cliente, produtos, plataforma, base = null, materiais = [], obrigatorios = '', semPreferencias = false }) {
   const system = `Você prepara lojas para ${plataforma}.`;
-  const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})`).join(', ') || 'a definir'}.${linhaBase(base)}${base?.cores?.length ? ` Paleta já usada: ${base.cores.join(', ')} (comece a paletaSugerida por ela).` : ''}${contextoPreferencias(cliente)}${linhaImagens(materiais)}
+  const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})${p.descricao ? `: ${String(p.descricao).slice(0, 400)}` : ''}${p.formula ? ` | fórmula: ${String(p.formula).slice(0, 300)}` : ''}${p.beneficios ? ` | benefícios: ${String(p.beneficios).slice(0, 300)}` : ''}`).join('; ') || 'a definir'}.${linhaBase(base)}${base?.cores?.length ? ` Paleta já usada: ${base.cores.join(', ')} (comece a paletaSugerida por ela).` : ''}${semPreferencias ? '' : contextoPreferencias(cliente)}${linhaImagens(materiais)}${obrigatorios}
 Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}], ${PEDIDO_VISUAL('banner, provas, produtos, confianca, depoimentos, sobre, galeria, faq')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'pacote', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }

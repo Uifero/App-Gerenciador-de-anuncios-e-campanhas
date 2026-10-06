@@ -1,0 +1,20 @@
+{
+  "resumo": "Loja com carrossel no banner, frete grátis acima de R$ 199, dois produtos grandes lado a lado, depoimentos em foto e página de produto detalhada com compre junto no carrinho.",
+  "itens": [
+    { "pedido": "banner em carrossel com F36, F40 e F15", "tipo": "banner_fotos", "params": { "codigos": ["F36", "F40", "F15"] }, "como": "Banner em carrossel com 3 slides, nesta ordem: F36, F40, F15.", "status": "pronto", "pergunta": null, "motivo": "", "alternativa": "" },
+    { "pedido": "frete grátis acima de 199", "tipo": "frete_gratis", "params": { "valor": 199 }, "como": "Barra no topo: \"Frete grátis acima de R$ 199\" e aviso na página do produto.", "status": "pronto", "pergunta": null },
+    { "pedido": "formas de pagamento", "tipo": "pagamentos", "params": { "formas": ["cartao", "pix", "boleto"] }, "como": "Ícones de cartão, Pix e boleto no rodapé e abaixo do botão de compra.", "status": "pronto", "pergunta": null },
+    { "pedido": "dois produtos grandes lado a lado", "tipo": "colunas_produtos", "params": { "colunas": 2 }, "como": "Grade de produtos com 2 por linha, fotos grandes.", "status": "pronto", "pergunta": null },
+    { "pedido": "botão de comprar grande", "tipo": "botao_grande", "params": {}, "como": "Botão de compra maior e mais alto, na cor da marca.", "status": "pronto", "pergunta": null },
+    { "pedido": "depoimentos F23, F26, F25 e F29", "tipo": "clientes_fotos", "params": { "codigos": ["F23", "F26", "F25", "F29"] }, "como": "Seção Clientes reais na home com F23, F26, F25 e F29, nessa ordem.", "status": "pronto", "pergunta": null },
+    { "pedido": "página do produto detalhada", "tipo": "pagina_produto", "params": { "descricaoDetalhada": true }, "como": "Página do produto com todas as fotos e descrição longa, usando só os dados cadastrados.", "status": "pronto", "pergunta": null },
+    { "pedido": "com fórmula e benefícios", "tipo": "secoes_produto", "params": { "secoes": ["formula", "beneficios"] }, "como": "Blocos \"Fórmula / ingredientes\" e \"Benefícios\" na página do produto, com o texto da aba Produtos (o Thermora Gel ainda não tem fórmula cadastrada).", "status": "pronto", "pergunta": null },
+    { "pedido": "cross-sell no carrinho", "tipo": "compre_junto", "params": { "onde": "carrinho", "produto": "Thermora Caps", "sugerido": "Thermora Gel" }, "como": "Ao pôr o Thermora Caps no carrinho, sugere o Thermora Gel (\"Compre junto\").", "status": "pronto", "pergunta": null },
+    { "pedido": "chamada do banner falando do frete grátis", "tipo": "texto", "params": {}, "como": "Subtítulo do banner menciona o frete grátis acima de R$ 199.", "status": "pronto", "pergunta": null }
+  ],
+  "sugestoes": [
+    { "texto": "Perguntas frequentes com as objeções do perfil", "motivo": "Responde dúvidas antes da compra e reduz abandono.", "tipo": "faq", "params": {} },
+    { "texto": "Depoimentos logo depois dos produtos", "motivo": "Prova social perto da decisão de compra.", "tipo": "ordem_secoes", "params": { "ordem": ["banner", "produtos", "provas"] } },
+    { "texto": "Modo de uso na página do produto", "motivo": "Suplemento sem modo de uso gera dúvida e devolução.", "tipo": "secoes_produto", "params": { "secoes": ["modo_uso"] } }
+  ]
+}

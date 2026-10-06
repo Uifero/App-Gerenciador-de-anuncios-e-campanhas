@@ -7,6 +7,7 @@ import { produtosComFotos, imagemDoLugar, fotosDoUso, slidesDoBanner } from './f
 import { medidasDe, posicaoCss } from './medidas-site.js';
 import { carrosselHtml, carrosselCss } from './carrossel.js';
 import { depoimentosVivos } from './prova-social.js';
+import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
 
 /** Formas de pagamento que o selo "compra segura" pode mostrar (ícones genéricos desenhados aqui, sem logo de bandeira). */
 export const FORMAS_PAGAMENTO = [['cartao', 'Cartão de crédito'], ['pix', 'Pix'], ['boleto', 'Boleto']];
@@ -64,7 +65,10 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
   const faq = faqValida(c.faq);
   const seo = metaSeo({ cliente, produtos, conteudo: c, url });
   const pagamentos = (Array.isArray(cfg.pagamentos) ? cfg.pagamentos : PAGAMENTOS_PADRAO).filter((k) => ICONE_PAG[k]);
-  const dados = produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.precoPromocional || p.preco || 0), foto: p.fotos?.[0]?.url || '', variacoes: p.variacoes || [] }));
+  // Recursos pedidos no plano (lib/plano-site.js): frete grátis, botão grande, página do produto, "Compre junto".
+  const R = normalizarRecursos(cfg.recursos);
+  const junto = (p) => (R.compreJunto && produtos.length > 1 ? sugeridoPara(p.id, produtos, R) : null);
+  const dados = produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.precoPromocional || p.preco || 0), foto: p.fotos?.[0]?.url || '', variacoes: p.variacoes || [], junto: junto(p)?.id || null }));
 
   const card = (p) => {
     const foto = p.fotos?.[0]?.url;
@@ -74,7 +78,20 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
       <h3>${esc(p.nome)}</h3>
       <p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>
       ${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}
-      ${Number(p.preco) ? `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>` : '<!-- sem preço cadastrado: sem botão de compra -->'}</article>`;
+      ${Number(p.preco) ? `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>` : '<!-- sem preço cadastrado: sem botão de compra -->'}${R.paginaProduto ? `<a class="ver" href="#p-${esc(p.id)}">Ver detalhes</a>` : ''}</article>`;
+  };
+  // Página do produto (aparece pelo :target, sem script): todas as fotos, descrição, seções e "Compre junto".
+  const paginaProduto = (p) => {
+    const vars = (p.variacoes || []).filter((v) => v.nome && v.valores?.length);
+    const sug = R.compreJunto?.onde === 'produto' ? junto(p) : null;
+    return `<section id="p-${esc(p.id)}" class="pdp-pagina"><div class="wrap"><a href="#catalogo" class="ver">&larr; Voltar</a><div class="pdp card">
+      <div class="pdp-fotos">${(p.fotos || []).map((f) => `<img src="${esc(f.url)}" alt="${esc(p.nome)}" loading="lazy">`).join('') || '<span>sem foto</span>'}</div>
+      <div><h2>${esc(p.nome)}</h2><p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>${R.freteGratis ? `<p class="frete-pdp">Frete grátis acima de ${esc(reais(R.freteGratis.valor))}</p>` : ''}
+        ${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}
+        ${Number(p.preco) ? `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>` : ''}
+        ${p.descricao ? `<div class="story">${esc(p.descricao)}</div>` : ''}
+        ${R.secoesProduto.map((k) => (textoSecaoProduto(p, k) ? `<details class="secao-prod" open><summary>${esc(SECOES_PRODUTO[k])}</summary><p>${esc(textoSecaoProduto(p, k))}</p></details>` : '')).join('')}
+        ${sug ? `<div class="junto card"><b>Compre junto</b><p>+ ${esc(sug.nome)} · ${Number(sug.preco) ? brl(sug.precoPromocional || sug.preco) : 'sob consulta'}</p>${Number(sug.preco) ? `<button class="btn" data-add="${esc(sug.id)}">Adicionar ${esc(sug.nome)}</button>` : ''}</div>` : ''}</div></div></div></section>`;
   };
   const grade = (lista, bloco) => { const n = L.variacoes[bloco]?.colunas; return `<div class="grid${n ? ` cols${n}` : ''}">${lista.map(card).join('')}</div>`; };
   // Depoimentos lidos da fonte (perfil de marca, prints com a cópia borrada), não da cópia da última geração.
@@ -141,6 +158,12 @@ footer{background:#111827;color:#d1d5db;padding:40px 0;font-size:14px}footer h4{
 #drawer.open{transform:none}#drawer header{position:static;padding:16px;display:flex;justify-content:space-between}#itens{flex:1;overflow:auto;padding:0 16px}
 .item{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid #eee;font-size:14px}#rodape{padding:16px;border-top:1px solid #eee}
 .nota{font-size:12px;color:#6b7280;margin-top:6px}
+.barra-frete{background:var(--cor);color:#fff;text-align:center;font-size:14px;font-weight:600;padding:8px 12px}.frete-pdp{color:var(--cor);font-weight:600;margin:0 0 10px}
+.ver{display:inline-block;margin-top:8px;font-size:14px}.pdp-pagina{display:none;padding:32px 0}.pdp-pagina:target{display:block}.pdp{display:grid;grid-template-columns:1fr 1fr;gap:24px}@media(max-width:640px){.pdp{grid-template-columns:1fr}}
+.pdp-fotos{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.pdp-fotos img{width:100%;aspect-ratio:1;object-fit:${L.ajusteFotos === 'contain' ? 'contain' : 'cover'};border-radius:10px;background:var(--suave)}.pdp-fotos img:first-child{grid-column:1/-1}
+.secao-prod{margin-top:12px;border:1px solid #e5e7eb;border-radius:10px;padding:10px 14px}.secao-prod summary{cursor:pointer;font-weight:600}.secao-prod p{white-space:pre-line;line-height:1.6;margin:8px 0 0}
+.junto{margin-top:16px;border:2px dashed var(--cor)}.junto p{margin:6px 0}.pags-rodape{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.pags-rodape svg{width:18px;height:18px}
+${R.botaoGrande ? '.btn{padding:16px;font-size:18px;border-radius:12px}' : ''}
 .grid.cols2{grid-template-columns:repeat(2,1fr)}.grid.cols3{grid-template-columns:repeat(3,1fr)}.grid.cols4{grid-template-columns:repeat(4,1fr)}@media(max-width:640px){.grid.cols3,.grid.cols4{grid-template-columns:repeat(2,1fr)}}
 .story-img{width:100%;max-width:720px;aspect-ratio:${med.sobre.desktop.l}/${med.sobre.desktop.a};object-fit:cover;border-radius:14px;margin-bottom:16px}@media(max-width:640px){.story-img{aspect-ratio:${med.sobre.mobile.l}/${med.sobre.mobile.a}}}
 .hero.com-carrossel{padding:0;background:#111}.car-texto h1{font-size:clamp(28px,5vw,48px);margin:0 0 12px}.car-texto p{font-size:18px;opacity:.95;max-width:600px;margin:0 auto 24px}.car-texto a{display:inline-block;background:#fff;color:#111;padding:12px 28px;border-radius:999px;font-weight:700;text-decoration:none}
@@ -152,14 +175,16 @@ ${slides.length ? carrosselCss({ n: slides.length, id: 'bn' }) : ''}
 #cookies.on{display:flex;flex-wrap:wrap;align-items:center;gap:10px}#cookies p{margin:0;flex:1 1 260px}#cookies button{border:0;border-radius:999px;padding:8px 16px;font-weight:600;cursor:pointer}
 #cookies .ok{background:var(--cor);color:#fff}#cookies .nao{background:#374151;color:#fff}.linkcookies{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit}
 </style></head><body>
+${R.freteGratis ? `<div class="barra-frete">Frete grátis acima de ${esc(reais(R.freteGratis.valor))}</div>` : ''}
 <header><div class="wrap"><a class="logo" href="#topo">${logoUrl ? `<img src="${esc(logoUrl)}" alt="${esc(cliente.nome)}">` : esc(cliente.nome)}</a>
 <nav>${visivel('categorias') ? '<a href="#categorias">Categorias</a>' : ''}${visivel('vendidos') ? '<a href="#vendidos">Mais vendidos</a>' : ''}${promo.length && visivel('sale') ? '<a href="#sale">Sale</a>' : ''}${visivel('marca') ? '<a href="#marca">A marca</a>' : ''}${faq.length && visivel('faq') ? '<a href="#faq">Dúvidas</a>' : ''}</nav>
 <button class="cartbtn" id="abrirCarrinho">Carrinho (<span id="qtd">0</span>)</button></div></header>
 
 ${L.ordem.filter(visivel).map((k) => blocoHTML[k]()).filter(Boolean).join('\n')}
 
+${R.paginaProduto ? produtos.map(paginaProduto).join('') : ''}
 <footer><div class="wrap"><div class="cols">
-<div><h4>${esc(cliente.nome)}</h4><p>${esc(cliente.nicho)}</p></div>
+<div><h4>${esc(cliente.nome)}</h4><p>${esc(cliente.nicho)}</p>${R.pagamentos.length ? `<div class="pags-rodape">${pagamentos.map((k) => `<span class="l">${ICONE_PAG[k]}${esc(FORMAS_PAGAMENTO.find(([x]) => x === k)[1])}</span>`).join('')}</div>` : ''}</div>
 <div><h4>Trocas e devoluções</h4><p>${esc(c.politicas?.trocas || 'Preencha a política de trocas.')}</p></div>
 <div><h4>Envio</h4><p>${esc(c.politicas?.envio || 'Preencha a política de envio.')}</p></div>
 <div><h4>Privacidade</h4><p>${esc(c.politicas?.privacidade || 'Preencha a política de privacidade.')}</p></div></div>
@@ -172,7 +197,7 @@ ${L.ordem.filter(visivel).map((k) => blocoHTML[k]()).filter(Boolean).join('\n')}
 ${zap ? `<a class="zap" href="https://wa.me/${zap}" target="_blank" rel="noopener">WhatsApp</a>` : '<!-- WhatsApp flutuante: informe o número em "Configurar loja" para exibir o botão. -->'}
 
 <aside id="drawer" aria-label="Carrinho"><header><b>Seu carrinho</b><button id="fecharCarrinho" aria-label="Fechar">✕</button></header><div id="itens"></div>
-<div id="rodape"><p><b>Total: <span id="total">R$ 0,00</span></b></p>
+<div id="rodape"><div id="juntoCarrinho"></div><p id="faltaFrete" class="nota"></p><p><b>Total: <span id="total">R$ 0,00</span></b></p>
 <!-- ============ PONTO DE ENCAIXE DO CHECKOUT ============
      O botão abaixo chama window.checkoutHandler(itens). Substitua a função (no final do arquivo) para redirecionar ao checkout
      de terceiro: Shopify Buy Button, Mercado Pago Checkout Pro ou Stripe Payment Links. Este site NÃO processa pagamentos. -->
@@ -188,9 +213,13 @@ const salvar=()=>{try{localStorage.setItem('carrinho',JSON.stringify(carrinho))}
 function desenhar(){
   document.getElementById('qtd').textContent=carrinho.reduce((s,i)=>s+i.qtd,0);
   document.getElementById('itens').innerHTML=carrinho.length?carrinho.map((i,k)=>'<div class="item"><span>'+i.nome+(i.opcoes?' ('+i.opcoes+')':'')+' × '+i.qtd+'</span><span>'+brl(i.preco*i.qtd)+' <button data-rm="'+k+'" aria-label="Remover">✕</button></span></div>').join(''):'<p>Carrinho vazio.</p>';
-  document.getElementById('total').textContent=brl(carrinho.reduce((s,i)=>s+i.preco*i.qtd,0));
+  const tot=carrinho.reduce((s,i)=>s+i.preco*i.qtd,0);document.getElementById('total').textContent=brl(tot);
+  ${R.freteGratis ? `document.getElementById('faltaFrete').textContent=carrinho.length?(tot>=${R.freteGratis.valor}?'Você ganhou frete grátis!':'Faltam '+brl(${R.freteGratis.valor}-tot)+' para o frete grátis.'):'';` : ''}
+  ${R.compreJunto?.onde === 'carrinho' ? `const j=carrinho.map(i=>PRODUTOS.find(p=>p.id===i.id)).filter(Boolean).map(p=>PRODUTOS.find(x=>x.id===p.junto)).find(x=>x&&x.preco&&!carrinho.some(i=>i.id===x.id));document.getElementById('juntoCarrinho').innerHTML=j?'<div class="card junto"><b>Compre junto</b><p>+ '+j.nome+' · '+brl(j.preco)+'</p><button class="btn" data-add="'+j.id+'">Adicionar</button></div>':'';` : ''}
 }
 document.addEventListener('click',e=>{
+  // Âncoras (#catalogo, #p-<produto>) ficam dentro da página, inclusive na prévia do painel (iframe srcdoc).
+  const anc=e.target.closest('a[href^="#"]');if(anc&&anc.getAttribute('href').length>1){e.preventDefault();location.hash=anc.getAttribute('href');const alvo=document.getElementById(anc.getAttribute('href').slice(1));if(alvo)alvo.scrollIntoView();}
   const add=e.target.closest('[data-add]');
   if(add){const p=PRODUTOS.find(x=>x.id===add.dataset.add);if(!p)return;
     const opcoes=[...add.closest('.card').querySelectorAll('select')].map(s=>s.value).join(' / ');

@@ -58,10 +58,15 @@ const form = (p = {}, fotos = []) => `<form id="fp" class="space-y-3">
       ${f.materialId ? `<button type="button" data-rmfoto="${esc(f.materialId)}" title="Tirar esta foto do produto (ela continua em Materiais)" class="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1 text-xs text-white">×</button>${i ? `<button type="button" data-principal="${esc(f.materialId)}" title="Usar como foto principal" class="absolute -bottom-1 -right-1 rounded-full bg-indigo-600 px-1 text-[10px] text-white">★</button>` : ''}
       <button type="button" data-excluir-foto-produto="${esc(f.materialId)}" title="Excluir a foto (sai de Materiais e de todo lugar)" class="absolute -bottom-1 -left-1 rounded-full bg-slate-800 px-1 text-[10px] text-white"><i class="fa-solid fa-trash"></i></button>` : ''}</span>`).join('')}</div>
       <p class="hint">A 1ª (com borda) é a foto principal. ★ troca a principal; × tira a foto só deste produto (ela continua em Materiais); a lixeira exclui a foto de vez (a confirmação diz onde mais ela está em uso).</p>` : ''}</div>
-  <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (promoção, destaque)</summary>
+  <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (promoção, destaque, fórmula e benefícios)</summary>
     <div class="mt-3 space-y-3"><div><label class="label">Preço promocional (R$)</label><input class="input" type="number" step="0.01" min="0" name="precoPromocional" value="${esc(p.precoPromocional)}">
       <p class="hint">Aparece na seção "Sale" do site e como "preço promocional" no CSV.</p></div>
-      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="destaque" ${p.destaque ? 'checked' : ''}> Mostrar em "Mais vendidos"</label></div></details>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="destaque" ${p.destaque ? 'checked' : ''}> Mostrar em "Mais vendidos"</label>
+      <p class="text-sm font-medium">Página do produto (opcional)</p>
+      <p class="hint !mt-0">Só fatos reais do produto. Aparecem como seções na página do produto quando o plano do site pede; a IA nunca inventa estes dados.</p>
+      <div><label class="label">Fórmula / ingredientes</label><textarea class="input" rows="2" name="formula">${esc(p.formula)}</textarea></div>
+      <div><label class="label">Benefícios</label><textarea class="input" rows="2" name="beneficios">${esc(p.beneficios)}</textarea></div>
+      <div><label class="label">Modo de uso</label><textarea class="input" rows="2" name="modoUso">${esc(p.modoUso)}</textarea></div></div></details>
   <div class="flex justify-between"><button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar produto</button>
     ${p.id ? '<button class="btn-danger" type="button" data-apagar>Apagar</button>' : ''}</div></form>`;
 
@@ -94,6 +99,7 @@ export async function abrirProduto(cliente, p, aoSalvar) {
       const dados = {
         clienteId: cliente.id, nome: v.nome, preco: num(v.preco), categoria: v.categoria || '', descricao: v.descricao || '',
         variacoes: parseVariacoes(v.variacoes), precoPromocional: num(v.precoPromocional), destaque: f.elements.destaque.checked,
+        formula: (v.formula || '').trim(), beneficios: (v.beneficios || '').trim(), modoUso: (v.modoUso || '').trim(),
       };
       // Produto novo já nasce no modelo novo: fotos só em Materiais (o campo antigo fica vazio).
       const id = p ? p.id : (await db.criar(COL.produtos, { ...dados, fotos: [], fotosMigradas: true })).id;

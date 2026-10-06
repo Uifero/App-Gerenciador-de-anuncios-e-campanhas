@@ -8,6 +8,8 @@ import { animarImagem, statusVideo } from './videos.js';
 import { buscarBroll, baixarBroll, statusBroll } from './broll.js';
 import { lerSite, baixarImagemSite } from './leitura-site.js';
 import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
+import { calcularCusto } from '../src/lib/precos-ia.js';
+import { lerLimite, mensagemLimite } from './limite-ia.js';
 import 'dotenv/config';
 import express from 'express';
 import helmet from 'helmet';
@@ -36,6 +38,19 @@ const PROVEDOR = PEDIDO === 'api' ? 'api' : 'cli';
 const CLI_BIN = process.env.IA_CLI_BIN || 'claude';
 let cliPausadaAte = 0; // circuit breaker: depois de uma falha da CLI, não tenta de novo por um tempo
 const cliDisponivel = () => PROVEDOR === 'cli' && Date.now() >= cliPausadaAte;
+// Limite da assinatura: a CLI fica em pausa até a hora em que o limite volta (ou 1 h, se a mensagem não disser).
+const processosCli = new Set(); // chamadas da CLI em andamento ({ parar })
+let limiteVolta = null;
+const erroLimite = (l) => Object.assign(new Error(mensagemLimite(l?.volta)), { limite: true, volta: l?.volta || null });
+function avisarLimite(l) {
+  const ate = l.volta ? l.volta.getTime() : Date.now() + 60 * 60_000;
+  if (!(limiteVolta && Date.now() < limiteVolta.getTime())) { // primeira vez neste limite
+    limiteVolta = l.volta || new Date(ate);
+    cliPausadaAte = Math.max(cliPausadaAte, ate);
+    console.warn('[cli] limite da assinatura atingido; CLI em pausa até', limiteVolta.toISOString());
+  }
+  for (const c of [...processosCli]) c.parar(erroLimite(l)); // as outras chamadas param agora e vão para a reserva
+}
 
 // ---------- modelos e tarefas ----------
 // Haiku: tarefas curtas e simples. Sonnet: tarefas que exigem raciocínio (criativo completo, mercado, site).
@@ -74,6 +89,8 @@ export const TAREFAS = {
   modelo_prompt: { modelo: MODELO_LEVE,     max: 1500, semRaciocinio: true }, // "Modelos de Prompt": preenche os marcadores com os dados do cliente
   ajuste_site: { modelo: MODELO_LEVE,     max: 3000, semRaciocinio: true },  // "Ajustar este site": pedido pontual (texto, ordem, cor); 8 s -> 6 s, mesmas operações
   ajuste_site_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low' }, // "Ajustar este site": pedido amplo (várias seções / reescrever)
+  plano_site:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low' },       // "Analisar meu pedido": plano item a item ANTES de aplicar (sem imagem: o print da referência já vem lido em texto)
+  conferencia_site: { modelo: MODELO_LEVE, max: 1500 },                     // "Conferência do pedido": só os itens que o código não consegue conferir (texto, estilo)
   leitura_respostas: { modelo: MODELO_LEVE, max: 6000 },                   // associa a resposta colada do cliente às 18 perguntas
   leitura_produtos:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low' }, // lista de produtos da resposta do cliente
   reparo:      { modelo: MODELO_LEVE,     max: 12000, semRaciocinio: true }, // corrige JSON inválido de outra resposta (sem refazer a tarefa); 8 s -> 5 s, resultado idêntico
@@ -116,17 +133,9 @@ export function lerSaidaCli(out, stream) {
   return r;
 }
 
-// Preço por 1M de tokens (US$), tabela de referência de 2026-06 — é ESTIMATIVA, confira em anthropic.com/pricing.
-const PRECOS = { haiku: { entrada: 1, saida: 5 }, sonnet: { entrada: 2, saida: 10 }, opus: { entrada: 5, saida: 25 } };
-const PRECO_BUSCA_WEB = 0.01; // US$ por busca web (10 US$ / 1000)
+// Preços: um arquivo só (src/lib/precos-ia.js), o mesmo que a página "Custos de IA" usa.
+export { calcularCusto };
 const familia = (m) => (/haiku/.test(m) ? 'haiku' : /opus/.test(m) ? 'opus' : 'sonnet');
-
-/** Custo estimado em US$. Cache: leitura = 0,1x da entrada; escrita (5 min) = 1,25x. */
-export function calcularCusto(modelo, u) {
-  const p = PRECOS[familia(modelo)];
-  const M = 1e6;
-  return (u.entrada * p.entrada + u.cacheEscrita * p.entrada * 1.25 + u.cacheLeitura * p.entrada * 0.1 + u.saida * p.saida) / M + (u.buscasWeb || 0) * PRECO_BUSCA_WEB;
-}
 
 /** Parâmetros que dependem do modelo: só o Sonnet/Opus aceitam thinking adaptativo e effort (o Haiku 4.5 rejeita). */
 export function paramsDoModelo(modelo, tarefa) {
@@ -200,19 +209,27 @@ async function viaCli({ tarefa, t, estavel, system, messages, webSearch, imagens
   if (t.semRaciocinio) env.MAX_THINKING_TOKENS = '0';
   await vez();
   try {
+    if (!cliDisponivel()) throw limiteVolta && Date.now() < limiteVolta.getTime() ? erroLimite({ volta: limiteVolta }) : new Error('A CLI do Claude ficou em pausa enquanto esta chamada esperava.'); // ex.: o limite apareceu enquanto esperava a vez
     const saida = await new Promise((ok, falha) => {
-      const p = spawn(CLI_BIN, args, { cwd: os.tmpdir(), env, windowsHide: true });
-      let out = '', err = '';
+      // IA_CLI_BIN pode ser um script Node (.js/.mjs), útil para simular a CLI em teste local.
+      const p = /\.m?js$/i.test(CLI_BIN) ? spawn(process.execPath, [CLI_BIN, ...args], { cwd: os.tmpdir(), env, windowsHide: true })
+        : spawn(CLI_BIN, args, { cwd: os.tmpdir(), env, windowsHide: true });
+      let out = '', err = '', fim = false;
       // Busca na web (mercado) costuma levar 2 a 3 min: ganha 5 min. As demais, 3 min.
       const limiteMs = busca ? 300_000 : 180_000;
-      const timer = setTimeout(() => { p.kill(); falha(new Error(`A CLI do Claude demorou demais (${limiteMs / 60_000} min).`)); }, limiteMs);
-      p.stdout.on('data', (d) => (out += d)); p.stderr.on('data', (d) => (err += d));
-      p.on('error', (e) => { clearTimeout(timer); falha(new Error('Não consegui executar a CLI "claude": ' + e.message)); });
-      p.on('close', () => { clearTimeout(timer); ok({ out, err }); });
+      const parar = (e) => { if (fim) return; fim = true; clearTimeout(timer); processosCli.delete(controle); try { p.kill(); } catch { /* já saiu */ } falha(e); };
+      const controle = { parar };
+      processosCli.add(controle);
+      const timer = setTimeout(() => parar(new Error(`A CLI do Claude demorou demais (${limiteMs / 60_000} min).`)), limiteMs);
+      // Aviso de limite da assinatura: para esta chamada e as outras em andamento na hora (sem esperar os 3 minutos).
+      const conferir = () => { const l = lerLimite(`${err}\n${out.slice(-2000)}`); if (l) avisarLimite(l); };
+      p.stdout.on('data', (d) => { out += d; conferir(); }); p.stderr.on('data', (d) => { err += d; conferir(); });
+      p.on('error', (e) => parar(new Error('Não consegui executar a CLI "claude": ' + e.message)));
+      p.on('close', () => { if (fim) return; fim = true; clearTimeout(timer); processosCli.delete(controle); ok({ out, err }); });
       p.stdin.end(entrada);
     });
-    let j; try { j = lerSaidaCli(saida.out, stream); } catch { throw new Error('Resposta inesperada da CLI do Claude: ' + (saida.err || saida.out).slice(0, 200)); }
-    if (j.is_error) throw new Error('A CLI do Claude devolveu erro: ' + String(j.result || '').slice(0, 200));
+    let j; try { j = lerSaidaCli(saida.out, stream); } catch { const l = lerLimite(saida.err || saida.out); if (l) throw erroLimite(l); throw new Error('Resposta inesperada da CLI do Claude: ' + (saida.err || saida.out).slice(0, 200)); }
+    if (j.is_error) { const l = lerLimite(j.result); if (l) { avisarLimite(l); throw erroLimite(l); } throw new Error('A CLI do Claude devolveu erro: ' + String(j.result || '').slice(0, 200)); }
     const u = j.usage || {};
     // Na assinatura não há cobrança por token: registramos os tokens e custo 0 (o app marca o provedor como "cli").
     return { texto: j.result || '', fontes: [], modelo: t.modelo, provedor: 'cli', uso: {
@@ -236,7 +253,8 @@ const jsonPadrao = express.json({ limit: '1mb' });
 app.use((req, res, next) => (req.path === '/api/video' || req.path === '/api/claude' ? next() : jsonPadrao(req, res, next)));
 
 app.get('/api/saude', (_req, res) => {
-  res.json({ ok: true, provedor: cliDisponivel() ? 'cli' : 'api', preferido: PROVEDOR, modelos: { leve: MODELO_LEVE, complexo: MODELO_COMPLEXO }, chaveConfigurada: Boolean(process.env.ANTHROPIC_API_KEY) });
+  res.json({ ok: true, provedor: cliDisponivel() ? 'cli' : 'api', preferido: PROVEDOR, modelos: { leve: MODELO_LEVE, complexo: MODELO_COMPLEXO }, chaveConfigurada: Boolean(process.env.ANTHROPIC_API_KEY),
+    ...(limiteVolta && Date.now() < limiteVolta.getTime() ? { limiteAte: limiteVolta.toISOString() } : {}) });
 });
 
 // Imagem por IA com vários provedores gratuitos em rodízio (ver server/imagens.js). Só o admin logado; teto de 60 por hora por usuário.
@@ -300,34 +318,66 @@ app.post('/api/leitura-site/imagem', exigirLogin, async (req, res) => {
   catch (e) { console.error('[leitura-site/imagem]', e?.message); res.status(e.status || 502).json({ erro: e.message || 'Não consegui baixar a foto.' }); }
 });
 
+// Pedido de IA. Para o navegador nunca perder a resposta (o proxy na frente do app, ex.: nginx, corta conexões
+// paradas por mais de ~60 s, e a CLI pode levar 3 min), o front manda `assincrono: true`: a rota responde na hora com
+// um id de trabalho e o navegador consulta GET /api/claude/trabalho/:id a cada ~2 s (cada consulta é curta). Sem
+// `assincrono`, responde no fim, como antes (clientes antigos durante uma atualização).
+const trabalhos = new Map(); // id -> { dono, inicio, pronto, status, corpo }
+const LIMPAR_TRABALHO_MS = 15 * 60_000;
+setInterval(() => { const agora = Date.now(); for (const [id, t] of trabalhos) if (agora - t.inicio > LIMPAR_TRABALHO_MS) trabalhos.delete(id); }, 60_000).unref?.();
+
 app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), async (req, res) => {
+  if (!req.body?.assincrono) { const r = await responderClaude(req); return res.status(r.status).json(r.corpo); }
+  const id = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const t = { dono: req.usuario?.sub || req.usuario?.email || 'x', inicio: Date.now(), pronto: false, status: 0, corpo: null, etapa: 'na fila' };
+  trabalhos.set(id, t);
+  responderClaude(req, t).then((r) => Object.assign(t, r, { pronto: true }))
+    .catch((e) => Object.assign(t, { pronto: true, status: 500, corpo: { erro: 'Falha inesperada no servidor de IA: ' + (e?.message || 'erro') } }));
+  res.status(202).json({ trabalho: id });
+});
+app.get('/api/claude/trabalho/:id', exigirLogin, (req, res) => {
+  const t = trabalhos.get(req.params.id);
+  if (!t || t.dono !== (req.usuario?.sub || req.usuario?.email || 'x')) return res.status(404).json({ erro: 'Esse pedido de IA não existe mais no servidor (o servidor pode ter reiniciado). Tente de novo.' });
+  if (!t.pronto) return res.json({ pronto: false, segundos: Math.round((Date.now() - t.inicio) / 1000), etapa: t.etapa });
+  trabalhos.delete(req.params.id);
+  res.json({ pronto: true, status: t.status, corpo: t.corpo });
+});
+
+/** Faz a chamada (assinatura primeiro; reserva pela API) e devolve { status, corpo }. `t` recebe a etapa atual. */
+async function responderClaude(req, t = {}) {
+  const r = (status, corpo) => ({ status, corpo });
   if (!cliDisponivel() && !process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ erro: 'IA indisponível: ANTHROPIC_API_KEY não configurada no servidor. Use a opção manual.' });
+    if (limiteVolta && Date.now() < limiteVolta.getTime()) return r(503, { erro: mensagemLimite(limiteVolta), limite: true, provedor: 'cli' });
+    return r(503, { erro: 'IA indisponível: ANTHROPIC_API_KEY não configurada no servidor. Use a opção manual.' });
   }
   const { tarefa, system, messages, maxTokens, webSearch } = req.body || {};
-  const t = TAREFAS[tarefa];
-  if (!t) return res.status(400).json({ erro: 'Tipo de tarefa de IA desconhecido.' });
-  if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ erro: 'messages é obrigatório.' });
-  for (const campo of [req.body.estavel, system]) if (typeof campo !== 'undefined' && typeof campo !== 'string') return res.status(400).json({ erro: 'Campo de sistema inválido.' });
-  const estavel = comMetodologia(t, req.body.estavel);
+  const tf = TAREFAS[tarefa];
+  if (!tf) return r(400, { erro: 'Tipo de tarefa de IA desconhecido.' });
+  if (!Array.isArray(messages) || !messages.length) return r(400, { erro: 'messages é obrigatório.' });
+  for (const campo of [req.body.estavel, system]) if (typeof campo !== 'undefined' && typeof campo !== 'string') return r(400, { erro: 'Campo de sistema inválido.' });
+  const estavel = comMetodologia(tf, req.body.estavel);
   let imagens;
-  try { imagens = validarImagens(req.body?.imagens); } catch (e) { return res.status(400).json({ erro: e.message }); }
-  if (imagens.length && !t.imagens) return res.status(400).json({ erro: 'Esta tarefa não aceita imagens.' });
+  try { imagens = validarImagens(req.body?.imagens); } catch (e) { return r(400, { erro: e.message }); }
+  if (imagens.length && !tf.imagens) return r(400, { erro: 'Esta tarefa não aceita imagens.' });
   // Sem imagem, o corpo continua limitado a 1 MB como as demais rotas (o limite maior é só para os anexos).
-  if (!imagens.length && Number(req.headers['content-length'] || 0) > 1024 * 1024) return res.status(413).json({ erro: 'Pedido grande demais.' });
+  if (!imagens.length && Number(req.headers['content-length'] || 0) > 1024 * 1024) return r(413, { erro: 'Pedido grande demais.' });
 
+  let porLimite = null; // a assinatura acabou nesta chamada (ou já estava em pausa pelo limite)
   if (cliDisponivel()) {
-    try { return res.json(await viaCli({ tarefa, t, estavel, system, messages, webSearch, imagens })); }
+    t.etapa = 'assinatura';
+    try { return r(200, await viaCli({ tarefa, t: tf, estavel, system, messages, webSearch, imagens })); }
     catch (e) {
       console.error('[cli]', tarefa, e?.message);
+      if (e?.limite) porLimite = e;
       // Sem ANTHROPIC_API_KEY não há reserva: pausar a CLI só derrubaria TODA a IA por minutos por causa de uma
       // falha pontual (ex.: uma busca web lenta). Nesse caso devolve o erro desta chamada e a próxima tenta de novo.
-      if (!process.env.ANTHROPIC_API_KEY) return res.status(502).json({ erro: (e?.message || 'Falha ao chamar a CLI do Claude.') + ' Tente de novo em instantes ou use a opção manual.' });
-      // Com reserva: ausente/sem login = pausa longa; limite de uso ou outro erro = pausa curta (as chamadas vão para a API).
-      cliPausadaAte = Date.now() + (/ENOENT|não consegui executar/i.test(e?.message || '') ? 30 : 5) * 60_000;
-      console.warn('[api] assinatura indisponível; usando a API da Anthropic (CLI em pausa).');
+      if (!process.env.ANTHROPIC_API_KEY) return porLimite ? r(503, { erro: porLimite.message, limite: true, provedor: 'cli' }) : r(502, { erro: (e?.message || 'Falha ao chamar a CLI do Claude.') + ' Tente de novo em instantes ou use a opção manual.' });
+      // Com reserva: ausente/sem login = pausa longa; limite = até a hora em que volta (avisarLimite); outro erro = pausa curta.
+      if (!porLimite) cliPausadaAte = Date.now() + (/ENOENT|não consegui executar/i.test(e?.message || '') ? 30 : 5) * 60_000;
+      console.warn('[api] assinatura indisponível; usando a reserva (API da Anthropic).');
     }
-  }
+  } else if (limiteVolta && Date.now() < limiteVolta.getTime()) porLimite = erroLimite({ volta: limiteVolta });
+  t.etapa = 'reserva';
 
   // Prompt caching: o que é estável por cliente (regras + perfil de marca) vai PRIMEIRO e é marcado para cache;
   // o que muda a cada chamada (instrução da tarefa, referências, resultados) vem depois do ponto de cache.
@@ -336,26 +386,27 @@ app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), a
   if (estavel) blocos.push({ type: 'text', text: estavel, cache_control: { type: 'ephemeral' } });
   if (system) blocos.push({ type: 'text', text: system });
 
-  const limite = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Math.min(Math.max(Number(maxTokens), 256), 32000) : t.max;
+  const limite = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Math.min(Math.max(Number(maxTokens), 256), 32000) : tf.max;
   const params = {
-    model: t.modelo,
+    model: tf.modelo,
     max_tokens: limite,
     system: blocos.length ? blocos : undefined,
     // As imagens (se houver) entram na última mensagem do usuário, junto com o texto do pedido.
     messages: messages.map((m, i) => ({ role: m.role === 'assistant' ? 'assistant' : 'user',
       content: imagens.length && i === messages.length - 1 ? blocosComImagens(m.content, imagens) : String(m.content) })),
-    ...paramsDoModelo(t.modelo, t),
+    ...paramsDoModelo(tf.modelo, tf),
   };
   // Busca web só nas tarefas marcadas com web: true (mercado, leitura de site pela busca, diagnóstico).
-  if (webSearch && t.web) {
+  if (webSearch && tf.web) {
     params.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: Math.min(Number(webSearch.maxUses) || 5, 10) }];
   }
 
   const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
+  const uso = { entrada: 0, saida: 0, cacheEscrita: 0, cacheLeitura: 0, buscasWeb: 0 };
+  const comCusto = () => ({ ...uso, custoUsd: calcularCusto(tf.modelo, uso), modelo: tf.modelo, provedor: 'api' });
   try {
     let texto = '';
     const fontes = [];
-    const uso = { entrada: 0, saida: 0, cacheEscrita: 0, cacheLeitura: 0, buscasWeb: 0 };
     // Busca web pode devolver pause_turn; continuamos o turno algumas vezes e SOMAMOS o consumo de todas as voltas.
     for (let i = 0; i < 4; i++) {
       const msg = await client.messages.stream(params).finalMessage();
@@ -375,19 +426,21 @@ app.post('/api/claude', exigirLogin, limitar, express.json({ limit: '16mb' }), a
         params.messages = [...params.messages, { role: 'assistant', content: msg.content }];
         continue;
       }
-      if (msg.stop_reason === 'refusal') return res.status(422).json({ erro: 'A IA recusou este pedido. Reformule ou use a opção manual.' });
+      if (msg.stop_reason === 'refusal') return r(422, { erro: 'A IA recusou este pedido. Reformule ou use a opção manual.', provedor: 'api', uso: comCusto() });
       if (msg.stop_reason === 'max_tokens') {
-        return res.status(502).json({ erro: 'A resposta foi cortada pelo limite de tokens desta tarefa. Aumente o limite em Configurações ou peça menos itens.', parcial: texto, uso: { ...uso, custoUsd: calcularCusto(t.modelo, uso), modelo: t.modelo } });
+        return r(502, { erro: 'A resposta foi cortada pelo limite de tokens desta tarefa. Aumente o limite em Configurações ou peça menos itens.', parcial: texto, provedor: 'api', uso: comCusto() });
       }
       break;
     }
-    res.json({ texto, fontes, modelo: t.modelo, uso: { ...uso, custoUsd: calcularCusto(t.modelo, uso), modelo: t.modelo } });
+    return r(200, { texto, fontes, modelo: tf.modelo, provedor: 'api', uso: comCusto() });
   } catch (e) {
     const status = e?.status && e.status >= 400 && e.status < 600 ? e.status : 502;
-    console.error('[claude]', tarefa, status, e?.message);
-    res.status(status).json({ erro: status === 429 ? 'Limite da API da Anthropic atingido. Tente em instantes.' : 'Falha ao chamar a IA: ' + (e?.message || 'erro desconhecido') });
+    console.error('[claude]', tarefa, status, e?.message); // só a mensagem do erro: a chave nunca vai para o log
+    // A assinatura acabou E a reserva falhou: o operador precisa saber quando volta, em português.
+    if (porLimite) return r(503, { erro: `${porLimite.message} A reserva (API) também não respondeu agora.`, limite: true, provedor: 'api', uso: uso.entrada ? comCusto() : undefined });
+    return r(status, { erro: status === 429 ? 'Limite da API da Anthropic atingido. Tente em instantes.' : 'Falha ao chamar a IA: ' + (e?.message || 'erro desconhecido'), provedor: 'api' });
   }
-});
+}
 
 // Em produção, serve o build do Vite no mesmo processo.
 const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');

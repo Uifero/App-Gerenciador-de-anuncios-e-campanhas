@@ -1,0 +1,17 @@
+{
+ "gravadoEm": "2026-10-06T20:49:05.486Z",
+ "tarefa": "conferencia_site",
+ "modelo": "claude-haiku-4-5",
+ "provedor": "cli",
+ "uso": {
+  "entrada": 10,
+  "saida": 1357,
+  "cacheEscrita": 8774,
+  "cacheLeitura": 0,
+  "buscasWeb": 0,
+  "custoUsd": 0,
+  "modelo": "claude-haiku-4-5",
+  "provedor": "cli"
+ },
+ "texto": "```json\n{\"resultados\": [{\"id\": \"s2\", \"status\": \"atendido\", \"motivo\": \"Frase 'fórmula sem estimulante forte' destacada no banner principal; conceito reforçado na descrição do produto com 'sem picos fortes de estimulante'.\"}]}\n```"
+}

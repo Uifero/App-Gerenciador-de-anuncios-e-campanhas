@@ -30,8 +30,16 @@ export function abrirPreviaIsolada(html, titulo) {
   w.document.close();
 }
 
+/** Blocos do site personalizado em texto, para a IA do "Ajustar este site" (e do "Corrigir o que faltou"). */
+export function resumoBlocosSite(e) {
+  const L = normalizarLayout(e.layout);
+  return `Blocos do site, em ordem: ${L.ordem.map((k, i) => `${i + 1}. ${k} (${nomeBloco(k)}${TITULOS_PADRAO[k] ? `, título "${tituloBloco(L, k)}"` : ''})${L.ocultos.includes(k) ? ' [OCULTO]' : ''}`).join('; ')}.
+Variações atuais: ${JSON.stringify(L.variacoes)}. Imagens: ${Object.entries(L.imagens).map(([k, v]) => `${k}: ${v.nome}`).join(', ') || 'nenhuma'}.
+Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de cookies, carrinho com "Finalizar compra" e selo de compra segura, botão de WhatsApp.`;
+}
+
 /**
- * ctx: { cliente, produtos, modo: 'custom'|'pacote', get site(), salvarSite(patch), recarregar(), htmlDe(estado), pacoteHTML(pacote) }
+ * ctx: { cliente, produtos, modo: 'custom'|'pacote', get site(), salvarSite(patch), recarregar(), htmlDe(estado), pacoteHTML(pacote), depoisDeMudar() (conferência do pedido), verPlano(planoId, versao) }
  */
 export async function montarAjusteSite(alvo, ctx) {
   const { cliente, produtos, modo } = ctx;
@@ -70,6 +78,7 @@ export async function montarAjusteSite(alvo, ctx) {
     await ctx.salvarSite({ ...d.estado, ...v, rascunhoAjuste: null });
     aceitoRecente.set(chave, v.proximaVersao - 1);
     toast(`Mudança aplicada (v${v.proximaVersao - 1}).`);
+    await ctx.depoisDeMudar?.();
     ctx.recarregar();
   }
   async function descartar() {
@@ -82,20 +91,14 @@ export async function montarAjusteSite(alvo, ctx) {
     const r = registrarVersao(site(), { modo, estadoAntes: estadoAtual(), estadoDepois: v.estado, resumo: `Voltou para a v${n}`, origem: 'voltar' });
     await ctx.salvarSite({ ...v.estado, ...r, rascunhoAjuste: null });
     aceitoRecente.set(chave, r.proximaVersao - 1);
-    toast(`Voltou para a v${n} (salvo como v${r.proximaVersao - 1}).`); ctx.recarregar();
+    toast(`Voltou para a v${n} (salvo como v${r.proximaVersao - 1}).`); await ctx.depoisDeMudar?.(); ctx.recarregar();
   }
 
   // ---------- chat ----------
-  function resumoBlocos(e) {
-    const L = normalizarLayout(e.layout);
-    return `Blocos do site, em ordem: ${L.ordem.map((k, i) => `${i + 1}. ${k} (${nomeBloco(k)}${TITULOS_PADRAO[k] ? `, título "${tituloBloco(L, k)}"` : ''})${L.ocultos.includes(k) ? ' [OCULTO]' : ''}`).join('; ')}.
-Variações atuais: ${JSON.stringify(L.variacoes)}. Imagens: ${Object.entries(L.imagens).map(([k, v]) => `${k}: ${v.nome}`).join(', ') || 'nenhuma'}.
-Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de cookies, carrinho com "Finalizar compra" e selo de compra segura, botão de WhatsApp.`;
-  }
   async function perguntar(mensagem, botao) {
     await ocupado(botao, async () => {
       const e = estadoBase();
-      const r = await ajustarSite({ cliente, modo, estado: e, mensagem, conversa: conversa(), materiais, produtos, resumoBlocos: custom ? resumoBlocos(e) : '' });
+      const r = await ajustarSite({ cliente, modo, estado: e, mensagem, conversa: conversa(), materiais, produtos, resumoBlocos: custom ? resumoBlocosSite(e) : '' });
       let aplicado = null;
       if (r.tipo === 'proposta') aplicado = await acrescentarAoRascunho(r.operacoes, 'ia');
       const mudou = Boolean(aplicado?.aplicadas.length);
@@ -188,7 +191,7 @@ Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de c
       <p class="hint mt-2">Cada mudança aceita vira uma versão. "Voltar para esta versão" cria uma versão nova igual à escolhida, sem apagar nada. Guardamos as últimas ${MAX_VERSOES} versões deste site; as mais antigas saem sozinhas.</p>
       ${vs.length ? `<ol class="mt-2 space-y-1 text-sm">${vs.map((v, i) => `<li class="flex flex-wrap items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1" data-versao="${v.n}">
         <span><b>v${v.n}</b> · ${esc(quando(v.em))} · ${esc(v.resumo)}</span>
-        ${i === 0 ? '<span class="tag tag-ok">atual</span>' : `<button type="button" class="btn-ghost btn-sm" data-voltar="${v.n}">Voltar para esta versão</button>`}</li>`).join('')}</ol>`
+        <span class="flex flex-wrap gap-1">${v.planoId && ctx.verPlano ? `<button type="button" class="btn-ghost btn-sm" data-ver-plano-versao="${esc(v.planoId)}" data-versao-plano="${v.n}"><i class="fa-solid fa-list-check"></i> Ver plano desta versão</button>` : ''}${i === 0 ? '<span class="tag tag-ok">atual</span>' : `<button type="button" class="btn-ghost btn-sm" data-voltar="${v.n}">Voltar para esta versão</button>`}</span></li>`).join('')}</ol>`
         : '<p class="hint mt-2">Nenhuma mudança aceita ainda. A primeira cria também a "Versão inicial", para dar para voltar ao começo.</p>'}</details>`;
   }
 
@@ -235,6 +238,7 @@ Fixos (fora dos blocos): cabeçalho com menu, rodapé com políticas, aviso de c
   on(alvo, 'click', '[data-aceitar]', (b) => ocupado(b, aceitar));
   on(alvo, 'click', '[data-descartar]', (b) => ocupado(b, descartar));
   on(alvo, 'click', '[data-voltar]', (b) => voltarPara(Number(b.dataset.voltar)));
+  on(alvo, 'click', '[data-ver-plano-versao]', (b) => ctx.verPlano?.(b.dataset.verPlanoVersao, Number(b.dataset.versaoPlano)));
   on(alvo, 'click', '[data-aplicar-outro]', (b) => ocupado(b, async () => {
     const s = site();
     const patch = custom ? { pacote: aplicarBaseNoPacote(s.pacote, baseDoCustom(s)) } : aplicarBaseNoCustom(s.conteudo || {}, s.config || {}, baseDoPacote(s));

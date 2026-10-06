@@ -420,15 +420,16 @@ export function aplicarOperacoes(estado, operacoes, { modo = 'custom', materiais
 export const MAX_VERSOES = 20;
 /**
  * Acrescenta uma versão aceita. Na primeira vez, guarda antes a "Versão inicial" (o estado de antes dos ajustes),
- * para dar para voltar ao começo. Mantém só as últimas MAX_VERSOES (as mais antigas saem).
+ * para dar para voltar ao começo. Mantém só as últimas MAX_VERSOES (as mais antigas saem). O campo extra vai junto na versão
+ * (ex.: planoId do plano que a produziu, para "Ver plano desta versão").
  * Devolve { versoesAjuste, proximaVersao }.
  */
-export function registrarVersao(site, { modo, estadoAntes, estadoDepois, resumo, origem = 'manual' }) {
+export function registrarVersao(site, { modo, estadoAntes, estadoDepois, resumo, origem = 'manual', extra = {} }) {
   let lista = [...(site?.versoesAjuste || [])];
   let n = site?.proximaVersao || (lista.length ? Math.max(...lista.map((v) => v.n)) + 1 : 1);
   const agora = new Date().toISOString();
   if (!lista.some((v) => v.modo === modo) && estadoAntes) { lista.push({ n, em: agora, modo, resumo: 'Versão inicial (antes dos ajustes)', origem: 'inicial', estado: estadoAntes }); n++; }
-  lista.push({ n, em: agora, modo, resumo: String(resumo || 'Ajuste').slice(0, 200), origem, estado: estadoDepois }); n++;
+  lista.push({ n, em: agora, modo, resumo: String(resumo || 'Ajuste').slice(0, 200), origem, estado: estadoDepois, ...extra }); n++;
   if (lista.length > MAX_VERSOES) lista = lista.slice(lista.length - MAX_VERSOES);
   return { versoesAjuste: lista, proximaVersao: n };
 }

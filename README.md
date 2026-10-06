@@ -81,6 +81,15 @@ escalar a zero nem trocar de instância), os limitadores de taxa e os contadores
 `server/.uso-imagens.json`/`.uso-videos.json`) continuam funcionando como estão — não há necessidade de movê-los para o
 Firestore nessa hospedagem.
 
+**Pedidos de IA longos e o proxy (nginx):** a CLI da assinatura pode levar 3 min (5 min com busca web) e o nginx corta por
+padrão conexões paradas há 60 s (`proxy_read_timeout`), o que aparecia como "Failed to fetch". Desde a fase do "Analisar
+meu pedido", o navegador não segura mais a conexão: `POST /api/claude` responde na hora com um id de trabalho e o app
+consulta `GET /api/claude/trabalho/:id` a cada 2 s (os trabalhos ficam em memória; com PM2 em 1 processo, sem cluster).
+Para conferir o nginx na VM: `sudo grep -rn "proxy_read_timeout\|proxy_send_timeout" /etc/nginx/` (sem linha = 60 s).
+Não é mais obrigatório, mas `proxy_read_timeout 330s;` no `location /api/` deixa folga para clientes antigos.
+Limite da assinatura: o servidor reconhece o aviso da CLI na hora, pausa a CLI até a hora em que o limite volta e usa a
+reserva (`ANTHROPIC_API_KEY`); sem reserva, mostra "Volta às HH:MM (horário de Brasília)".
+
 ## Estrutura
 - `src/core`: firebase, auth, storage (dados + arquivos), ui, ia (prompts), tema
 - `src/modules`: uma responsabilidade por arquivo (clientes, onboarding, criativos, hooks, referencias, campanhas, resultados, produtos, sites,

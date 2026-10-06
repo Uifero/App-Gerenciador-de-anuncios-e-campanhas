@@ -18,6 +18,9 @@ Responda em português do Brasil.
 - Nunca definir `VITE_DEMO_MODE`/`DEV_AUTH_BYPASS` em produção.
 - Depois de qualquer geração ou leitura, o resultado fica visível sem o operador procurar: rolar até ele, destacar, status que não some, erro que não some. (Use `mostrarResultado` e `ocupado`/`toast(…, 'erro')` de `src/core/ui.js`.)
 
+## Testes com IA real (regra permanente)
+Testes com IA real: no máximo 1 chamada real por função nova ou alterada em cada fase, com o menor max_tokens que valide o formato. Todo o resto usa respostas gravadas (fixtures) ou IA simulada. Nunca repetir chamada real para confirmar algo já confirmado. O resumo final informa quantas chamadas reais foram feitas e o custo estimado. (Chamada real em teste também gasta o limite da assinatura do operador, e isso para o app para os clientes.) Fixtures ficam em `tests/fixtures/ia/`; a IA simulada no navegador intercepta `/api/claude` (ver `tests/fixtures/ia/README.md`).
+
 ## Armadilhas
 - Vários arquivos são CRLF; scripts de patch devem normalizar `\r\n`. Heredoc do Bash quebra com aspas: escreva o script com Write.
 - Aba de automação do Chrome fica oculta: sem screenshot confiável, timers lentos (espere com `computer wait`, cheque em chamadas curtas).

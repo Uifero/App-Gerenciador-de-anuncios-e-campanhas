@@ -75,12 +75,12 @@ if (typeof window !== 'undefined') window.addEventListener('hashchange', () => {
 
 const TEM_ORIENTACAO = /tente|use |usar|peça|pe[çc]a |verifique|confira|envie|selecione|escreva|cadastre|abra|escolha|preencha|marque|remova|adicione|defina|publique|aguarde|recarregue|clique|monte|gere|cole|ative|o que fazer/i;
 /** Erro que fica na tela até a pessoa fechar, com o motivo e o que fazer. */
-export function mostrarErro(msg) {
+export function mostrarErro(msg, { detalhe = '' } = {}) {
   const texto = String(msg || 'Algo deu errado.');
   const dica = TEM_ORIENTACAO.test(texto) ? '' : 'O que fazer: tente de novo em instantes. Se continuar, use o caminho sem IA desta tela.';
   const barra = barraStatus('status-erro');
   barra.innerHTML = `<div class="flex items-start gap-2 rounded-lg bg-rose-700 px-3 py-2 text-sm text-white shadow-lg" role="alert" data-status-erro>
-    <i class="fa-solid fa-triangle-exclamation mt-0.5"></i><div class="min-w-0 flex-1"><p class="whitespace-pre-wrap">${esc(texto)}</p>${dica ? `<p class="mt-1 text-rose-100">${esc(dica)}</p>` : ''}</div>
+    <i class="fa-solid fa-triangle-exclamation mt-0.5"></i><div class="min-w-0 flex-1"><p class="whitespace-pre-wrap">${esc(texto)}</p>${dica ? `<p class="mt-1 text-rose-100">${esc(dica)}</p>` : ''}${detalhe ? `<details class="mt-1 text-xs text-rose-100" data-detalhe-erro><summary class="cursor-pointer">Detalhe técnico</summary><p class="mt-1 break-all">${esc(detalhe)}</p></details>` : ''}</div>
     <button type="button" class="px-1 text-lg leading-none" aria-label="Fechar" data-fechar-erro>&times;</button></div>`;
   barra.querySelector('[data-fechar-erro]').onclick = () => fecharBarra('status-erro');
 }
@@ -120,8 +120,8 @@ export function vazio(icon, titulo, texto, acao = '') {
     <p class="font-medium text-slate-700">${esc(titulo)}</p><p class="caption mb-4">${esc(texto)}</p>${acao}</div>`;
 }
 
-export function toast(msg, tipo = 'ok') {
-  if (tipo === 'erro') return mostrarErro(msg); // erro fica na tela até fechar (regra do app)
+export function toast(msg, tipo = 'ok', extra = {}) {
+  if (tipo === 'erro') return mostrarErro(msg, extra); // erro fica na tela até fechar (regra do app)
   const cor = { ok: 'bg-emerald-600', erro: 'bg-rose-600', info: 'bg-slate-800' }[tipo] || 'bg-slate-800';
   const el = document.createElement('div');
   el.className = `${cor} text-white text-sm rounded-lg px-4 py-2 shadow-lg max-w-sm`;
@@ -175,9 +175,12 @@ export async function ocupado(btn, fn) {
   const html = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Aguarde…';
+  // Chamada de IA longa: o botão mostra que ela ainda está trabalhando (evento de core/ia.js pedirAoServidor).
+  const progresso = (e) => { const s = e.detail?.segundos || 0; if (btn.isConnected && s >= 10) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> A IA ainda está trabalhando… ${s} s${e.detail?.etapa === 'reserva' ? ' (reserva)' : ''}`; };
+  if (typeof window !== 'undefined') window.addEventListener('gcc:ia-progresso', progresso);
   try { return await fn(); }
-  catch (e) { console.error(e); toast(e.message || 'Algo deu errado.', 'erro'); }
-  finally { btn.disabled = false; btn.innerHTML = html; }
+  catch (e) { console.error(e); toast(e.message || 'Algo deu errado.', 'erro', { detalhe: e.detalhe || '' }); }
+  finally { if (typeof window !== 'undefined') window.removeEventListener('gcc:ia-progresso', progresso); btn.disabled = false; btn.innerHTML = html; }
 }
 
 export function lerForm(form) {

@@ -1,0 +1,110 @@
+{
+ "gravadoEm": "2026-10-06T20:44:59.621Z",
+ "tarefa": "pacote",
+ "modelo": "claude-sonnet-5",
+ "provedor": "cli",
+ "uso": {
+  "entrada": 2,
+  "saida": 2678,
+  "cacheEscrita": 4289,
+  "cacheLeitura": 8460
+ },
+ "observacao": "Resposta real já lida pelo app (sem a parte visual). Gerada ANTES da correção que tira o texto bruto quando há plano: o banner cita o frete que o operador desmarcou.",
+ "pacote": {
+  "banners": [
+   {
+    "titulo": "Mais disposição na sua manhã, no seu ritmo",
+    "subtitulo": "Thermora Caps: cafeína e chá verde numa fórmula sem estimulante forte. Frete grátis em compras acima de R$ 249.",
+    "cta": "Conhecer o Thermora Caps",
+    "uso": "Banner principal desktop 1920x700 (slide 1, foto F36)"
+   },
+   {
+    "titulo": "Feito para mulheres 30+ que querem uma rotina mais leve",
+    "subtitulo": "Uma cápsula pela manhã e energia mais constante ao longo do dia. Frete grátis acima de R$ 249.",
+    "cta": "Ver os produtos",
+    "uso": "Banner principal desktop 1920x700 (slide 2, foto F40)"
+   },
+   {
+    "titulo": "Thermora Gel e Thermora Caps, juntos na sua rotina",
+    "subtitulo": "Leve os dois e ganhe frete grátis a partir de R$ 249. Pague com cartão, Pix ou boleto.",
+    "cta": "Montar minha rotina",
+    "uso": "Banner principal desktop 1920x700 (slide 3, foto F15)"
+   },
+   {
+    "titulo": "Mais disposição, sem peso na rotina",
+    "subtitulo": "Thermora Caps com frete grátis acima de R$ 249. Cartão, Pix ou boleto.",
+    "cta": "Comprar o Thermora Caps",
+    "uso": "Banner principal mobile 800x1000 (carrossel, mesma ordem: F36, F40, F15)"
+   }
+  ],
+  "briefingTema": {
+   "estilo": "Acolhedor, limpo e direto. Muito espaço em branco, fotos grandes de rotina e bem-estar (sem fotos de corpo ou antes e depois), cantos arredondados suaves e botões de destaque bem visíveis. Banner em carrossel com a opção de vídeo 3D do pote girando, usado como complemento visual do banner principal.",
+   "paletaSugerida": [
+    "#C8553D",
+    "#F6EDE4",
+    "#2F2A27",
+    "#E9A87C",
+    "#FFFFFF"
+   ],
+   "tipografia": "Títulos em serifada suave (ex.: Playfair Display ou DM Serif Display) e textos em sans-serif legível (ex.: Inter ou Nunito Sans).",
+   "secoesHome": [
+    "Banner em carrossel (F36, F40, F15) com aviso de frete grátis acima de R$ 249",
+    "Faixa de confiança: frete grátis acima de R$ 249, pagamento por cartão, Pix e boleto",
+    "Produtos: Thermora Gel e Thermora Caps lado a lado, em 2 colunas com cards grandes",
+    "Depoimentos com 4 fotos de clientes (F23, F26, F25, F29) e a fala da Carla",
+    "Sobre a Thermora",
+    "Perguntas frequentes"
+   ],
+   "observacoes": "Vídeo 3D do pote girando: precisa de um arquivo de vídeo ou render do pote, que não consta nos Materiais. Quando você enviar, ele entra no banner. Até lá o carrossel funciona só com as fotos. A foto F15 não está na lista de Materiais (ids disponíveis: mT23, mT40, mT36, mT3, mT29, mT2, mT26, mT1, mT25), então é preciso enviá-la para completar o carrossel. Nos depoimentos, use apenas fotos de clientes reais com autorização e evite imagens de corpo ou antes e depois. Só a fala da Carla pode ser citada. No Thermora Gel, os blocos de fórmula e benefícios ficam escondidos até você preencher esses dados na aba Produtos. Os preços não foram informados, então não aparecem nos textos."
+  },
+  "textosPagina": {
+   "sobre": "A Thermora nasceu para mulheres 30+ que querem uma rotina com mais disposição, sem depender de estimulante forte. Nosso foco é simples: fórmulas pensadas para o dia a dia, com ingredientes que você consegue reconhecer, e uma conversa clara sobre o que o produto faz e o que ele não faz. Aqui ninguém promete milagre. A ideia é caminhar junto com a sua rotina, no seu tempo.",
+   "faq": [
+    {
+     "p": "Dá taquicardia?",
+     "r": "O Thermora Caps tem uma fórmula sem estimulante forte, pensada para dar disposição sem picos. Ainda assim, cada corpo reage de um jeito. Ele contém 200 mg de cafeína anidra por dose, então, se você tem alguma condição de saúde, é sensível a cafeína ou usa medicação, converse com seu médico antes de começar."
+    },
+    {
+     "p": "Funciona sem dieta?",
+     "r": "O Thermora Caps é um apoio para a sua rotina, principalmente para a disposição ao longo do dia e o foco nos treinos. Ele não substitui alimentação equilibrada nem acompanhamento profissional, e não prometemos resultado no corpo. Ele funciona como parte de uma rotina, não como atalho."
+    },
+    {
+     "p": "Como devo tomar o Thermora Caps?",
+     "r": "A indicação é tomar pela manhã, já que ele tem cafeína. O pote vem com 60 cápsulas. Siga sempre a orientação do rótulo."
+    },
+    {
+     "p": "O que tem na fórmula do Thermora Caps?",
+     "r": "Cafeína anidra 200 mg, extrato de chá verde e picolinato de cromo."
+    },
+    {
+     "p": "Quais são as formas de pagamento?",
+     "r": "Aceitamos cartão, Pix e boleto."
+    },
+    {
+     "p": "Tem frete grátis?",
+     "r": "Sim, em compras acima de R$ 249."
+    },
+    {
+     "p": "Posso levar o Gel e o Caps juntos?",
+     "r": "Pode. No carrinho, quem leva o Thermora Caps vê o Thermora Gel e quem leva o Gel vê o Caps, para você montar sua rotina de uma vez."
+    }
+   ]
+  },
+  "descricoesProdutos": [
+   {
+    "nome": "Thermora Caps",
+    "descricao": "O Thermora Caps é um termogênico em cápsulas com cafeína e chá verde, feito para tomar pela manhã. A proposta é ajudar na disposição ao longo do dia, sem picos fortes de estimulante, num formato simples de encaixar na rotina.\n\nFórmula: cafeína anidra 200 mg, extrato de chá verde e picolinato de cromo.\n\nBenefícios: mais disposição durante o dia e apoio ao foco nos treinos.\n\nO pote tem 60 cápsulas. Tome pela manhã e siga a orientação do rótulo. Quem tem sensibilidade a cafeína, condição de saúde ou usa medicação deve conversar com o médico antes. Não substitui alimentação equilibrada.\n\n\"Senti mais disposição já na primeira semana\" — Carla.",
+    "seoTitulo": "Thermora Caps | Termogênico com cafeína e chá verde",
+    "seoDescricao": "Termogênico em cápsulas com cafeína anidra, chá verde e picolinato de cromo. Pote com 60 cápsulas, para tomar pela manhã. Frete grátis acima de R$ 249.",
+    "produtoId": "pT1"
+   },
+   {
+    "nome": "Thermora Gel",
+    "descricao": "O Thermora Gel é um gel de massagem para incluir no seu momento de cuidado do dia a dia.",
+    "seoTitulo": "Thermora Gel | Gel de massagem",
+    "seoDescricao": "Gel de massagem da Thermora para o seu momento de cuidado. Frete grátis acima de R$ 249. Pague com cartão, Pix ou boleto.",
+    "produtoId": "pT2"
+   }
+  ]
+ }
+}

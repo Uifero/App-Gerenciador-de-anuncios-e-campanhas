@@ -70,10 +70,19 @@ function layout() {
   $('#sair').addEventListener('click', () => sair());
   $('#tema').addEventListener('click', (e) => { alternarTema(); e.currentTarget.innerHTML = `<i class="fa-solid fa-${iconeTema()}"></i>`; });
   montarBusca($('#busca-slot'), () => rotear());
-  // Aviso discreto quando a IA está usando a assinatura do Claude (modo de desenvolvimento) em vez da API paga.
-  fetch('/api/saude').then((r) => r.json()).then((s) => {
-    if (s.provedor === 'cli' && $('#tema')) $('#tema').insertAdjacentHTML('beforebegin', '<span class="tag tag-info" title="As chamadas de IA usam a sua assinatura do Claude (CLI), sem custo por token. Ao configurar a chave da API, o servidor passa a usá-la como reserva."><i class="fa-solid fa-user-check mr-1"></i>IA: assinatura</span>');
-  }).catch(() => {});
+  // Quem respondeu a última chamada de IA: a assinatura do Claude (sem custo por token) ou a reserva (API, paga).
+  // Antes da primeira chamada, mostra o que o servidor vai usar agora (/api/saude).
+  $('#tema').insertAdjacentHTML('beforebegin', '<span id="ia-provedor" class="hidden"></span>');
+  const pintar = (prov, ultima) => {
+    const el = $('#ia-provedor'); if (!el) return;
+    const reserva = prov === 'api';
+    el.className = `tag ${reserva ? 'tag-warn' : 'tag-info'}`;
+    el.dataset.provedor = reserva ? 'reserva' : 'assinatura';
+    el.title = `${ultima ? 'A última chamada de IA foi respondida' : 'As chamadas de IA estão indo'} pela ${reserva ? 'reserva (API da Anthropic, cobrada por token). Isso acontece quando o limite da assinatura acaba.' : 'assinatura do Claude (sem custo por token).'}`;
+    el.innerHTML = `<i class="fa-solid fa-${reserva ? 'key' : 'user-check'} mr-1"></i>IA: ${reserva ? 'reserva' : 'assinatura'}`;
+  };
+  fetch('/api/saude').then((r) => r.json()).then((s) => { if (!$('#ia-provedor')?.dataset.provedor) pintar(s.provedor); }).catch(() => {});
+  window.addEventListener('gcc:ia-provedor', (e) => pintar(e.detail?.provedor, true));
 }
 
 async function rotear() {
