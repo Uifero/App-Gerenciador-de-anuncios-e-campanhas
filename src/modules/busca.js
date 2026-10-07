@@ -51,8 +51,8 @@ export function montarBusca(container, aoNavegar) {
   ligarAtalho();
   container.innerHTML = `<div class="relative w-full max-w-md">
     <i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-    <input id="busca" type="search" autocomplete="off" class="input !pl-9 sm:!pr-16" placeholder="Buscar clientes, criativos e hooks…" aria-label="Busca global" aria-keyshortcuts="Control+K Meta+K" title="Busca por nome/legenda em clientes, criativos e hooks (atalho: ${teclaAtalho()}; Esc fecha)">
-    <kbd data-dica-atalho class="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px] text-slate-500 sm:block">${teclaAtalho()}</kbd>
+    <input id="busca" type="search" autocomplete="off" class="input !pl-9 2xl:!pr-16" placeholder="Buscar…" aria-label="Busca global" aria-keyshortcuts="Control+K Meta+K" title="Busca por nome/legenda em clientes, criativos e hooks (atalho: ${teclaAtalho()}; Esc fecha)">
+    <kbd data-dica-atalho class="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-sans text-[11px] text-slate-500 2xl:block">${teclaAtalho()}</kbd>
     <div id="busca-res" class="absolute left-0 right-0 top-full z-40 mt-1 hidden max-h-96 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl" role="listbox"></div></div>`;
   const inp = $('#busca', container), res = $('#busca-res', container);
   let ultimo = 0;
@@ -83,7 +83,7 @@ export function montarBusca(container, aoNavegar) {
   inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fechar(); inp.blur(); } });
   // A dica do atalho some enquanto a busca está em uso (senão fica por cima do texto e do "x" do campo).
   const dica = $('[data-dica-atalho]', container);
-  const mostrarDica = () => dica.classList.toggle('sm:block', document.activeElement !== inp && !inp.value);
+  const mostrarDica = () => dica.classList.toggle('2xl:block', document.activeElement !== inp && !inp.value);
   inp.addEventListener('focus', mostrarDica); inp.addEventListener('blur', mostrarDica); inp.addEventListener('input', mostrarDica);
   // Com uma janela aberta (fundo escuro z-50), o cabeçalho sobe por cima dela enquanto a busca está em uso.
   const cab = container.closest('header');

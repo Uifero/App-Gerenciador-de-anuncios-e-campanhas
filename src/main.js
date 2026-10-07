@@ -56,19 +56,41 @@ function telaLogin() {
 
 function iconeTema() { return temaAtual() === 'escuro' ? 'sun' : 'moon'; }
 
+// Celular (abaixo de md): só uma barra fina fica fixa no topo; a busca abre pelo ícone e o menu pelo ☰.
+// Computador: o mesmo cabeçalho de sempre (título, busca, menu numa linha).
+const fecharTopo = () => {
+  for (const [botao, alvo] of [['[data-abrir-menu]', '#menu-topo'], ['[data-abrir-busca]', '#busca-slot']]) {
+    const b = $(botao), a = $(alvo); if (!b || !a) continue;
+    b.setAttribute('aria-expanded', 'false'); a.classList.add('hidden'); a.classList.remove('flex');
+  }
+};
+
 function layout() {
-  app.innerHTML = `<header class="sticky top-0 z-30 border-b border-slate-200 bg-white"><div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-    <a href="#/" class="font-bold text-slate-900">🎯 Gerenciador de Criativos e Campanhas</a>
-    <div id="busca-slot" class="order-last w-full md:order-none md:ml-2 md:flex-1"></div>
-    <nav class="ml-auto flex items-center gap-1 text-sm"><a class="btn-ghost btn-sm" href="#/" title="Visão geral de todos os clientes"><i class="fa-solid fa-house"></i> <span class="hidden sm:inline">Início</span></a>
-      <a class="btn-ghost btn-sm" href="#/playbooks" title="Receitas de ângulos e hooks por tipo de produto"><i class="fa-solid fa-book-open"></i> <span class="hidden sm:inline">Playbooks</span></a>
-      <a class="btn-ghost btn-sm" href="#/modelos" title="Modelos prontos de prompt para editar ou gerar fotos de produto"><i class="fa-solid fa-swatchbook"></i> <span class="hidden sm:inline">Modelos de Prompt</span></a>
-      <a class="btn-ghost btn-sm" href="#/config" title="Ajustes globais"><i class="fa-solid fa-gear"></i> <span class="hidden sm:inline">Configurações</span></a>
-      <button class="btn-ghost btn-sm" id="tema" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro"><i class="fa-solid fa-${iconeTema()}"></i></button>
-      <button class="btn-ghost btn-sm" id="sair" title="Encerrar a sessão"><i class="fa-solid fa-right-from-bracket"></i> <span class="hidden sm:inline">Sair</span></button></nav></div></header>
+  app.innerHTML = `<header class="sticky top-0 z-30 border-b border-slate-200 bg-white"><div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 md:py-3">
+    <a href="#/" class="font-bold text-slate-900" title="Gerenciador de Criativos e Campanhas">🎯 <span class="md:hidden">Gerenciador</span><span class="hidden md:inline">Gerenciador de Criativos e Campanhas</span></a>
+    <div class="ml-auto flex items-center gap-1 md:hidden"><button type="button" class="btn-ghost btn-sm" data-abrir-busca aria-controls="busca-slot" aria-expanded="false" aria-label="Buscar" title="Buscar clientes, criativos e hooks"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button type="button" class="btn-ghost btn-sm" data-abrir-menu aria-controls="menu-topo" aria-expanded="false" aria-label="Menu" title="Menu"><i class="fa-solid fa-bars"></i></button></div>
+    <div id="busca-slot" class="order-last hidden w-full md:order-none md:ml-2 md:block md:w-auto md:min-w-[7rem] md:flex-1"></div>
+    <nav id="menu-topo" class="order-last hidden w-full flex-col items-stretch gap-1 pb-1 text-sm md:order-none md:ml-auto md:flex md:w-auto md:flex-row md:items-center md:pb-0" aria-label="Menu principal"><a class="btn-ghost btn-sm !justify-start md:!justify-center" href="#/" title="Visão geral de todos os clientes"><i class="fa-solid fa-house"></i> <span>Início</span></a>
+      <a class="btn-ghost btn-sm !justify-start md:!justify-center" href="#/playbooks" title="Receitas de ângulos e hooks por tipo de produto"><i class="fa-solid fa-book-open"></i> <span>Playbooks</span></a>
+      <a class="btn-ghost btn-sm !justify-start md:!justify-center" href="#/modelos" title="Modelos prontos de prompt para editar ou gerar fotos de produto"><i class="fa-solid fa-swatchbook"></i> <span>Modelos de Prompt</span></a>
+      <a class="btn-ghost btn-sm !justify-start md:!justify-center" href="#/config" title="Ajustes globais"><i class="fa-solid fa-gear"></i> <span>Configurações</span></a>
+      <button class="btn-ghost btn-sm !justify-start md:!justify-center" id="tema" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro"><i class="fa-solid fa-${iconeTema()}"></i><span class="md:hidden">Tema claro/escuro</span></button>
+      <button class="btn-ghost btn-sm !justify-start md:!justify-center" id="sair" title="Encerrar a sessão"><i class="fa-solid fa-right-from-bracket"></i> <span>Sair</span></button></nav></div></header>
     <main id="main" class="mx-auto max-w-6xl px-4 py-6"></main>`;
   $('#sair').addEventListener('click', () => sair());
-  $('#tema').addEventListener('click', (e) => { alternarTema(); e.currentTarget.innerHTML = `<i class="fa-solid fa-${iconeTema()}"></i>`; });
+  $('#tema').addEventListener('click', (e) => { alternarTema(); e.currentTarget.querySelector('i').className = `fa-solid fa-${iconeTema()}`; });
+  // Celular: ☰ e a lupa abrem um de cada vez; trocar de tela fecha os dois.
+  for (const [botao, alvo, depois] of [['[data-abrir-menu]', '#menu-topo', null], ['[data-abrir-busca]', '#busca-slot', () => $('#busca')?.focus()]]) {
+    $(botao).addEventListener('click', (e) => {
+      const abrir = e.currentTarget.getAttribute('aria-expanded') !== 'true';
+      fecharTopo();
+      if (!abrir) return;
+      e.currentTarget.setAttribute('aria-expanded', 'true'); $(alvo).classList.remove('hidden'); if (alvo === '#menu-topo') $(alvo).classList.add('flex');
+      depois?.();
+    });
+  }
+  window.addEventListener('hashchange', fecharTopo);
   montarBusca($('#busca-slot'), () => rotear());
   // Quem respondeu a última chamada de IA: a assinatura do Claude (sem custo por token) ou a reserva (API, paga).
   // Antes da primeira chamada, mostra o que o servidor vai usar agora (/api/saude).
@@ -79,7 +101,9 @@ function layout() {
     el.className = `tag ${reserva ? 'tag-warn' : 'tag-info'}`;
     el.dataset.provedor = reserva ? 'reserva' : 'assinatura';
     el.title = `${ultima ? 'A última chamada de IA foi respondida' : 'As chamadas de IA estão indo'} pela ${reserva ? 'reserva (API da Anthropic, cobrada por token). Isso acontece quando o limite da assinatura acaba.' : 'assinatura do Claude (sem custo por token).'}`;
-    el.innerHTML = `<i class="fa-solid fa-${reserva ? 'key' : 'user-check'} mr-1"></i>IA: ${reserva ? 'reserva' : 'assinatura'}`;
+    // Assinatura (o normal) fica só no ícone até telas bem largas, para a busca caber; reserva é alerta e sempre tem texto.
+    el.setAttribute('aria-label', `IA: ${reserva ? 'reserva' : 'assinatura'}`);
+    el.innerHTML = `<i class="fa-solid fa-${reserva ? 'key' : 'user-check'}"></i><span class="${reserva ? '' : 'md:hidden 2xl:inline'} ml-1">IA: ${reserva ? 'reserva' : 'assinatura'}</span>`;
   };
   fetch('/api/saude').then((r) => r.json()).then((s) => { if (!$('#ia-provedor')?.dataset.provedor) pintar(s.provedor); }).catch(() => {});
   window.addEventListener('gcc:ia-provedor', (e) => pintar(e.detail?.provedor, true));

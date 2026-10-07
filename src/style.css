@@ -73,3 +73,9 @@
   .arvore-topo { margin-bottom: 0; }
 }
 .dark .arvore { --linha: #475569; }
+
+/* ===== Faixas com rolagem lateral (core/ui.js faixaRolavel): abas do cliente e passos do "Montar site" =====
+   A borda do lado em que há mais itens esmaece, para o celular mostrar que dá para rolar. Vale nos dois temas. */
+.faixa-rolavel.mais-dir { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); }
+.faixa-rolavel.mais-esq { -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5rem); mask-image: linear-gradient(to right, transparent, #000 2.5rem); }
+.faixa-rolavel.mais-esq.mais-dir { -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent); }

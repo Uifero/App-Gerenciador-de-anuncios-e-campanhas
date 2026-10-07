@@ -19,7 +19,7 @@ import { printsPainelHtml, abrirBorrar, autorizarPrints, baixarPrintsZip } from 
 import { montarAjusteSite } from './ajuste-site.js';
 import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal, resumoMaterialSite, linhasDeProva, ehModelo } from '../lib/prova-social.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
-import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, moeda, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado, confirmar } from '../core/ui.js';
+import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, moeda, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado, confirmar, faixaRolavel } from '../core/ui.js';
 import { dadosDoPacote, gruposPlataforma, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
 import { lerReferencias, aplicarReferencias, comUsos, produtosComFotos, imagemDoLugar, arquivosPorPasta, rotuloFoto, temCodigo, resumoUsos, porCodigo, slidesDoBanner } from '../lib/fotos-site.js';
@@ -307,6 +307,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     ${barraHtml(etapas)}
     <section data-passo="${passo}"><h2 class="mb-1 text-lg font-semibold"><span class="text-indigo-600">${passo}.</span> ${esc(atual.titulo)} <span class="text-sm font-normal text-slate-500">· ${esc(atual.legenda)}</span></h2>
       ${faltasHtml(atual)}<div data-conteudo-passo></div>${continuar}</section>`;
+  faixaRolavel($('[data-progresso-site]', root)); // celular: o passo atual aparece e a borda mostra que há mais
   const alvo = $('[data-conteudo-passo]', root);
 
   on(root, 'click', '[data-continuar]', () => irPara(passo + 1));
@@ -339,7 +340,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       if (!root.isConnected) return;
       const novas = statusEtapas({ cliente: cl || cliente, site: sts[0] || null, produtos: produtosComFotos(prods, mats), materiais: mats, etiquetaAprov: etiquetaSite(aprs, resps) });
       atual = novas[passo - 1];
-      $('[data-barra-passos]', root).outerHTML = barraHtml(novas);
+      $('[data-barra-passos]', root).outerHTML = barraHtml(novas); faixaRolavel($('[data-progresso-site]', root));
       $('[data-faltas-wrap]', root).outerHTML = faltasHtml(atual);
     }, 500);
   };
@@ -456,7 +457,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <button class="${custom ? 'btn-ghost' : 'btn-primary'} btn-sm" data-sincronizar-inverso><i class="fa-solid fa-arrows-rotate"></i> Levar o texto do pacote para o site personalizado</button></div></div>` : ''}
         ${gerado ? `<div class="mt-4" data-area-resultado>
           <div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm" data-mostrar-previa-loja><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button>${custom ? '<button type="button" class="btn-ghost btn-sm" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button>' : ''}</div>
-          <div class="mt-2" data-area-previa-loja>${custom ? '<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe>' : previaLojaHtml()}</div>
+          <div class="mt-2" data-area-previa-loja>${custom ? '<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe>' : previaLojaHtml({ telaCheia: true })}</div>
           ${ajustesRapidosHtml()}
           ${resultadoFotosTextoHtml(site.fotosTexto)}${conferenciaHtml(site)}</div>` : ''}</div>
       <details class="card mt-4" data-conteudo-manual ${!gerado && plat ? '' : ''}><summary class="cursor-pointer font-semibold">Editar os textos à mão (sem IA)</summary>

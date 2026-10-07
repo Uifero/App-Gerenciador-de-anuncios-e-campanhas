@@ -2,7 +2,7 @@
 import { db, COL } from '../core/storage.js';
 import { IDIOMAS, ESTAGIOS, MODULOS, ESCOPO_PADRAO } from '../lib/constantes.js';
 import { redirecionarRotaAntiga } from '../lib/etapas-site.js';
-import { $, $$, esc, on, lerForm, cabecalho, toast, confirmar, ocupado, opcoes, tag, dataBR, num, modal } from '../core/ui.js';
+import { $, $$, esc, on, lerForm, cabecalho, toast, confirmar, ocupado, opcoes, tag, dataBR, num, modal, faixaRolavel } from '../core/ui.js';
 import { obterConfig } from './configuracoes.js';
 import { resumoCliente, semaforoHtml, cartaoProgresso } from './alertas.js';
 import { aplicarPlaybook, rascunhoDeCliente, abrirEditor } from './playbooks.js';
@@ -320,15 +320,16 @@ export async function viewCliente(el, id, aba, abasMap) {
       ${indicadorPixel(c, id)}</div>
     <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="#/c/${id}/editar" title="Editar dados, marca, metas e escopo"><i class="fa-solid fa-pen"></i> Editar</a>
       <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Baixar backup</button>
-      <button class="btn-ghost btn-sm" data-mais title="Duplicar como base e playbooks (ações de uso raro)"><i class="fa-solid fa-ellipsis"></i> Mais ações</button>
-      <button class="btn-danger btn-sm" data-excluir title="Apagar este cliente"><i class="fa-solid fa-trash"></i></button></div></div>
+      <button class="btn-ghost btn-sm" data-mais title="Duplicar como base, playbooks e excluir o cliente (ações de uso raro)"><i class="fa-solid fa-ellipsis"></i> Mais ações</button></div></div>
     <div id="busca-inicial" data-cliente="${esc(id)}">${buscaEmAndamento(id) ? `<div class="card mb-5 border-indigo-200 bg-indigo-50/50 text-sm"><i class="fa-solid fa-spinner fa-spin mr-1 text-indigo-500"></i>Busca inicial de exemplos de mercado em andamento… os resultados abrem numa janela assim que chegarem.</div>` : ''}</div>
     <div id="cards"><div class="card mb-5 h-16 animate-pulse" aria-hidden="true"></div></div>
     <nav class="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200" aria-label="Abas do cliente">
-      ${abas.map((a) => `<a href="#/c/${id}/${a.id}" title="${esc(a.legenda)}" class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${a.id === atual.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}"><i class="fa-solid fa-${a.icone} mr-1"></i>${a.nome}</a>`).join('')}
+      ${abas.map((a) => `<a href="#/c/${id}/${a.id}" title="${esc(a.legenda)}" class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${a.id === atual.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}"${a.id === atual.id ? ' aria-current="page"' : ''}><i class="fa-solid fa-${a.icone} mr-1"></i>${a.nome}</a>`).join('')}
     </nav><div id="aba"></div>`;
+  faixaRolavel($('nav[aria-label="Abas do cliente"]', el)); // celular: a aba atual aparece e a borda mostra que há mais
 
-  on(el, 'click', '[data-excluir]', async (btn) => {
+  // Excluir mora no fim de "Mais ações" (nunca como botão solto no cabeçalho); a confirmação é a mesma.
+  const excluirCliente = async (btn) => {
     const n = await contarDependentesCliente(id);
     const partes = [
       n.criativos && `${n.criativos} criativo(s)`, n.hooks && `${n.hooks} hook(s)`, n.referencias && `${n.referencias} referência(s)`,
@@ -342,7 +343,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       : `Apagar "${c.nome}"? Esta ação não pode ser desfeita.`;
     if (!(await confirmar(msg, 'Apagar tudo'))) return;
     await ocupado(btn, async () => { await apagarClienteEmCascata(id); toast('Cliente e todos os dados ligados a ele foram apagados.'); location.hash = '#/'; });
-  });
+  };
 
   // Mantém o card de progresso/semáforo em dia quando qualquer aba grava algo (só recalcula o card, não a aba).
   let timer;
@@ -380,7 +381,10 @@ export async function viewCliente(el, id, aba, abasMap) {
         <p class="hint">Guarda os ângulos e hooks que funcionaram aqui como receita reaproveitável em novos clientes.</p></div>
       <div><label class="label">Aplicar um playbook a este cliente</label><div class="flex gap-2"><select class="input" data-pb>${pbs.length ? pbs.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('') : '<option value="">Nenhum playbook ainda</option>'}</select>
         <button class="btn-primary" data-aplicar-pb ${pbs.length ? '' : 'disabled'}>Aplicar playbook</button></div>
-        <p class="hint">Adiciona os hooks do playbook à biblioteca deste cliente e sugere os ângulos na hora de criar criativos.</p></div></div>`);
+        <p class="hint">Adiciona os hooks do playbook à biblioteca deste cliente e sugere os ângulos na hora de criar criativos.</p></div>
+      <div class="border-t border-slate-200 pt-3"><button class="btn-danger w-full" data-excluir><i class="fa-solid fa-trash"></i> Excluir cliente</button>
+        <p class="hint">Apaga o cliente e tudo o que está ligado a ele. Antes, mostra o que será apagado e pede confirmação.</p></div></div>`);
+    on(m.el, 'click', '[data-excluir]', (b) => { m.fechar(); excluirCliente(b); });
     on(m.el, 'click', '[data-diagnostico]', () => { m.fechar(); abrirDiagnostico(c); });
     on(m.el, 'click', '[data-duplicar]', () => { try { sessionStorage.setItem('gcc_base', id); } catch { /* sem storage */ } m.fechar(); location.hash = '#/clientes/novo/completo'; });
     on(m.el, 'click', '[data-salvar-pb]', async (b) => {

@@ -307,3 +307,24 @@ export function ativarCamposArquivo() {
   window.addEventListener('dragover', (ev) => { if (temArquivo(ev) && !ev.defaultPrevented) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'none'; } });
   window.addEventListener('drop', (ev) => { if (temArquivo(ev)) { ev.preventDefault(); apagar(); } });
 }
+
+/**
+ * Faixa com rolagem lateral (abas, passos): centraliza o item atual (`[aria-current]`) e esmaece a borda do lado em que
+ * há mais itens (classes `mais-esq`/`mais-dir`, CSS em style.css), para o celular mostrar que dá para rolar.
+ */
+export function faixaRolavel(el) {
+  if (!el) return;
+  el.classList.add('faixa-rolavel');
+  const atual = el.querySelector('[aria-current]');
+  if (atual && el.scrollWidth > el.clientWidth) {
+    const a = atual.getBoundingClientRect(), f = el.getBoundingClientRect();
+    el.scrollLeft += a.left - f.left - (el.clientWidth - a.width) / 2;
+  }
+  const marcar = () => {
+    el.classList.toggle('mais-esq', el.scrollLeft > 2);
+    el.classList.toggle('mais-dir', el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+  };
+  el.addEventListener('scroll', marcar, { passive: true });
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(marcar).observe(el);
+  marcar();
+}

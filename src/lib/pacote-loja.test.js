@@ -24,6 +24,14 @@ describe('prévia do pacote com cara de loja', () => {
   const d = dadosDoPacote({ cliente, site, produtos });
   const html = gerarPreviaLojaHTML(d);
 
+  it('no celular o topo é uma linha só (☰, marca, sacola) e o menu abre sem script', () => {
+    expect(html).not.toMatch(/<script/i);
+    expect(html).toMatch(/<input type="checkbox" id="menu-loja" class="menu-toggle"><label for="menu-loja" class="hamb"[^>]*aria-label="Abrir o menu"/);
+    expect(html).toContain('.menu-toggle:checked~nav{display:flex}');
+    expect(html).toMatch(/@media\(max-width:640px\)\{header \.wrap\{[^}]*\}[\s\S]*nav\{display:none/);
+    expect(html).toContain('<span class="txt-sacola">Carrinho (0)</span>'); // computador: o mesmo texto de antes
+  });
+
   it('usa o logo, a cor, as fotos, os preços e os textos reais do cliente', () => {
     expect(html).toContain('<img src="https://cdn.exemplo/logo.png" alt="Loja Ana" class="logo">');
     expect(html).toContain('background:#db2777');
