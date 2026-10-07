@@ -13,6 +13,7 @@ import { nomeCriativo } from '../lib/exclusao.js';
 import { avisosCampanha, lojaDoCliente, urlDoProduto, fonteDiagnostico, linhasFonteDiagnostico } from '../lib/conexoes.js';
 import { produtosComFotos } from '../lib/fotos-site.js';
 import { etiquetaSite } from '../lib/aprovacao-site.js';
+import { montarAreaAnuncio } from './area-anuncio.js';
 import {
   esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, moeda, toast, modal, ocupado, lerForm, opcoes, copiar,
   listaDeLinhas, num, confirmar,
@@ -200,7 +201,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const card = (c) => `<button data-abrir="${c.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <div class="flex items-start justify-between gap-2"><h3 class="font-semibold">${esc(c.nome)}</h3>${tag(nomeStatus(c.status), COR_STATUS[c.status])}</div>
       <p class="caption mt-1">${esc(c.resumo || c.objetivo || '')}</p>
-      <div class="mt-3 flex flex-wrap gap-1">${tag(moeda(c.orcamentoDiario) + '/dia')}${(c.conjuntos || []).length ? tag(c.conjuntos.length + ' conjunto(s)') : ''}${tag((c.criativos || []).length + ' criativos')}${(c.publicos || []).slice(0, 2).map((p) => tag(p.nome, 'tag-info')).join('')}${c.origem === 'ia' ? tag('estrutura por IA', 'tag-info') : ''}</div>
+      <div class="mt-3 flex flex-wrap gap-1">${tag(moeda(c.orcamentoDiario) + '/dia')}${(c.conjuntos || []).length ? tag(c.conjuntos.length + ' conjunto(s)') : ''}${tag((c.criativos || []).length + ' criativos')}${(c.publicos || []).slice(0, 2).map((p) => tag(p.nome, 'tag-info')).join('')}${c.origem === 'ia' ? tag('estrutura por IA', 'tag-info') : c.origem === 'recomendacao' ? tag('da recomendação', 'tag-info') : ''}</div>
       <p class="hint mt-2">${dataBR(c.criadoEm)}</p></button>`;
 
   // Cliente "rodando": o diagnóstico do que já está no ar mora aqui (é onde se procura primeiro), não em "Mais ações".
@@ -214,16 +215,20 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   root.innerHTML = `${cabecalho('Campanhas', 'Estrutura de teste, públicos e orçamento — pronta para replicar no Gerenciador de Anúncios do Meta.',
     '<button class="btn-primary" data-nova title="Cria uma estrutura nova (com IA ou manual). Ela nasce como rascunho até você confirmar."><i class="fa-solid fa-plus"></i> Nova campanha</button>')}
+    <div data-area-anuncio><p class="caption mb-4"><i class="fa-solid fa-spinner fa-spin"></i> Carregando "Sobre como esse cliente anuncia"…</p></div>
     ${secaoDiagnostico}
     ${fadigados.length ? `<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"><i class="fa-solid fa-triangle-exclamation"></i>
       <b>Alerta de fadiga:</b> ${fadigados.map((c) => `“${esc(c.nome)}” (${diasDesde(c.emUsoDesde)} dias no ar)`).join('; ')} — passou de ${cfg.diasFadiga} dias. Fadiga = o público já viu demais o anúncio e o resultado costuma cair: troque ou renove o criativo.</div>` : ''}
-    ${rascunhos.length ? `<div class="mb-5"><h3 class="mb-1 text-sm font-semibold">Rascunhos (ainda não confirmados)</h3>
+    ${rascunhos.length ? `<div class="mb-5" data-rascunhos-campanha><h3 class="mb-1 text-sm font-semibold">Rascunhos (ainda não confirmados)</h3>
       <p class="hint mb-2">Estruturas em discussão. Não contam como campanha até você abrir e clicar em "Confirmar estrutura".</p>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${rascunhos.map(card).join('')}</div></div>` : ''}
     ${oficiais.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${oficiais.map(card).join('')}</div>`
       : rascunhos.length ? '' : vazio('bullseye', 'Nenhuma campanha ainda', 'Crie a primeira: a estrutura sai pronta com públicos, orçamento e plano de teste.')}`;
 
   on(root, 'click', '[data-diagnosticar]', () => abrirDiagnostico(cliente, { aoFechar: recarregar }));
+  // Sobre como esse cliente anuncia + Analisar e recomendar + prints de resultado (carrega em paralelo, sem travar a aba).
+  montarAreaAnuncio($('[data-area-anuncio]', root), { cliente, produtos, aoMudar: recarregar })
+    .catch((e) => { console.error(e); const a = $('[data-area-anuncio]', root); if (a) a.innerHTML = `<div class="card mb-5 text-rose-700">Não consegui carregar a análise deste cliente: ${esc(e.message)}</div>`; });
 
   // Do cadastro (fonte): o que a campanha precisa saber. Avisos não bloqueiam.
   const loja = lojaDoCliente(siteCli, etiquetaAprov);
@@ -311,7 +316,7 @@ function abrirRascunho(c, ctx) {
   const { cliente, criativos, aprovados, cfg, recarregar } = ctx;
   const m = modal(`Rascunho — ${c.nome}`, '<div id="r"></div>', { largo: true });
   const alvo = $('#r', m.el);
-  const ia = c.origem === 'ia';
+  const ia = c.origem === 'ia' || c.origem === 'recomendacao'; // rascunho da IA ou da recomendação aceita: dá para discutir no chat
 
   const desenhar = () => {
     const conversa = c.discussao || [];

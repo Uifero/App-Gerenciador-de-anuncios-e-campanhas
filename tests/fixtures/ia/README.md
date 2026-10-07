@@ -8,6 +8,15 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `pacote-thermora-real.json` | Geração do pacote (tarefa `pacote`, Sonnet 5) já lida pelo app | chamada real, 06/10/2026 (antes da correção que tira o texto bruto quando há plano) |
 | `conferencia-thermora-real.json` | "Conferência do pedido" (tarefa `conferencia_site`, Haiku 4.5) | chamada real, 06/10/2026 |
 | `plano-thermora.json` | Plano escrito à mão no mesmo formato, para os testes unitários | sem IA |
+| `extracao-anuncio-real.json` | "Preencher os campos pelo texto" (tarefa `extracao_anuncio`, Haiku 4.5), cliente só WhatsApp | chamada real, 07/10/2026 |
+| `palavras-nicho-real.json` | Palavras da Biblioteca de Anúncios (tarefa `palavras_nicho`, Haiku 4.5), moda feminina | chamada real, 07/10/2026 |
+| `pesquisa-nicho-real.json` | Pesquisa web do nicho (tarefa `pesquisa_nicho`, Sonnet 5): a única busca web real concluída na fase | chamada real, 07/10/2026 |
+| `resumo-documento-real.json` | Resumo de documento de referência (tarefa `resumo_documento`, Sonnet 5) | chamada real, 07/10/2026 |
+| `recomendacao-anuncio-real.json` | "Analisar e recomendar" (tarefa `recomendacao_anuncio`, Sonnet 5), cliente só WhatsApp | chamada real, 07/10/2026 |
+| `leitura-prints-real.json` | Leitura de 3 prints (tarefa `leitura_resultados`, Sonnet 5): WhatsApp, site e conversa com dado pessoal; a IA fechou a lista cedo (caso de `juntarItensSoltos`) | chamada real, 07/10/2026 |
+| `otimizacao-anuncio-real.json` | "Plano de otimização" WhatsApp x Site (tarefa `otimizacao_anuncio`, Sonnet 5) | chamada real, 07/10/2026 |
+| `recomendacao-moda.json` | Recomendação escrita à mão (teste 60/40 e citações inventadas, para testar a conferência) | sem IA |
+| `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |
 | `api-falsa.mjs` | API da Anthropic falsa (stream SSE) para testar a reserva | sem IA |
 

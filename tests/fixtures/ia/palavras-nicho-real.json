@@ -1,0 +1,15 @@
+{
+  "_origem": "chamada real, 07/10/2026, tarefa palavras_nicho (Haiku 4.5, assinatura), nicho Moda feminina",
+  "texto": "```json\n{\"palavras\": [\"moda feminina\", \"roupas femininas\", \"vestidos\", \"blusas\", \"coleção\"]}\n```",
+  "fontes": [],
+  "uso": {
+    "entrada": 10,
+    "saida": 833,
+    "cacheEscrita": 1670,
+    "cacheLeitura": 6331,
+    "buscasWeb": 0,
+    "custoUsd": 0,
+    "modelo": "claude-haiku-4-5",
+    "provedor": "cli"
+  }
+}

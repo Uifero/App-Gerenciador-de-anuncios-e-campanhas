@@ -31,6 +31,7 @@ import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { abrirMateriais } from './materiais-cliente.js';
 import { excluirMateriais } from './excluir-material.js';
 import { abrirProduto, garantirMigracaoFotos } from './produtos.js';
+import { tarefasSiteHtml, ligarTarefasSite } from './tarefas-site.js';
 import { ETAPAS, STATUS_ETAPA, statusEtapas, primeiraEtapaComFalta, plataformaDoSite, patchPlataforma, PLATAFORMAS_SITE, TEMAS_SHOPIFY, nomeTema } from '../lib/etapas-site.js';
 import { itensAceitos, aplicacaoDoPlano, checklistObrigatorio, itensFaltando, recursosDoSite, TIPOS_PEDIDO } from '../lib/plano-site.js';
 import { blocoAnaliseHtml, ligarAnalise, planoAplicado, conferenciaHtml, conferirPlano, abrirPlanoDaVersao, tarefasLojaHtml } from './plano-site.js';
@@ -444,7 +445,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const provas = provasEmImagem(materiais);
     const exibirAtual = (m) => (c.depoimentos || []).find((d) => d.origem === ORIGEM_PROVA && d.materialId === m.id)?.exibir || '';
     const dif = site ? divergencias(site) : [];
-    alvo.innerHTML = `<div class="card border-violet-200" data-ancora="gerar">
+    const tarefasT = await tarefasSiteHtml(cliente.id, 4); ligarTarefasSite(); // ações do plano de otimização aceitas (parte Site)
+    alvo.innerHTML = `${tarefasT}<div class="card border-violet-200" data-ancora="gerar">
         <div class="flex flex-wrap items-center justify-between gap-2"><div><h3 class="font-semibold">${gerado ? 'Site gerado' : 'Gerar o site'}</h3>
           <p class="caption">${plat ? `${custom ? 'Site personalizado' : `Pacote para ${esc(nomePlat(site.plataforma))}${nomeTema(site) ? ` · tema ${esc(nomeTema(site))}` : ''}`}. A IA escreve banner, história, FAQ e textos com tudo dos passos 1 a 3. Escolhas feitas à mão (fotos, banner, seções, ajustes) nunca são desfeitas.` : 'Escolha a plataforma no passo 3 antes de gerar.'}</p></div>
           <button type="button" class="btn-ia" data-gerar-site ${plat ? '' : 'disabled'}><i class="fa-solid fa-wand-magic-sparkles"></i> ${gerado ? 'Gerar site de novo' : 'Gerar site'}</button></div>
@@ -634,12 +636,13 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const d = !custom && gerado ? dadosPacote() : null;
     const grupos = d ? gruposPlataforma(d) : [];
     const nomeP = plat ? PLATAFORMAS_SITE.find(([k]) => k === plat)[1] : '';
+    const tarefasT = await tarefasSiteHtml(cliente.id, 6); ligarTarefasSite(); // tarefas da loja vindas do plano de otimização
     const grupoHTML = (g, gi) => `<details class="rounded-lg border border-slate-200 p-2" ${gi < 3 ? 'open' : ''} data-grupo-plataforma="${esc(g.id)}"><summary class="cursor-pointer text-sm font-semibold">${esc(g.titulo)}</summary>
       <p class="hint mt-1"><i class="fa-solid fa-location-arrow"></i> Onde colocar: <b data-caminho>${esc(g.caminho)}</b></p>
       <ul class="mt-1 space-y-1">${g.itens.map((it, ii) => `<li class="flex items-start justify-between gap-2 rounded bg-slate-50 p-2 text-sm"><div class="min-w-0"><p class="text-xs text-slate-500">${esc(it.rotulo)}</p>
         ${it.tipo === 'imagem' ? `<img src="${esc(it.valor)}" alt="" class="mt-1 max-h-12" style="background:repeating-conic-gradient(#cbd5e1 0% 25%,#fff 0% 50%) 50%/12px 12px">` : `<p class="whitespace-pre-wrap">${esc(it.valor.length > 400 ? it.valor.slice(0, 400) + '…' : it.valor)}</p>`}</div>
         ${it.tipo === 'imagem' ? '' : `<button type="button" class="btn-ghost btn-sm shrink-0" data-copiar-item="${gi}-${ii}"><i class="fa-solid fa-copy"></i> Copiar</button>`}</li>`).join('')}</ul></details>`;
-    alvo.innerHTML = `<div class="card"><h3 class="font-semibold">${plat ? `${esc(nomeP)}${nomeTema(site) ? ` · tema ${esc(nomeTema(site))}` : ''}` : 'Plataforma não escolhida'}</h3>
+    alvo.innerHTML = `${tarefasT}<div class="card"><h3 class="font-semibold">${plat ? `${esc(nomeP)}${nomeTema(site) ? ` · tema ${esc(nomeTema(site))}` : ''}` : 'Plataforma não escolhida'}</h3>
         ${!plat ? `<p class="mt-1 text-sm text-amber-800">Escolha a plataforma no passo 3 para ver os caminhos certos. <a class="underline" href="${rotaDoPasso(cliente.id, 3)}">Ir para o passo 3</a></p>`
           : custom ? '<p class="caption">Site personalizado: não há plataforma. Baixe a pasta e siga "Como publicar este site", abaixo.</p>'
           : !gerado ? `<p class="mt-1 text-sm text-amber-800">Gere o pacote no passo 4 para ver o que colocar em cada lugar. <a class="underline" href="${rotaDoPasso(cliente.id, 4)}">Ir para o passo 4</a></p>`

@@ -6,6 +6,9 @@ import { cartaoInsights, ligarExplicacaoIA } from './insights.js';
 import { lerRoas, lerCtr, lerCpa, NIVEL_TAG } from '../lib/leitura-metricas.js';
 import { filtrarResultados, agruparResultados, produtoDoResultado, ofertaDoResultado } from '../lib/conexoes.js';
 import { nomeCriativo } from '../lib/exclusao.js';
+import { metricasResultado, periodoDe, textoPeriodo } from '../lib/destinos.js';
+import { cartaoWhatsSite } from './comparacao-destinos.js';
+import { modal } from '../core/ui.js';
 
 const fmt = (v, suf = '') => (v == null ? '—' : String(v).replace('.', ',') + suf);
 /** Valor pintado de verde/amarelo/vermelho conforme a leitura (bom/atenção/ruim); sem leitura, só o valor. */
@@ -52,11 +55,17 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <p class="hint">${resultados.length} de ${todosResultados.length} resultado(s). Insights e tabela abaixo seguem o filtro.</p></div>
       <div class="mt-3 grid gap-4 md:grid-cols-2">${tabelaGrupo('Por produto', agruparResultados(resultados, 'produto', { criativos, produtos }), 'data-insights-produto')}${tabelaGrupo('Por oferta', agruparResultados(resultados, 'oferta', { criativos, produtos }), 'data-insights-oferta')}</div>
       <p class="hint mt-2">O produto vem do criativo (lido agora da aba Produtos). A oferta é a que estava ativa no perfil de marca quando o resultado foi registrado.</p></div>` : ''}
-    <div id="insights"></div>
-    ${criativos.length ? `<form id="f" class="card mb-5 space-y-3">
-      <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Criativo *</label><select class="input" name="criativoId">${criativos.filter((c) => !c.arquivado).map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
-        <div><label class="label">Campanha (opcional)</label><select class="input" name="campanhaId"><option value="">—</option>${campanhas.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div></div>
-      <p class="caption">Onde achar: no Gerenciador de Anúncios do Meta, colunas "Valor usado", "CTR (taxa de cliques no link)", "Custo por resultado" e "ROAS de compras". Preencha só o que tiver.</p>
+    <div id="insights"></div><div id="whats-site"></div>
+    ${`<form id="f" class="card mb-5 space-y-3">
+      <div class="grid gap-3 sm:grid-cols-3"><div><label class="label">Criativo</label><select class="input" name="criativoId">${criativos.filter((c) => !c.arquivado).map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}<option value="">Sem criativo específico (campanha inteira)</option></select></div>
+        <div><label class="label">Campanha (opcional)</label><select class="input" name="campanhaId"><option value="">—</option>${campanhas.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
+        <div><label class="label">Destino</label><select class="input" name="destino" data-destino-resultado><option value="site">Site (compra na loja)</option><option value="whatsapp">WhatsApp (venda na conversa)</option></select></div></div>
+      <div class="hidden grid gap-3 rounded-lg bg-emerald-50 p-2 sm:grid-cols-4" data-campos-whats>
+        <div><label class="label">Conversas iniciadas</label><input class="input" type="number" min="0" step="1" name="conversas"><p class="hint">coluna "Conversas por mensagem iniciadas"</p></div>
+        <div><label class="label">Custo por conversa</label><p class="mt-2 text-sm font-semibold" data-custo-conversa>—</p><p class="hint">calculado: gasto ÷ conversas</p></div>
+        <div><label class="label">Vendas fechadas na conversa</label><input class="input" type="number" min="0" step="1" name="vendasConversa"><p class="hint">o Meta não vê: anote aqui</p></div>
+        <div><label class="label">Faturamento dessas vendas (R$)</label><input class="input" type="number" min="0" step="0.01" name="faturamentoConversa"></div></div>
+      <p class="caption">Onde achar: no Gerenciador de Anúncios do Meta, colunas "Valor usado", "CTR (taxa de cliques no link)", "Custo por resultado" e "ROAS de compras". Preencha só o que tiver. Tem o print? Envie na aba Campanhas, em "Prints de resultado": a IA lê e você confere.</p>
       <div class="grid gap-3 sm:grid-cols-5">
         <div><label class="label">Gasto (R$)</label><input class="input" type="number" step="0.01" min="0" name="gasto"><p class="hint">quanto foi investido</p></div>
         <div><label class="label">CTR (%)</label><input class="input" type="number" step="0.01" min="0" name="ctr"><p class="hint">% que clicou (média ~1%)</p></div>
@@ -64,37 +73,69 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <div><label class="label">ROAS</label><input class="input" type="number" step="0.01" min="0" name="roas"><p class="hint">vendas ÷ gasto (bom: 3x+)</p></div>
         <div><label class="label">Data</label><input class="input" type="date" name="data" value="${hoje}"></div></div>
       <p class="hint">O ângulo/framework é atribuído automaticamente à versão do criativo que estava ativa nessa data (não necessariamente a atual).</p>
-      <button class="btn-primary" type="submit"><i class="fa-solid fa-plus"></i> Registrar resultado</button></form>`
-      : vazio('chart-line', 'Crie um criativo primeiro', 'Os resultados são registrados por criativo.')}
+      <button class="btn-primary" type="submit"><i class="fa-solid fa-plus"></i> Registrar resultado</button></form>`}
     ${resultados.length ? `<div class="card overflow-x-auto p-0"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr>
       <th class="p-3">Criativo</th><th>Data</th><th>Gasto</th><th>CTR</th><th>CPA</th><th>ROAS</th><th>O que significa</th><th></th></tr></thead><tbody>
-      ${resultados.map((r) => `<tr class="border-t border-slate-100"><td class="p-3"><b>${esc(nomeCriativo(r.criativoId, criativos, r.criativoNome))}</b> ${r.angulo ? tag(r.angulo) : ''}${r.versaoCriativo ? tag(`v${r.versaoCriativo}`, 'tag-info') : ''}</td>
-        <td>${dataBR(r.data)}</td><td>${moeda(r.gasto)}</td><td>${celula(fmt(r.ctr, '%'), lerCtr(r.ctr))}</td><td>${celula(moeda(r.cpa), lerCpa(r.cpa, metas.cpa))}</td><td>${celula(fmt(r.roas, 'x'), lerRoas(r.roas, metas.roas))}</td>
-        <td class="max-w-56 py-2 pr-2 text-xs text-slate-500">${leitura(r)}</td>
-        <td><button class="text-rose-500" data-apagar="${r.id}" aria-label="Apagar"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>
+      ${resultados.map((r) => { const m = metricasResultado(r), whats = m.destino === 'whatsapp', p = periodoDe(r);
+        return `<tr class="border-t border-slate-100" data-resultado="${r.id}"><td class="p-3"><b>${esc(r.criativoId ? nomeCriativo(r.criativoId, criativos, r.criativoNome) : r.campanhaNome || r.nomeNoPrint || 'Campanha inteira')}</b> ${tag(whats ? 'WhatsApp' : 'Site', whats ? 'tag-ok' : 'tag-info')}${r.origem === 'print' ? tag('do print') : ''} ${r.angulo ? tag(r.angulo) : ''}${r.versaoCriativo ? tag(`v${r.versaoCriativo}`, 'tag-info') : ''}</td>
+        <td>${p && p.inicio !== p.fim ? esc(textoPeriodo(p)) : dataBR(r.data)}</td><td>${moeda(r.gasto)}</td><td>${celula(fmt(r.ctr, '%'), lerCtr(r.ctr))}</td><td>${whats ? (m.custoVenda != null ? moeda(m.custoVenda) : '—') : celula(moeda(r.cpa), lerCpa(r.cpa, metas.cpa))}</td><td>${whats ? (m.roas != null ? fmt(m.roas.toFixed(2), 'x') : '—') : celula(fmt(r.roas, 'x'), lerRoas(r.roas, metas.roas))}</td>
+        <td class="max-w-56 py-2 pr-2 text-xs text-slate-500">${whats ? `${m.conversas != null ? `${m.conversas} conversa(s) a ${moeda(m.custoConversa)}` : 'sem conversas anotadas'}${m.vendas != null ? ` · ${m.vendas} venda(s)${m.taxaConversao != null ? ` (${fmt(m.taxaConversao, '%')} das conversas)` : ''}` : ` · <button type="button" class="text-indigo-600 underline" data-anotar-vendas="${r.id}">anotar vendas</button>`}` : leitura(r)}</td>
+        <td><button class="text-rose-500" data-apagar="${r.id}" aria-label="Apagar"><i class="fa-solid fa-trash"></i></button></td></tr>`; }).join('')}</tbody></table></div>
       <p class="hint mt-2">Cores: verde = bom, amarelo = atenção, vermelho = ruim. ${metas.roas || metas.cpa ? 'Comparado com a meta deste cliente.' : 'Sem meta cadastrada: comparado com referências gerais de mercado (cadastre a meta de CPA/ROAS em "Editar" no topo do cliente).'}</p>`
-      : criativos.length ? '<p class="caption">Nenhum resultado registrado ainda.</p>' : ''}`;
+      : '<p class="caption">Nenhum resultado registrado ainda.</p>'}`;
 
   cartaoInsights(cliente, resultados).then((html) => {
     if (!root.isConnected) return;
     $('#insights', root).innerHTML = html;
     ligarExplicacaoIA($('#insights', root), cliente, resultados);
   });
+  cartaoWhatsSite(cliente, resultados, { criativos, produtos }).then((html) => { if (root.isConnected) $('#whats-site', root).innerHTML = html; }).catch((e) => console.warn('[whats x site]', e));
+  // WhatsApp: mostra os campos de conversa/venda e o custo por conversa calculado na hora.
+  const formRes = $('#f', root);
+  const atualizarWhats = () => {
+    if (!formRes) return;
+    const whats = formRes.elements.destino.value === 'whatsapp';
+    $('[data-campos-whats]', formRes).classList.toggle('hidden', !whats);
+    for (const k of ['cpa', 'roas']) formRes.elements[k].closest('div').classList.toggle('hidden', whats); // no WhatsApp, custo por venda e ROAS saem das vendas anotadas
+    const g = num(formRes.elements.gasto.value), c = num(formRes.elements.conversas.value);
+    $('[data-custo-conversa]', formRes).textContent = g && c ? moeda(g / c) : '—';
+  };
+  on(root, 'change', '[data-destino-resultado]', atualizarWhats);
+  on(root, 'input', '#f [name=gasto], #f [name=conversas]', atualizarWhats);
+  // Venda fechada na conversa anotada depois (ex.: resultado vindo do print, que não mostra essas vendas).
+  on(root, 'click', '[data-anotar-vendas]', (b) => {
+    const r = todosResultados.find((x) => x.id === b.dataset.anotarVendas); if (!r) return;
+    const m = modal('Anotar vendas do WhatsApp', `<form class="space-y-3" data-form-vendas><p class="caption">O Meta não vê a venda fechada na conversa. Anote quantas vendas saíram destas ${esc(r.conversas ?? '?')} conversa(s) e quanto elas faturaram.</p>
+      <div class="grid gap-3 sm:grid-cols-2"><div><label class="label">Vendas fechadas na conversa</label><input class="input" type="number" min="0" step="1" name="vendasConversa" required></div>
+      <div><label class="label">Faturamento dessas vendas (R$)</label><input class="input" type="number" min="0" step="0.01" name="faturamentoConversa"></div></div>
+      <button class="btn-primary" type="submit">Salvar</button></form>`);
+    on(m.el, 'submit', '[data-form-vendas]', async (f2, ev) => {
+      ev.preventDefault(); const v = lerForm(f2);
+      await ocupado(f2.querySelector('button'), async () => {
+        await db.atualizar(COL.resultados, r.id, { vendasConversa: num(v.vendasConversa), faturamentoConversa: num(v.faturamentoConversa) });
+        m.fechar(); toast('Vendas do WhatsApp anotadas.'); recarregar();
+      });
+    });
+  });
 
   on(root, 'submit', '#f', async (f, ev) => {
     ev.preventDefault();
     const v = lerForm(f);
-    const cr = criativos.find((c) => c.id === v.criativoId);
-    if ([v.gasto, v.ctr, v.cpa, v.roas].every((x) => x === '')) return toast('Preencha ao menos uma métrica.', 'erro');
+    const cr = criativos.find((c) => c.id === v.criativoId) || null; // "Sem criativo específico": resultado da campanha inteira
+    const whats = v.destino === 'whatsapp';
+    if ([v.gasto, v.ctr, v.cpa, v.roas, ...(whats ? [v.conversas, v.vendasConversa] : [])].every((x) => x === '' || x == null)) return toast('Preencha ao menos uma métrica.', 'erro');
     await ocupado(f.querySelector('button'), async () => {
       // Atribuição temporal: pega ângulo/framework/gatilho/formato da versão do criativo que estava ativa na
       // data do resultado (não do estado atual dele, que pode já ter mudado).
       const versao = versaoAtivaEm(cr, v.data);
       await db.criar(COL.resultados, {
-        clienteId: cliente.id, criativoId: cr.id, criativoNome: cr.nome, campanhaId: v.campanhaId || null,
-        angulo: versao?.angulo ?? cr.angulo ?? '', framework: versao?.framework ?? cr.framework ?? '',
-        formato: versao?.formato ?? cr.formato ?? '', gatilho: versao?.gatilho ?? cr.gatilho ?? '', versaoCriativo: versao?.n ?? null,
-        gasto: num(v.gasto), ctr: num(v.ctr), cpa: num(v.cpa), roas: num(v.roas), data: v.data,
+        clienteId: cliente.id, criativoId: cr?.id || null, criativoNome: cr?.nome || '', campanhaId: v.campanhaId || null,
+        campanhaNome: campanhas.find((c) => c.id === v.campanhaId)?.nome || '',
+        angulo: versao?.angulo ?? cr?.angulo ?? '', framework: versao?.framework ?? cr?.framework ?? '',
+        formato: versao?.formato ?? cr?.formato ?? '', gatilho: versao?.gatilho ?? cr?.gatilho ?? '', versaoCriativo: versao?.n ?? null,
+        gasto: num(v.gasto), ctr: num(v.ctr), cpa: whats ? null : num(v.cpa), roas: whats ? null : num(v.roas), data: v.data,
+        destino: whats ? 'whatsapp' : 'site',
+        ...(whats ? { conversas: num(v.conversas), vendasConversa: num(v.vendasConversa), faturamentoConversa: num(v.faturamentoConversa) } : {}),
         oferta: String(cliente.marca?.ofertaAtiva || '').trim() || null, // a oferta que estava no ar nesta data (fato do dia)
       });
       toast('Resultado registrado.'); recarregar();

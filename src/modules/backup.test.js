@@ -2,17 +2,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const bancos = {};
-const COL_FAKE = { clientes: 'clientes', criativos: 'criativos', respostas: 'respostas', config: 'config' };
+const COL_FAKE = { clientes: 'clientes', criativos: 'criativos', respostas: 'respostas', config: 'config', hooks: 'hooks', referencias: 'referencias', campanhas: 'campanhas', resultados: 'resultados',
+  produtos: 'produtos', sites: 'sites', usoApi: 'usoApi', materiais: 'materiais', aprovacoes: 'aprovacoes', diagnosticos: 'diagnosticos', diagnosticoImagens: 'diagnosticoImagens', playbooks: 'playbooks',
+  analises: 'analises', tarefas: 'tarefas', printsResultado: 'printsResultado', documentos: 'documentos', pesquisas: 'pesquisas' };
 
 vi.mock('../core/storage.js', () => ({
   COL: COL_FAKE,
   db: {
     definir: vi.fn(async (col, id, dados) => { (bancos[col] ||= new Map()).set(id, dados); }),
     obter: vi.fn(async (col, id) => { const d = bancos[col]?.get(id); return d ? { id, ...d } : null; }),
+    listar: vi.fn(async (col, f) => [...(bancos[col] || new Map()).entries()].map(([id, v]) => ({ id, ...v })).filter((d) => !f || Object.entries(f).every(([k, v]) => d[k] === v))),
   },
 }));
 
-const { lerArquivoBackup, resumoRestauracao, restaurarBackup } = await import('./backup.js');
+const { lerArquivoBackup, resumoRestauracao, restaurarBackup, montarBackup } = await import('./backup.js');
 const { db } = await import('../core/storage.js');
 
 const arquivoDe = (obj) => ({ text: async () => JSON.stringify(obj) });
@@ -64,5 +67,20 @@ describe('restaurarBackup', () => {
     const dados = { colecoes: { clientes: [{ id: 'c1' }], criativos: [{ id: 'x1' }, { id: 'x2' }] } };
     const total = await restaurarBackup(dados);
     expect(total).toBe(3);
+  });
+});
+
+describe('montarBackup — dados da análise de anúncio', () => {
+  it('inclui análises, tarefas, prints, documentos e cache da pesquisa (do cliente, no backup de um cliente)', async () => {
+    bancos.analises = new Map([['a1', { clienteId: 'c1' }], ['a2', { clienteId: 'c2' }]]);
+    bancos.tarefas = new Map([['t1', { clienteId: 'c1' }]]);
+    bancos.printsResultado = new Map([['p1', { clienteId: 'c1', hash: 'h' }]]);
+    bancos.documentos = new Map([['d1', { clienteId: 'c1' }], ['dg', { clienteId: null }]]);
+    bancos.pesquisas = new Map([['q1', { clienteId: 'c1', nicho: 'moda' }]]);
+    const b = await montarBackup({ id: 'c1', nome: 'Loja', comoAnuncia: { texto: 'vende no whats' } });
+    expect(b.contagens).toMatchObject({ analises: 1, tarefas: 1, printsResultado: 1, documentos: 1, pesquisas: 1 });
+    expect(b.colecoes.clientes[0].comoAnuncia.texto).toBe('vende no whats');
+    const tudo = await montarBackup();
+    expect(tudo.contagens).toMatchObject({ analises: 2, documentos: 2 });
   });
 });

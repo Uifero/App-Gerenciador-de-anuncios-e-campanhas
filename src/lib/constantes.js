@@ -103,6 +103,10 @@ export const TAREFAS_IA = {
   plano_site: ['Análise do pedido do site (plano)', 'site', 6000, 'Sonnet'], conferencia_site: ['Conferência do pedido do site', 'site', 1500, 'Haiku'],
   leitura_respostas: ['Leitura da resposta do cliente', 'site', 6000, 'Haiku'], leitura_produtos: ['Produtos da resposta do cliente', 'site', 6000, 'Sonnet'],
   reparo: ['Correção de resposta da IA', 'criativos', 12000, 'Haiku'],
+  extracao_anuncio: ['Campos de "Como esse cliente anuncia"', 'campanhas', 1200, 'Haiku'], palavras_nicho: ['Palavras da Biblioteca de Anúncios', 'mercado', 600, 'Haiku'],
+  pesquisa_nicho: ['Pesquisa web do nicho', 'mercado', 4000, 'Sonnet'], resumo_documento: ['Resumo de documento de referência', 'mercado', 2500, 'Sonnet'],
+  recomendacao_anuncio: ['Analisar e recomendar', 'campanhas', 8000, 'Sonnet'], leitura_resultados: ['Leitura de prints de resultado', 'campanhas', 5000, 'Sonnet'],
+  otimizacao_anuncio: ['Plano de otimização WhatsApp x Site', 'campanhas', 6000, 'Sonnet'],
 };
 export const CATEGORIAS_CUSTO = { criativos: 'Criativos', hooks: 'Hooks', mercado: 'Análise de mercado', site: 'Site/Loja', campanhas: 'Campanhas', playbooks: 'Playbooks', insights: 'Insights' };
 

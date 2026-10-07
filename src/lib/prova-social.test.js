@@ -59,7 +59,8 @@ describe('materiais e depoimentos', () => {
   const lista = [{ origem: 'prova_social' }, { origem: 'site', nome: 'foto.jpg' }, { origem: 'site', nome: 'logo-loja.png' }, { nome: 'clip.mp4' }, { etiquetas: ['prova social'] }];
   it('classifica e conta por tipo', () => {
     expect(tipoMaterial(lista[2])).toBe('logo');
-    expect(contarMateriais(lista)).toEqual({ foto: 1, video: 1, logo: 1, prova_social: 2, referencia: 0 });
+    expect(tipoMaterial({ origem: 'print_resultado', url: 'x' })).toBe('interno'); // print de resultado: nunca vai para o site
+    expect(contarMateriais(lista)).toEqual({ foto: 1, video: 1, logo: 1, prova_social: 2, referencia: 0, interno: 0 });
   });
 
   it('print vira depoimento conforme a escolha; "não usar" some; escritos à mão e de criativos ficam', () => {

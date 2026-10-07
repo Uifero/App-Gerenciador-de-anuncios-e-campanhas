@@ -1,0 +1,6 @@
+{
+  "_origem": "chamada real, 07/10/2026, tarefa extracao_anuncio (Haiku 4.5 pela assinatura), cliente de moda que vende só pelo WhatsApp",
+  "entrada": "Esse cliente vende só pelo WhatsApp, não tem site. Quem atende é a dona, responde em uns 10 minutos. Ticket médio uns R$ 160, verba de R$ 2.000 por mês. Já rodou campanha de mensagem com vestidos e vendeu bem.",
+  "texto": "```json\n{\n  \"destino\": \"whatsapp\",\n  \"ticketMedio\": 160,\n  \"margem\": null,\n  \"verbaMensal\": 2000,\n  \"atendimento\": \"rapido\",\n  \"quemAtende\": \"a dona\",\n  \"evidencias\": {\n    \"destino\": \"vende só pelo WhatsApp, não tem site\",\n    \"ticketMedio\": \"Ticket médio uns R$ 160\",\n    \"verbaMensal\": \"verba de R$ 2.000 por mês\",\n    \"atendimento\": \"responde em uns 10 minutos\",\n    \"quemAtende\": \"Quem atende é a dona\"\n  }\n}\n```",
+  "uso": { "entrada": 10, "saida": 834, "cacheEscrita": 8337, "cacheLeitura": 0, "buscasWeb": 0, "custoUsd": 0, "modelo": "claude-haiku-4-5", "provedor": "cli" }
+}

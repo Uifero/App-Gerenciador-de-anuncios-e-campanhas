@@ -1,5 +1,6 @@
 // Configurações globais (coleção gcc_configuracoes, documento único "global").
 import { montarCustos } from './custos-ia.js';
+import { montarDocumentos } from './documentos.js';
 import { db, COL } from '../core/storage.js';
 import { CONFIG_PADRAO, TAREFAS_IA } from '../lib/constantes.js';
 import { cabecalho, lerForm, num, toast, on, ocupado, esc } from '../core/ui.js';
@@ -82,8 +83,10 @@ export async function view(el) {
   <section class="card mt-6 max-w-3xl" id="ferramentas-externas"><h3 class="font-semibold"><i class="fa-solid fa-toolbox mr-1 text-slate-400"></i>Ferramentas externas de referência</h3>
     <p class="caption mb-2">Geradores gratuitos de imagem, vídeo e voz por IA, para colar os prompts e roteiros de narração que o Estúdio escreve ("Gerar foto e vídeo" num criativo). O app não chama nenhuma delas: é só uma lista para consulta.</p>
     ${htmlFerramentas()}</section>
+  <section class="card mt-6 max-w-3xl" id="documentos-referencia" data-documentos-referencia><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando os documentos…</p></section>
   <section class="card mt-6 max-w-5xl" id="custos-ia" data-custos-ia><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando os custos de IA…</p></section>`;
   montarCustos(el.querySelector("[data-custos-ia]"));
+  montarDocumentos(el.querySelector('[data-documentos-referencia]')).catch((e) => { console.error(e); el.querySelector('[data-documentos-referencia]').innerHTML = '<p class="text-rose-700">Não consegui carregar os documentos de referência.</p>'; });
   on(el, 'submit', '#f', async (f, ev) => {
     ev.preventDefault();
     const v = lerForm(f);

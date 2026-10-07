@@ -12,15 +12,17 @@ async function removerTodos(col, filtro) {
 /** Conta (sem apagar nada) o que seria removido ao apagar o cliente — para mostrar antes de confirmar. */
 export async function contarDependentesCliente(clienteId) {
   const f = { clienteId };
-  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, aprovacoes, respostas, diagnosticos, materiais] = await Promise.all([
+  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, aprovacoes, respostas, diagnosticos, materiais, analises, tarefas, prints, documentos] = await Promise.all([
     db.listar(COL.criativos, f), db.listar(COL.hooks, f), db.listar(COL.referencias, f), db.listar(COL.campanhas, f),
     db.listar(COL.resultados, f), db.listar(COL.produtos, f), db.listar(COL.sites, f), db.listar(COL.aprovacoes, f), db.listar(COL.respostas, f),
     db.listar(COL.diagnosticos, f), db.listar(COL.materiais, f),
+    db.listar(COL.analises, f), db.listar(COL.tarefas, f), db.listar(COL.printsResultado, f), db.listar(COL.documentos, f),
   ]);
   return {
     criativos: criativos.length, hooks: hooks.length, referencias: referencias.length, campanhas: campanhas.length,
     resultados: resultados.length, produtos: produtos.length, sites: sites.length, aprovacoes: aprovacoes.length, respostas: respostas.length,
     diagnosticos: diagnosticos.length, materiais: materiais.length,
+    analises: analises.length, tarefas: tarefas.length, prints: prints.length, documentos: documentos.length,
   };
 }
 
@@ -44,7 +46,13 @@ export async function apagarClienteEmCascata(clienteId) {
     removerTodos(COL.resultados, f), removerTodos(COL.produtos, f), removerTodos(COL.sites, f),
     removerTodos(COL.aprovacoes, f), removerTodos(COL.respostas, f), removerTodos(COL.diagnosticos, f), removerTodos(COL.diagnosticoImagens, f),
     removerTodos(COL.materiais, f),
+    // Análises/recomendações, tarefas aceitas, prints de resultado (o arquivo saiu com os materiais) e documentos só deste cliente.
+    removerTodos(COL.analises, f), removerTodos(COL.tarefas, f), removerTodos(COL.printsResultado, f), removerTodos(COL.documentos, f),
   ]);
+  // Cache da pesquisa web do nicho feito por este cliente: sai se nenhum outro cliente usa o mesmo nicho (senão fica, é do nicho).
+  const outros = (await db.listar(COL.clientes)).filter((c) => c.id !== clienteId);
+  const norm = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  for (const pq of await db.listar(COL.pesquisas, f)) if (!outros.some((c) => norm(c.nicho) === norm(pq.nicho))) await db.remover(COL.pesquisas, pq.id);
   await db.remover(COL.clientes, clienteId);
 }
 

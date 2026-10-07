@@ -1,0 +1,14 @@
+{
+  "_origem": "chamada real, 07/10/2026, tarefa leitura_resultados (Sonnet 5, assinatura, 3 imagens): print sintético do Gerenciador de uma campanha de WhatsApp (01-07/09), outro de site (01-15/09) e um print de conversa com nome e telefone. A IA fechou a lista imagens cedo (o print 3 ficou fora) — caso real usado no teste de juntarItensSoltos.",
+  "texto": "{\"imagens\":[{\"numero\":1,\"tipo\":\"gerenciador\",\"dadosPessoais\":false,\"periodo\":{\"inicio\":\"2026-09-01\",\"fim\":\"2026-09-07\"},\"linhas\":[{\"nivel\":\"campanha\",\"campanha\":\"Vestidos | WhatsApp\",\"conjunto\":null,\"anuncio\":null,\"destino\":\"whatsapp\",\"gasto\":\"R$ 312,40\",\"impressoes\":\"18.230\",\"alcance\":\"9.870\",\"ctr\":\"1,85%\",\"cpm\":\"R$ 17,14\",\"cliques\":null,\"conversas\":\"64\",\"custoConversa\":\"R$ 4,88\",\"compras\":null,\"custoCompra\":null,\"faturamento\":null,\"roas\":null}],\"observacao\":\"Todos os valores legíveis.\"},{\"numero\":2,\"tipo\":\"gerenciador\",\"dadosPessoais\":false,\"periodo\":{\"inicio\":\"2026-09-01\",\"fim\":\"2026-09-15\"},\"linhas\":[{\"nivel\":\"campanha\",\"campanha\":\"Vestido Midi Linho - Site\",\"conjunto\":null,\"anuncio\":null,\"destino\":\"site\",\"gasto\":\"R$ 410,00\",\"impressoes\":null,\"alcance\":null,\"ctr\":null,\"cpm\":null,\"cliques\":\"520\",\"conversas\":null,\"custoConversa\":null,\"compras\":\"5\",\"custoCompra\":\"R$ 82,00\",\"faturamento\":\"R$ 1.045,00\",\"roas\":\"2,55\"}],\"observacao\":\"Todos os valores legíveis; a coluna é 'Cliques no link'.\"}]},{\"numero\":3,\"tipo\":\"conversa\",\"dadosPessoais\":true,\"periodo\":null,\"linhas\":[],\"observacao\":\"Conversa de WhatsApp com nome e telefone de cliente; nada foi transcrito.\"}]}",
+  "uso": {
+    "entrada": 2,
+    "saida": 608,
+    "cacheEscrita": 3758,
+    "cacheLeitura": 8460,
+    "buscasWeb": 0,
+    "custoUsd": 0,
+    "modelo": "claude-sonnet-5",
+    "provedor": "cli"
+  }
+}

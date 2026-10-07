@@ -94,6 +94,14 @@ export const TAREFAS = {
   leitura_respostas: { modelo: MODELO_LEVE, max: 6000 },                   // associa a resposta colada do cliente às 18 perguntas
   leitura_produtos:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low' }, // lista de produtos da resposta do cliente
   reparo:      { modelo: MODELO_LEVE,     max: 12000, semRaciocinio: true }, // corrige JSON inválido de outra resposta (sem refazer a tarefa); 8 s -> 5 s, resultado idêntico
+  // "Sobre como esse cliente anuncia", "Analisar e recomendar", prints de resultado e plano WhatsApp x Site (Frentes 1 a 5).
+  extracao_anuncio: { modelo: MODELO_LEVE, max: 1200 },                     // campos estruturados a partir do texto livre do operador (só preenche o vazio)
+  palavras_nicho:   { modelo: MODELO_LEVE, max: 600 },                      // palavras-chave da Biblioteca de Anúncios do nicho (o operador edita)
+  pesquisa_nicho:   { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // UMA pesquisa web por análise (nicho + destino + Brasil + ano), com cache de 7 dias no app
+  resumo_documento: { modelo: MODELO_COMPLEXO, max: 2500, effort: 'low' },  // documento de referência resumido UMA vez (não é relido a cada análise)
+  recomendacao_anuncio: { modelo: MODELO_COMPLEXO, max: 8000, effort: 'medium', metodologia: true }, // "Analisar e recomendar" (sem busca: usa a pesquisa em cache)
+  leitura_resultados: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', imagens: true }, // prints do Gerenciador de Anúncios -> números para revisão (nunca dado pessoal)
+  otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true }, // "Plano de otimização" WhatsApp x Site
 };
 
 /** Contexto estável da tarefa + a referência opcional da metodologia (só nas tarefas com `metodologia: true`). */

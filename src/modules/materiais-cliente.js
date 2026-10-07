@@ -14,7 +14,7 @@ import { medirFoto } from '../lib/recortes-canvas.js';
 import { plataformaDoSite } from '../lib/etapas-site.js';
 import { esc, $, on, modal, campoArquivo, toast, ocupado, confirmar, mostrarResultado } from '../core/ui.js';
 
-const GRUPOS = [['logo', 'Logo'], ['foto', 'Fotos'], ['video', 'Vídeos'], ['prova_social', 'Provas sociais']];
+const GRUPOS = [['logo', 'Logo'], ['foto', 'Fotos'], ['video', 'Vídeos'], ['prova_social', 'Provas sociais'], ['interno', 'Prints de resultado (internos: nunca vão para o site, criativo nem link de aprovação)']];
 const XADREZ = 'background:repeating-conic-gradient(#cbd5e1 0% 25%,#ffffff 0% 50%) 50%/12px 12px';
 const mb = (b) => (b ? `${(b / 1048576).toFixed(1)} MB` : '');
 

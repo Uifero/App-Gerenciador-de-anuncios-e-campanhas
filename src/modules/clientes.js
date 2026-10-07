@@ -334,6 +334,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       n.criativos && `${n.criativos} criativo(s)`, n.hooks && `${n.hooks} hook(s)`, n.referencias && `${n.referencias} referência(s)`,
       n.campanhas && `${n.campanhas} campanha(s)`, n.resultados && `${n.resultados} resultado(s)`, n.produtos && `${n.produtos} produto(s)`,
       n.sites && `${n.sites} site(s)`, n.aprovacoes && `${n.aprovacoes} link(s) de aprovação`, n.respostas && `${n.respostas} resposta(s) de cliente`, n.diagnosticos && `${n.diagnosticos} diagnóstico(s)`, n.materiais && `${n.materiais} foto(s) salva(s) em Materiais`,
+      n.analises && `${n.analises} análise(s)/recomendação(ões)`, n.tarefas && `${n.tarefas} tarefa(s)/brief(s)`, n.prints && `${n.prints} print(s) de resultado`, n.documentos && `${n.documentos} documento(s) de referência do cliente`,
       c.respostasCliente?.length && `${c.respostasCliente.length} resposta(s) do cliente ao questionário guardada(s)`,
     ].filter(Boolean);
     const msg = partes.length

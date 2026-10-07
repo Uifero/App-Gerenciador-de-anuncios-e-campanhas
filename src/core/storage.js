@@ -13,6 +13,11 @@ export const COL = {
   usoApi: 'gcc_uso_api', aprovacoes: 'gcc_aprovacoes', respostas: 'gcc_aprovacao_respostas',
   diagnosticos: 'gcc_diagnosticos', diagnosticoImagens: 'gcc_diagnostico_imagens',
   materiais: 'gcc_materiais', // fotos salvas do cliente (ex.: importadas do site dele) para usar no Estúdio
+  // "Analisar e recomendar" / plano de otimização (com data), tarefas aceitas, prints de resultado (o arquivo fica em
+  // Materiais, origem print_resultado), documentos de referência (clienteId null = vale para todos) e o cache da
+  // pesquisa web por nicho + destino. Todos internos: nunca vão para o site nem para link de aprovação.
+  analises: 'gcc_analises_anuncio', tarefas: 'gcc_tarefas_anuncio', printsResultado: 'gcc_prints_resultado',
+  documentos: 'gcc_documentos', pesquisas: 'gcc_pesquisas_nicho',
 };
 
 const agora = () => new Date().toISOString();

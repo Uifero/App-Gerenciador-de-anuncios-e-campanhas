@@ -6,6 +6,7 @@ const COL_FAKE = {
   clientes: 'clientes', criativos: 'criativos', hooks: 'hooks', referencias: 'referencias', campanhas: 'campanhas',
   resultados: 'resultados', produtos: 'produtos', sites: 'sites', aprovacoes: 'aprovacoes', respostas: 'respostas', usoApi: 'usoApi', playbooks: 'playbooks',
   diagnosticos: 'diagnosticos', diagnosticoImagens: 'diagnosticoImagens',
+  materiais: 'materiais', analises: 'analises', tarefas: 'tarefas', printsResultado: 'printsResultado', documentos: 'documentos', pesquisas: 'pesquisas',
 };
 const removidos = []; // caminhos passados para removerArquivo
 
@@ -126,5 +127,25 @@ describe('arquivos retidos para links de aprovação', () => {
     removidos.length = 0;
     await apagarClienteEmCascata('c1');
     expect(removidos).toContain('gcc/c1/retido.jpg');
+  });
+});
+
+describe('apagarClienteEmCascata — análises, tarefas, prints, documentos e cache do nicho', () => {
+  it('apaga os do cliente; documento geral fica; cache do nicho só sai se ninguém mais usa o nicho', async () => {
+    popular('clientes', [{ id: 'cli1', nicho: 'Moda' }, { id: 'cli2', nicho: 'moda' }, { id: 'cli3', nicho: 'Pet' }]);
+    popular('analises', [{ id: 'a1', clienteId: 'cli1' }, { id: 'a2', clienteId: 'cli2' }]);
+    popular('tarefas', [{ id: 't1', clienteId: 'cli1' }]);
+    popular('printsResultado', [{ id: 'p1', clienteId: 'cli1' }]);
+    popular('documentos', [{ id: 'd1', clienteId: 'cli1' }, { id: 'dg', clienteId: null }]);
+    popular('pesquisas', [{ id: 'q1', clienteId: 'cli1', nicho: 'Moda' }, { id: 'q2', clienteId: 'cli3', nicho: 'Pet' }]);
+    const n = await contarDependentesCliente('cli1');
+    expect([n.analises, n.tarefas, n.prints, n.documentos]).toEqual([1, 1, 1, 1]);
+    await apagarClienteEmCascata('cli1');
+    expect([...bancos.analises.keys()]).toEqual(['a2']);
+    expect(bancos.tarefas.size + bancos.printsResultado.size).toBe(0);
+    expect([...bancos.documentos.keys()]).toEqual(['dg']); // documento geral não é do cliente
+    expect([...bancos.pesquisas.keys()]).toEqual(['q1', 'q2']); // cli2 ainda usa o nicho moda: o cache fica
+    await apagarClienteEmCascata('cli3');
+    expect([...bancos.pesquisas.keys()]).toEqual(['q1']); // ninguém mais no nicho Pet: o cache dele sai
   });
 });

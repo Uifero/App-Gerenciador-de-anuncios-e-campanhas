@@ -5,6 +5,7 @@ import { obterConfig, classificarSinal } from './configuracoes.js';
 import { esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, toast, ocupado, lerForm, num, modal, campoArquivo } from '../core/ui.js';
 import { podePerguntar, marcarPerguntado, consumirPedidoBusca } from './busca-mercado.js';
 import { paisDoCliente, chavePais } from '../lib/pais.js';
+import { urlBibliotecaAnuncios, palavrasPadrao, comoAnunciaDe, isoDoCliente } from '../lib/anuncio.js';
 
 const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -114,7 +115,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     <div class="flex items-start justify-between gap-2"><h3 class="font-semibold leading-tight">${esc(r.titulo || 'Anúncio de referência')}</h3>
       ${r.sinal ? tag('sinal ' + r.sinal, COR_SINAL[r.sinal]) : tag('sinal n/d')}</div>
     <div class="mt-2 flex flex-wrap gap-1">${r.empresa ? tag(r.empresa) : ''}${r.categoria ? tag(r.categoria, 'tag-info') : ''}${tag(r.origem === 'busca' ? 'busca de mercado' : 'manual')}
-      ${r.diasNoAr != null ? tag(r.diasNoAr + ' dias no ar') : ''}${r.nicho ? tag(r.nicho) : ''}${r.pais ? tagPais(r.pais, cliente) : ''}</div>
+      ${r.diasNoAr != null ? tag(r.diasNoAr + ' dias no ar') : ''}${r.nicho ? tag(r.nicho) : ''}${r.subnicho ? tag(r.subnicho) : ''}${r.pais ? tagPais(r.pais, cliente) : ''}</div>
     ${r.texto ? `<p class="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-slate-600">${esc(r.texto)}</p>` : ''}
     ${r.imagemUrl ? `<img src="${esc(r.imagemUrl)}" alt="Anúncio" class="mt-2 max-h-40 rounded-lg" loading="lazy">` : ''}
     ${blocoAnalise(r.analise)}
@@ -135,7 +136,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   root.innerHTML = `${cabecalho('Referências', `Anúncios de concorrentes que estão dando certo, com a análise do que copiar. As salvas alimentam a geração de criativos. "Sinal" = há quanto tempo o anúncio está no ar (forte: ${cfg.cortes.forte}+ dias, moderado: ${cfg.cortes.moderado}+): quem paga por um anúncio por muito tempo costuma estar vendendo.`,
     `<button class="btn-ia" data-buscar title="Pesquisa na web anúncios ativos de empresas de destaque no nicho (mínimo ${cfg.diasMinimosReferencia} dias no ar)"><i class="fa-solid fa-magnifying-glass"></i> Buscar exemplos de mercado</button>
-     <button class="btn-ghost" data-manual title="Cadastre um anúncio de concorrente que você encontrou">Cadastrar anúncio que encontrei</button>`)}
+     <button class="btn-ghost" data-manual title="Cadastre um anúncio de concorrente que você encontrou">Cadastrar anúncio que encontrei</button>
+     <a class="btn-ghost" data-biblioteca-nicho-ref target="_blank" rel="noopener noreferrer" href="${esc(urlBibliotecaAnuncios({ palavras: comoAnunciaDe(cliente).palavrasBiblioteca?.length ? comoAnunciaDe(cliente).palavrasBiblioteca : palavrasPadrao(cliente), pais: isoDoCliente(cliente) }))}" title="Abre a Biblioteca de Anúncios do Meta filtrada pelo país, só anúncios ativos e as palavras do nicho (palavras editáveis na aba Campanhas). O app não raspa a Biblioteca: tire print e cadastre aqui."><i class="fa-brands fa-meta"></i> Abrir Biblioteca de Anúncios do nicho</a>`)}
     ${aviso}
     <div id="painel"></div>
     ${refs.length ? `<div class="grid gap-3 lg:grid-cols-2">${refs.map(cartao).join('')}</div>`
@@ -143,7 +145,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
 
   const salvar = async (r) => {
     const sinal = classificarSinal(r.diasNoAr, cfg);
-    return db.criar(COL.referencias, { clienteId: cliente.id, nicho: cliente.nicho, sinal, origem: 'manual', ...r });
+    return db.criar(COL.referencias, { clienteId: cliente.id, nicho: cliente.nicho, sinal, origem: 'manual', ...r }); // nicho do formulário (se veio) vale mais
   };
 
   // ----- manual -----
@@ -155,6 +157,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <div><label class="label">Link do anúncio</label><input class="input" name="link" placeholder="https://…"></div>
         <div><label class="label">Dias no ar</label><input class="input" type="number" min="0" name="diasNoAr"></div>
         <div><label class="label">Categoria/ângulo</label><input class="input" name="categoria"></div>
+        <div><label class="label">Nicho do anúncio</label><input class="input" name="nicho" value="${esc(cliente.nicho || '')}"><p class="hint">A análise só usa anúncios do mesmo nicho do cliente.</p></div>
+        <div><label class="label">Subnicho (opcional)</label><input class="input" name="subnicho" value="${esc(cliente.subnicho || '')}"></div>
         <div><label class="label">Imagem do anúncio (opcional)</label>${campoArquivo({ attrs: 'name="imagem"', accept: 'image/*', icone: 'image', texto: 'Enviar print do anúncio (até 400 KB)', destaque: false })}</div></div>
       <div><label class="label">Texto do anúncio</label><textarea class="input" rows="4" name="texto"></textarea></div>
       <div class="flex gap-2"><button class="btn-primary" type="submit" data-modo="salvar">Salvar referência (sem IA)</button>
@@ -166,7 +170,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const v = lerForm(f);
     if (!v.titulo && !v.texto && !v.link) return toast('Informe ao menos título, texto ou link.', 'erro');
     await ocupado(btn, async () => {
-      const r = { titulo: v.titulo || v.link || 'Anúncio', empresa: v.empresa || '', link: v.link || '', texto: v.texto || '', categoria: v.categoria || '', diasNoAr: num(v.diasNoAr) };
+      const r = { titulo: v.titulo || v.link || 'Anúncio', empresa: v.empresa || '', link: v.link || '', texto: v.texto || '', categoria: v.categoria || '', diasNoAr: num(v.diasNoAr),
+        nicho: v.nicho || cliente.nicho || '', subnicho: v.subnicho || '', paisCliente: paisDoCliente(cliente), origemPrint: Boolean(v.imagem && v.imagem.size) };
       if (v.imagem && v.imagem.size) {
         // Imagem pequena guardada como data URL no documento (evita depender do Storage para um print).
         if (v.imagem.size > 400 * 1024) throw new Error('Imagem grande demais (máx. 400 KB). Reduza o print.');

@@ -1,0 +1,14 @@
+{
+  "_origem": "chamada real, 07/10/2026, tarefa resumo_documento (Sonnet 5, assinatura), guia interno curto de anúncios de conversa no WhatsApp (teste p)",
+  "texto": "{\"resumo\":\"Use anúncios de conversa no WhatsApp quando o ticket é médio ou alto e a venda depende de tirar dúvidas (tamanho, caimento, prazo); produtos de compra por impulso tendem a converter melhor direto no site. Responda o primeiro contato em até 5 minutos em horário comercial, com um roteiro curto: saudação, pergunta de qualificação, foto do produto no corpo, preço e forma de pagamento, chamada para fechar. Anote todas as vendas fechadas no chat com data e valor. O custo por conversa sozinho engana: compare custo por venda e ROAS com os do site no mesmo período antes de mover verba.\",\"partes\":[{\"parte\":\"Capítulo 1 — Quando usar WhatsApp como destino\",\"pontos\":\"Use anúncios de conversa quando o ticket é médio ou alto e a venda depende de tirar dúvidas (tamanho, caimento, prazo). Produtos de compra por impulso tendem a converter melhor direto no site.\"},{\"parte\":\"Capítulo 2 — Atendimento\",\"pontos\":\"Responder o primeiro contato em até 5 minutos em horário comercial. Roteiro curto: saudação, pergunta de qualificação, foto do produto no corpo, preço e forma de pagamento, chamada para fechar.\"},{\"parte\":\"Capítulo 3 — Medição\",\"pontos\":\"Anotar todas as vendas fechadas no chat com data e valor. Como o custo por conversa sozinho engana, comparar custo por venda e ROAS com os do site no mesmo período antes de mover verba.\"}]}",
+  "uso": {
+    "entrada": 2,
+    "saida": 553,
+    "cacheEscrita": 1186,
+    "cacheLeitura": 0,
+    "buscasWeb": 0,
+    "custoUsd": 0,
+    "modelo": "claude-sonnet-5",
+    "provedor": "cli"
+  }
+}

@@ -104,12 +104,13 @@ const ehVideo = (m) => /^video\//.test(m?.tipo || m?.mime || '') || /\.(mp4|mov|
 /** 'prova_social' | 'logo' | 'video' | 'foto' */
 export function tipoMaterial(m) {
   if (m?.origem === 'referencia') return 'referencia'; // print do site de referência: só inspiração, nunca vai para o site
+  if (m?.origem === 'print_resultado' || m?.interno) return 'interno'; // print de resultado (Campanhas): material interno, nunca vai para o site, criativo ou link
   if (m?.origem === ORIGEM_PROVA || (m?.etiquetas || []).includes(ETIQUETA_PROVA)) return 'prova_social';
   if (m?.origem === 'logo' || /(^|[-_\s])logo([-_.\s]|$)/i.test(m?.nome || '')) return 'logo';
   return ehVideo(m) ? 'video' : 'foto';
 }
 export function contarMateriais(lista = []) {
-  const c = { foto: 0, video: 0, logo: 0, prova_social: 0, referencia: 0 };
+  const c = { foto: 0, video: 0, logo: 0, prova_social: 0, referencia: 0, interno: 0 };
   for (const m of lista) c[tipoMaterial(m)]++;
   return c;
 }

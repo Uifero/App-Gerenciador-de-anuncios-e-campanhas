@@ -1,0 +1,23 @@
+{
+  "_origem": "escrito à mão no formato da tarefa recomendacao_anuncio, para os testes unitários (sem IA)",
+  "resumo": "Cliente vende pelos dois: testar WhatsApp x site com a verba pendendo para o WhatsApp, que já vende mais barato.",
+  "destino": { "escolha": "teste", "divisao": { "whatsapp": 60, "site": 40 }, "porque": "Custo por venda do WhatsApp (R$ 50) menor que o do site (R$ 80) no mesmo período.", "confianca": "media",
+    "fontes": { "resultadosCliente": [{ "periodo": "01/09/2026 a 07/09/2026", "campanha": "Vestidos", "destino": "whatsapp" }] },
+    "resultadoEsperado": { "metrica": "custo por venda no WhatsApp", "min": 45, "max": 70, "unidade": "R$", "confianca": "media", "dependeDe": "atendimento responder em até 30 min" } },
+  "estrutura": { "objetivo": "vendas", "localConversao": "Loja do Instagram", "conjuntos": 2, "orcamentoDiario": 100,
+    "conjuntosDetalhe": [ { "nome": "WhatsApp", "destino": "whatsapp", "localConversao": "apps_mensagem", "orcamentoDiario": 60, "publico": "Mulheres 25-45 interessadas em moda" },
+                          { "nome": "Site", "destino": "site", "localConversao": "site", "orcamentoDiario": 40, "publico": "Mulheres 25-45 interessadas em moda" } ],
+    "duracaoDias": 7, "porque": "Um conjunto por destino para comparar no mesmo período.", "confianca": "media",
+    "fontes": { "documentos": [{ "id": "vortex", "parte": "Regra prática" }], "web": [{ "url": "https://exemplo.com.br/moda-whatsapp" }] } },
+  "criativos": [
+    { "angulo": "Caimento real em corpo real", "formato": "video_curto", "narrativa": "dor_solucao", "produto": "Vestido Midi Linho", "cta": "Comprar agora", "destino": "whatsapp", "quantidade": 2, "inspiracao": ["r2", "inventado"],
+      "descricao": "Provador em casa mostrando o caimento.", "porque": "Anúncio do nicho no ar há 90 dias usa provador.", "confianca": "media", "fontes": { "anuncios": [{ "id": "r2" }] } },
+    { "angulo": "Antes e depois do look", "formato": "imagem", "narrativa": "antes_depois", "produto": "Bolsa inexistente", "cta": "Comprar agora", "destino": "site", "porque": "acho que funciona", "confianca": "alta",
+      "resultadoEsperado": { "metrica": "CTR", "min": 2, "max": 3, "unidade": "%", "confianca": "alta" } }
+  ],
+  "metricas": [ { "destino": "whatsapp", "metrica": "custo por venda", "escalar": "até R$ 56", "manter": "R$ 56 a R$ 80", "pausar": "acima de R$ 80", "porque": "Conta com ticket e margem.", "fontes": { "resultadosCliente": [{ "periodo": "set/2026", "campanha": "Vestidos" }] } } ],
+  "escala": { "plano": "Aumentar a verba do WhatsApp aos poucos enquanto o custo por venda ficar abaixo de R$ 56.", "porque": "Folga sobre o empate.", "fontes": {} },
+  "perguntas": [ { "texto": "Quem responde o WhatsApp no fim de semana?", "opcoes": ["A dona", "Ninguém"], "campo": "atendimento" } ],
+  "conflitos": [ "A pesquisa web sugere site, mas os resultados do cliente mostram WhatsApp mais barato: venceram os resultados do cliente." ],
+  "mudancas": [ { "oque": "Divisão passou de 50/50 para 60/40", "porque": "Novas vendas registradas no WhatsApp." } ]
+}

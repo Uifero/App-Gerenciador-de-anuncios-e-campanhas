@@ -298,7 +298,7 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
     const alvo = $('[data-materiais-salvos]', raiz); if (!alvo) return;
     const dp = produtoDoCriativo(criativo, { produtos, materiais: salvos, cliente });
     const doProduto = dp && !dp.excluido ? dp.fotos.filter((f) => f.materialId).map((f) => salvos.find((m) => m.id === f.materialId)).filter(Boolean) : [];
-    const lista = verTodas || !doProduto.length ? salvos.filter((m) => tipoMaterial(m) !== 'referencia') : doProduto;
+    const lista = verTodas || !doProduto.length ? salvos.filter((m) => !['referencia', 'interno'].includes(tipoMaterial(m))) : doProduto;
     if (!salvos.length) { alvo.innerHTML = ''; return; }
     alvo.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-sm" data-salvos-estudio>
       <p><i class="fa-solid fa-folder-open text-emerald-600"></i> <b>${doProduto.length && !verTodas ? `Fotos do produto ${esc(dp.produto.nome)} (${doProduto.length})` : `${lista.length} arquivo(s) salvo(s) do cliente`}</b>${doProduto.length ? ` · <button type="button" class="underline" data-ver-todas>${verTodas ? 'Só as fotos do produto' : 'Ver todas as fotos'}</button>` : ''}</p>

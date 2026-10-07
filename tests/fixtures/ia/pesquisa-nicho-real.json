@@ -1,0 +1,15 @@
+{
+  "_origem": "chamada real, 07/10/2026, tarefa pesquisa_nicho (Sonnet 5, assinatura, COM busca web: a única busca real da fase), Moda feminina + WhatsApp + Brasil",
+  "texto": "{\"encontrou\":true,\"noNicho\":true,\"resumo\":\"Achei pouco material específico de anúncios de moda feminina com destino WhatsApp no Brasil em 2026. Só uma fonte, do nicho de lojas de roupas, fala de personalização e agilidade no atendimento pelo WhatsApp, e ela não trata de anúncios pagos. Não consegui confirmar nenhum número de CTR, custo por conversa, custo por venda, conversão ou ROAS exclusivo de moda feminina, então não listei benchmarks.\",\"praticas\":[{\"texto\":\"Em 2026, lojas de roupas que dependem só de fluxo orgânico ou de anúncios genéricos tendem a estagnar. O guia recomenda comunicação direta e personalizada no WhatsApp Business, com curadoria de looks e agilidade na resposta, porque a cliente quer sentir que a loja entende o estilo dela. A fonte trata de WhatsApp Business para lojas de roupas, não de anúncios pagos em si.\",\"url\":\"https://gosmarter.com.br/whatsapp-business-para-loja-roupas-moda-guia/\",\"site\":\"Gosmarter\",\"data\":null}],\"benchmarks\":[]}",
+  "fontes": [],
+  "uso": {
+    "entrada": 6,
+    "saida": 997,
+    "cacheEscrita": 15049,
+    "cacheLeitura": 24535,
+    "buscasWeb": 0,
+    "custoUsd": 0,
+    "modelo": "claude-sonnet-5",
+    "provedor": "cli"
+  }
+}

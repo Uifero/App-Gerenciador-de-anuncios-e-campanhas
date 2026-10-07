@@ -10,9 +10,10 @@ import { registrarBackup } from './configuracoes.js';
 export async function montarBackup(cliente = null) {
   const f = cliente ? { clienteId: cliente.id } : undefined;
   const ler = (col) => db.listar(col, f);
-  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, usoApi, respostas, materiais, aprovacoes, diagnosticos, diagnosticoImagens] = await Promise.all([
+  const [criativos, hooks, referencias, campanhas, resultados, produtos, sites, usoApi, respostas, materiais, aprovacoes, diagnosticos, diagnosticoImagens, analises, tarefas, prints, documentos, pesquisas] = await Promise.all([
     ler(COL.criativos), ler(COL.hooks), ler(COL.referencias), ler(COL.campanhas), ler(COL.resultados), ler(COL.produtos), ler(COL.sites), ler(COL.usoApi), ler(COL.respostas),
     ler(COL.materiais), ler(COL.aprovacoes), ler(COL.diagnosticos), ler(COL.diagnosticoImagens),
+    ler(COL.analises), ler(COL.tarefas), ler(COL.printsResultado), ler(COL.documentos), ler(COL.pesquisas),
   ]);
   const colecoes = {
     [COL.clientes]: cliente ? [cliente] : await db.listar(COL.clientes),
@@ -23,6 +24,9 @@ export async function montarBackup(cliente = null) {
     [COL.materiais]: materiais,
     // Diagnósticos (dados e resultado) e as imagens anexadas a eles.
     [COL.diagnosticos]: diagnosticos, [COL.diagnosticoImagens]: diagnosticoImagens,
+    // Análises e recomendações, tarefas aceitas, prints de resultado (o arquivo está em Materiais), documentos de referência
+    // (no backup de um cliente: só os dele; no completo: também os gerais) e o cache da pesquisa web do nicho.
+    [COL.analises]: analises, [COL.tarefas]: tarefas, [COL.printsResultado]: prints, [COL.documentos]: documentos, [COL.pesquisas]: pesquisas,
     // Links de aprovação (site e criativos): datas, versão, status e a resposta copiada no link. O id é o token (segredo de
     // acesso), então fica de fora, como nas respostas — por isso estes registros são só para consulta, não se restauram.
     [COL.aprovacoes]: aprovacoes.map(({ id, substituidoPor, ...resto }) => resto),

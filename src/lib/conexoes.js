@@ -118,8 +118,9 @@ export const SEM_OFERTA = 'Sem oferta registrada';
 /** Produto de um resultado: o do criativo dele, lido agora. */
 export function produtoDoResultado(r, criativos = [], produtos = []) {
   const c = criativos.find((x) => x.id === r.criativoId);
-  const p = c?.produtoId ? produtos.find((x) => x.id === c.produtoId) : null;
-  return p ? { id: p.id, nome: p.nome } : c?.produtoId ? { id: c.produtoId, nome: 'produto excluído' } : { id: '', nome: SEM_PRODUTO };
+  const pid = c?.produtoId || r.produtoId || null; // resultado de print sem criativo pode vir ligado direto ao produto
+  const p = pid ? produtos.find((x) => x.id === pid) : null;
+  return p ? { id: p.id, nome: p.nome } : pid ? { id: pid, nome: 'produto excluído' } : { id: '', nome: SEM_PRODUTO };
 }
 /** Oferta de um resultado: a que estava ativa quando ele foi registrado (é um fato daquela data, não uma cópia). */
 export const ofertaDoResultado = (r) => txt(r.oferta) || SEM_OFERTA;

@@ -25,7 +25,7 @@ describe('TAREFAS', () => {
   });
 
   it('metodologia (referência opcional) só em criativos, campanha e site; nas outras o contexto fica igual', () => {
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.metodologia).map(([n]) => n).sort()).toEqual(['campanha', 'criativos', 'discussao_campanha', 'site']);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.metodologia).map(([n]) => n).sort()).toEqual(['campanha', 'criativos', 'discussao_campanha', 'otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
     expect(comMetodologia(TAREFAS.criativos, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}`);
@@ -36,7 +36,8 @@ ${METODOLOGIA_VORTEX}`);
   });
 
   it('só busca de mercado, leitura de site pela busca e diagnóstico pedem busca web', () => {
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.web).map(([n]) => n)).toEqual(['referencias', 'diagnostico', 'leitura_web']);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.web).map(([n]) => n)).toEqual(['referencias', 'diagnostico', 'leitura_web', 'pesquisa_nicho']);
+    expect(TAREFAS.recomendacao_anuncio.web).toBeFalsy(); // a recomendação usa a pesquisa em cache: uma busca por análise, no máximo
     expect(TAREFAS.criativos.web).toBeFalsy();
     expect(TAREFAS.campanha.web).toBeFalsy();
   });
@@ -127,7 +128,7 @@ describe('imagens anexadas (diagnóstico com prints)', () => {
 
   it('só o diagnóstico e a leitura de prints do Instagram aceitam imagens', () => {
     expect(TAREFAS.diagnostico.imagens).toBe(true);
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.imagens).map(([n]) => n)).toEqual(['diagnostico', 'leitura_prints', 'leitura_provas']);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.imagens).map(([n]) => n)).toEqual(['diagnostico', 'leitura_prints', 'leitura_provas', 'leitura_resultados']);
   });
 
   it('monta os blocos com as imagens antes do texto', () => {

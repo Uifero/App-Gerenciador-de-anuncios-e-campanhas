@@ -9,7 +9,9 @@ let env;
 const futuro = () => Date.now() + 30 * DIA;
 
 const COLECOES_PRIVADAS = ['gcc_clientes', 'gcc_produtos', 'gcc_materiais', 'gcc_criativos', 'gcc_sites', 'gcc_resultados',
-  'gcc_campanhas', 'gcc_hooks', 'gcc_referencias', 'gcc_playbooks', 'gcc_configuracoes', 'gcc_uso_api', 'gcc_diagnosticos'];
+  'gcc_campanhas', 'gcc_hooks', 'gcc_referencias', 'gcc_playbooks', 'gcc_configuracoes', 'gcc_uso_api', 'gcc_diagnosticos',
+  // Análises, tarefas, prints de resultado, documentos de referência e cache da pesquisa do nicho: internos, nunca públicos.
+  'gcc_analises_anuncio', 'gcc_tarefas_anuncio', 'gcc_prints_resultado', 'gcc_documentos', 'gcc_pesquisas_nicho'];
 
 beforeAll(async () => {
   env = await initializeTestEnvironment({ projectId: 'demo-gcc-regras', firestore: { rules: readFileSync('firestore.rules', 'utf8') } });

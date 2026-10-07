@@ -74,6 +74,8 @@ export async function removerMaterial(cliente, m, { confirmado = false, trocando
   if (guardar) await reterArquivos(cliente.id, [m.path, m.borrada?.path].filter(Boolean), 'link de aprovação já enviado');
   await db.remover(COL.materiais, m.id);
   await limparReferenciasMaterial(cliente.id, m.id);
+  // Print de resultado (aba Campanhas): o registro do print sai junto (os resultados já salvos a partir dele ficam).
+  if (m.origem === 'print_resultado') for (const p of await db.listar(COL.printsResultado, { materialId: m.id }).catch(() => [])) await db.remover(COL.printsResultado, p.id);
   if (cliente.logoArquivo?.materialId === m.id) { await db.atualizar(COL.clientes, cliente.id, { logoArquivo: null }); cliente.logoArquivo = null; }
 }
 

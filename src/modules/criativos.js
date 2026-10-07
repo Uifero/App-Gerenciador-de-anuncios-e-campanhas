@@ -16,6 +16,7 @@ import { abrirMateriais } from './materiais-cliente.js';
 import { AVISO_META_SAUDE } from '../lib/saude.js';
 import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
+import { briefsAbertos, briefsHtml, textoDoBrief } from './tarefas-site.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -84,7 +85,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
      <button class="btn-ghost" data-materiais-cliente-btn title="Fotos, vídeos, logo e provas do cliente: enviar, ver e apagar (vão para o Estúdio e para o site)"><i class="fa-solid fa-photo-film"></i> Materiais do cliente${cliente.logoArquivo ? '' : ' <span class="tag tag-warn">sem logo</span>'}</button>
      <button class="btn-ghost" data-enviar title="Gera um link para o cliente final ver as peças e aprovar ou pedir ajuste, sem login"><i class="fa-solid fa-paper-plane"></i> Enviar para aprovação</button>
      <button class="btn-primary" data-novo title="Gerar ou escrever um criativo novo"><i class="fa-solid fa-plus"></i> Novo criativo</button>`)}
-    <div class="mb-4" data-questionario></div><div id="painel"></div><div id="lista">${lista()}</div>`;
+    <div class="mb-4" data-questionario></div><div data-briefs></div><div id="painel"></div><div id="lista">${lista()}</div>`;
   // Questionário único do cliente (o mesmo da aba Site/Loja): as respostas também alimentam os criativos.
   montarQuestionarioNaAba($('[data-questionario]', root), cliente, recarregar).catch((e) => console.warn('[questionário]', e));
 
@@ -121,6 +122,22 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   }));
   on(root, 'click', '[data-modelos-prompt]', (b) => ocupado(b, () => abrirBiblioteca({ cliente })));
   on(root, 'click', '[data-materiais-cliente-btn]', (b) => ocupado(b, () => abrirMateriais(cliente)));
+  // Briefs aceitos em "Analisar e recomendar" (aba Campanhas): o criativo só é gerado quando o operador clica.
+  let briefs = [];
+  briefsAbertos(cliente.id).then((l) => { if (!root.isConnected) return; briefs = l; $('[data-briefs]', root).innerHTML = briefsHtml(l); }).catch((e) => console.warn('[briefs]', e));
+  on(root, 'click', '[data-usar-brief]', (b) => {
+    const br = briefs.find((x) => x.id === b.dataset.usarBrief); if (!br) return;
+    painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg, produtos, sugestaoInsight);
+    const f = $('#fg', root); if (!f) return;
+    f.elements.briefing.value = textoDoBrief(br);
+    if (br.brief?.produtoId && f.elements.produtoId) f.elements.produtoId.value = br.brief.produtoId;
+    if (br.brief?.formato && f.elements.formato) f.elements.formato.value = br.brief.formato;
+    if (br.brief?.narrativa && f.elements.narrativa) f.elements.narrativa.value = br.brief.narrativa;
+    if (br.brief?.quantidade && f.elements.quantidade) f.elements.quantidade.value = String(br.brief.quantidade);
+    $('#painel', root).scrollIntoView({ block: 'start' });
+    toast('Brief colocado no formulário. Confira e clique em gerar.');
+  });
+  on(root, 'click', '[data-brief-feito]', async (b) => { await db.atualizar(COL.tarefas, b.dataset.briefFeito, { status: 'feita', feitaEm: new Date().toISOString() }); b.closest('[data-brief]')?.remove(); toast('Brief marcado como feito.'); });
   on(root, 'click', '[data-novo]', () => painelNovo($('#painel', root), cliente, referencias, resultados, recarregar, null, atualizar, cfg, produtos, sugestaoInsight));
   on(root, 'click', '[data-enviar]', () => abrirEnvio(cliente, criativos, { preSelecionar: criativos.filter((c) => ['rascunho', 'reaprovacao'].includes(c.status)).map((c) => c.id), aoMudar: recarregar }));
 
