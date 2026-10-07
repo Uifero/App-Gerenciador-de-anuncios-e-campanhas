@@ -18,6 +18,11 @@ Responda em português do Brasil.
 - Nunca definir `VITE_DEMO_MODE`/`DEV_AUTH_BYPASS` em produção.
 - Depois de qualquer geração ou leitura, o resultado fica visível sem o operador procurar: rolar até ele, destacar, status que não some, erro que não some. (Use `mostrarResultado` e `ocupado`/`toast(…, 'erro')` de `src/core/ui.js`.)
 
+## Referências e squads de marketing (Xquads)
+- O conhecimento de tráfego, copy e oferta que a IA do app usa fica em `server/referencias/` (`metodologia-vortex.js`, `trafego.js`, `copy.js`, `oferta.js`), ligado por flag em `TAREFAS`; o cartão de cada uma aparece em Playbooks. Mudou o texto de uma referência? Atualize o cartão em `src/modules/playbooks.js`.
+- Ao criar ou mudar regra de negócio de tráfego, copy ou oferta (alertas, critérios, textos de prompt), consulte antes o squad correspondente (skills globais `traffic-masters`, `copy-squad`, `hormozi-squad`) e traga só o que passar pelas regras do app: nada de número/benchmark em US$, urgência, garantia, bônus ou preço inventados, e a política do Meta para saúde vem antes.
+- Referência nova vai resumida com palavras nossas (curta, ~600 tokens), nunca a persona inteira do agente.
+
 ## Testes com IA real (regra permanente)
 Testes com IA real: no máximo 1 chamada real por função nova ou alterada em cada fase, com o menor max_tokens que valide o formato. Todo o resto usa respostas gravadas (fixtures) ou IA simulada. Nunca repetir chamada real para confirmar algo já confirmado. O resumo final informa quantas chamadas reais foram feitas e o custo estimado. (Chamada real em teste também gasta o limite da assinatura do operador, e isso para o app para os clientes.) Fixtures ficam em `tests/fixtures/ia/`; a IA simulada no navegador intercepta `/api/claude` (ver `tests/fixtures/ia/README.md`).
 

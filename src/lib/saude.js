@@ -21,7 +21,7 @@ export function ehProdutoSaude(cliente, produtos = []) {
 }
 
 /** Regra extra para a IA (só nos clientes de saúde/emagrecimento). */
-export const REGRA_SAUDE = `PRODUTO DE SAÚDE/EMAGRECIMENTO (${AVISO_META_SAUDE}): em anúncios, NUNCA use comparação de antes e depois, números de kg ou cm perdidos, nem promessa de resultado no corpo, mesmo que exista prova real no perfil. Para prova, use ângulos permitidos: experiência de uso, rotina, como é usar, número de clientes atendidos.`;
+export const REGRA_SAUDE = `PRODUTO DE SAÚDE/EMAGRECIMENTO (${AVISO_META_SAUDE}): em anúncios, NUNCA use comparação de antes e depois, números de kg ou cm perdidos, nem promessa de resultado no corpo, mesmo que exista prova real no perfil. Também NUNCA use texto que provoque autoimagem negativa (o Meta proíbe): a dor sobre corpo, peso ou aparência ("a barriga continua aí", "não consigo emagrecer", "cansada do seu corpo") não vira gancho, ângulo nem copy, mesmo sendo as palavras reais do público; use dores permitidas (cansaço, falta de disposição, rotina corrida). Para prova, use ângulos permitidos: experiência de uso, rotina, como é usar, número de clientes atendidos.`;
 
 // kg/cm com número ("perdi 3 kg", "-5cm", "3 quilos") e a ideia de antes e depois.
 const RE_ACHADOS = [

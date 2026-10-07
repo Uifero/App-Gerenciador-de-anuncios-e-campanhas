@@ -17,6 +17,8 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `otimizacao-anuncio-real.json` | "Plano de otimização" WhatsApp x Site (tarefa `otimizacao_anuncio`, Sonnet 5) | chamada real, 07/10/2026 |
 | `criativos-thermora-antes-depois-real.json` | "Gerar criativos" (tarefa `criativos`, Sonnet 5), Thermora: o mesmo pedido sem (antes) e com (depois) as referências de tráfego/copy/oferta | chamadas reais, 07/10/2026 |
 | `recomendacao-thermora-antes-depois-real.json` | "Analisar e recomendar" (tarefa `recomendacao_anuncio`, Sonnet 5), Thermora sem dados: mesmo pedido, antes e depois das referências | chamadas reais, 07/10/2026 |
+| `criativos-thermora-regra-saude-real.json` | "Gerar criativos" (tarefa `criativos`), Thermora, com a `REGRA_SAUDE` contra autoimagem negativa: nenhum gancho de corpo/peso | chamada real, 07/10/2026 |
+| `otimizacao-thermora-real.json` | "Plano de otimização" (tarefa `otimizacao_anuncio`), Thermora com 1 semana fictícia de WhatsApp x site: usa as referências de tráfego e oferta | chamada real, 07/10/2026 |
 | `recomendacao-moda.json` | Recomendação escrita à mão (teste 60/40 e citações inventadas, para testar a conferência) | sem IA |
 | `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |

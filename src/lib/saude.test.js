@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ehProdutoSaude, detectarProdutoSaude, achadosSaude, AVISO_META_SAUDE } from './saude.js';
+import { ehProdutoSaude, detectarProdutoSaude, achadosSaude, AVISO_META_SAUDE, REGRA_SAUDE } from './saude.js';
 import { linhaNarrativa, narrativaDevolvida } from './narrativas.js';
 
 const emagrecimento = { nicho: 'suplementos', marca: { negocio: 'Cápsulas para emagrecimento', provasSociais: 'Cliente perdeu 3 kg em 2 meses' } };
@@ -30,6 +30,16 @@ describe('produto de saúde/emagrecimento (política do Meta)', () => {
   it('cliente que NÃO é de saúde continua usando as narrativas de prova como antes', () => {
     expect(linhaNarrativa('antes_depois', moda)).toMatchObject({ bloqueada: false, motivo: '' });
     expect(narrativaDevolvida('resultado_depoimento', moda)).toBe('resultado_depoimento');
+  });
+
+  it('regra para a IA: nada de autoimagem negativa, mesmo com a dor nas palavras do público (teste real Thermora, 07/10/2026)', () => {
+    expect(REGRA_SAUDE).toMatch(/NUNCA use texto que provoque autoimagem negativa/);
+    expect(REGRA_SAUDE).toMatch(/mesmo sendo as palavras reais do público/);
+    expect(REGRA_SAUDE).toMatch(/dores permitidas \(cansaço, falta de disposição, rotina corrida\)/);
+  });
+
+  it('o verificador local NÃO bloqueia "barriga" (só kg/cm e antes e depois): evita falso positivo como gel para a barriga', () => {
+    expect(achadosSaude('Gel de massagem para a barriga, uso após o banho')).toEqual([]);
   });
 
   it('acha kg/cm de resultado e antes e depois no texto do criativo', () => {
