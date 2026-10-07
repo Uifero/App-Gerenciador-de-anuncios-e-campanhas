@@ -85,6 +85,8 @@ ${REFERENCIA_COPY}`);
     // o campo "framework" do criativo só aceita a lista do app (senão vira "livre" ao editar)
     expect(REFERENCIA_COPY).toContain(`use só ${FRAMEWORKS.filter(([id]) => id !== 'livre').map(([id]) => id).join(', ')} ou livre`);
     expect(REFERENCIA_COPY).not.toMatch(/\$|compre agora|imperdível/i);
+    // teste real com a Thermora (07/10/2026): "nomear a dor" virou gancho "a barriga continua aí" em suplemento
+    expect(REFERENCIA_COPY).toMatch(/saúde\/emagrecimento: aí dor sobre corpo, peso ou aparência[^;]*nunca vira gancho/);
     expect(REFERENCIA_COPY.length).toBeLessThan(2600); // ~650 tokens
   });
 

@@ -119,7 +119,7 @@ const COPY_HTML = `<details class="card mb-4" data-copy><summary class="cursor-p
   <p class="hint mt-1">Resumo com palavras nossas do Copy Squad (Xquads, licença MIT). A IA usa como UMA referência entre outras ao criar criativos, hooks e nos ajustes de criativo, junto com a Metodologia Vortex. As regras do app vêm antes: tom orgânico, sem linguagem de venda óbvia, termos proibidos e "não inventar dados". Ficaram de fora o drama ao falar da dor e a urgência inventada.</p>
   <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">
     <li><b>Escorregador:</b> cada frase existe para fazer ler a próxima. Para público frio, nada de saudação ou marca abrindo o texto.</li>
-    <li><b>Gancho pela consciência:</b> não sabe do problema = cena ou história, sem o produto; sabe do problema = a dor com as palavras do público; conhece soluções = o mecanismo; conhece o produto = prova real e objeção; pronto para comprar = a oferta ativa.</li>
+    <li><b>Gancho pela consciência:</b> não sabe do problema = cena ou história, sem o produto; sabe do problema = a dor com as palavras do público (em produto de saúde, nunca dor de corpo ou peso: política do Meta); conhece soluções = o mecanismo; conhece o produto = prova real e objeção; pronto para comprar = a oferta ativa.</li>
     <li><b>Variar o gancho:</b> pergunta, "como...", "por que...", novidade, curiosidade, número específico, ordem direta.</li>
     <li><b>Específico e benefício:</b> cena e detalhe concreto em vez de adjetivo; o que muda na vida da pessoa, com a característica como prova.</li>
     <li><b>Credibilidade:</b> a promessa cabe no que o produto entrega e na prova disponível; curiosidade que o texto não cumpre é isca.</li>
