@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { TAREFAS, calcularCusto, paramsDoModelo, validarImagens, blocosComImagens, lerSaidaCli, MAX_IMAGENS, comMetodologia } from './index.js';
 import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
+import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
 
 describe('TAREFAS', () => {
   it('toda tarefa tem modelo e limite de tokens de saída', () => {
@@ -33,6 +34,29 @@ ${METODOLOGIA_VORTEX}`);
     expect(comMetodologia(TAREFAS.hooks, undefined)).toBeUndefined();
     expect(METODOLOGIA_VORTEX).toMatch(/uma referência entre outras/i);
     expect(METODOLOGIA_VORTEX.length).toBeLessThan(1600); // curta: ~400 tokens
+  });
+
+  it('referência de tráfego só nas tarefas de campanha, análise e diagnóstico; vem depois da metodologia', () => {
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.trafego).map(([n]) => n).sort()).toEqual(['campanha', 'diagnostico', 'discussao_campanha', 'insights', 'otimizacao_anuncio', 'recomendacao_anuncio']);
+    expect(comMetodologia(TAREFAS.campanha, 'PERFIL')).toBe(`PERFIL
+
+${METODOLOGIA_VORTEX}
+
+${REFERENCIA_TRAFEGO}`);
+    expect(comMetodologia(TAREFAS.insights, 'PERFIL')).toBe(`PERFIL
+
+${REFERENCIA_TRAFEGO}`);
+    expect(comMetodologia(TAREFAS.insights, undefined)).toBe(REFERENCIA_TRAFEGO);
+    expect(comMetodologia(TAREFAS.criativos, 'PERFIL')).not.toContain(REFERENCIA_TRAFEGO); // criativo e site ficam só com a Vortex
+    expect(comMetodologia(TAREFAS.leitura_resultados, 'PERFIL')).toBe('PERFIL'); // leitura de print só extrai número
+  });
+
+  it('referência de tráfego: curta, opcional e sem benchmark de resultado para a IA citar', () => {
+    expect(REFERENCIA_TRAFEGO).toMatch(/uma referência entre outras/i);
+    expect(REFERENCIA_TRAFEGO).toMatch(/não inventar dados/i);
+    expect(REFERENCIA_TRAFEGO).toMatch(/NÃO médias de mercado/);
+    expect(REFERENCIA_TRAFEGO).not.toMatch(/\$|R\$|ROAS (médio|de \d)|CPM de \d/); // nenhum valor em moeda nem meta de ROAS/CPM
+    expect(REFERENCIA_TRAFEGO.length).toBeLessThan(2400); // ~600 tokens
   });
 
   it('só busca de mercado, leitura de site pela busca e diagnóstico pedem busca web', () => {

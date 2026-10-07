@@ -102,6 +102,18 @@ const METODOLOGIA_HTML = `<details class="card mb-4" data-metodologia><summary c
     <li><b>Regra prática:</b> um conjunto equilibrado cobre topo, meio e fundo.</li></ul>
   <p class="hint mt-2">Na tela de criativo, em "Mais opções", o campo "Narrativa (opcional)" fixa uma delas; em "A IA escolhe", ela decide.</p></details>`;
 
+/** Entrada fixa, só de leitura: resumo da referência de tráfego que a IA usa (server/referencias/trafego.js). */
+const TRAFEGO_HTML = `<details class="card mb-4" data-trafego><summary class="cursor-pointer font-semibold"><i class="fa-solid fa-chart-line mr-1 text-indigo-500"></i> Critérios de tráfego (referência)</summary>
+  <p class="hint mt-1">Resumo com palavras nossas do squad Traffic Masters (Xquads, licença MIT). A IA usa como UMA referência entre outras na estrutura e na discussão de campanha, em Insights, no diagnóstico e em "Analisar e recomendar" / plano de otimização. Os dados do cliente, "não inventar dados", a política do Meta e o perfil de marca vêm antes. Os números são regras de manejo, não médias de mercado.</p>
+  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">
+    <li><b>Leitura de dado:</b> menos de ~7 dias ou poucas conversões é indício, não conclusão. Nos primeiros ~3 dias (aprendizado), não mexer.</li>
+    <li><b>Diagnóstico em cadeia:</b> CTR baixo = gancho ou público; CTR bom e conversão baixa = página, oferta ou destino; conversão boa e CPA alto = CPM, orçamento ou lance; alcance baixo = público estreito ou verba pequena.</li>
+    <li><b>Fadiga:</b> frequência subindo (público frio acima de ~3) com CTR caindo e CPA subindo pede criativo novo, não mais verba.</li>
+    <li><b>Escala:</b> vertical = ~20% a cada 48–72 h no que está estável na meta, voltando um passo se o CPA piorar mais de ~30% por 48 h; horizontal = duplicar o vencedor para públicos novos. Só com rastreamento confiável e criativos de reserva.</li>
+    <li><b>Orçamento:</b> mudar aos poucos; reduzir antes de desligar o que dá lucro; decidir por margem, não só faturamento.</li>
+    <li><b>Classificar:</b> vencedor (escalar), na meta (otimizar), abaixo (corrigir ou pausar), sem volume nem função (desligar).</li>
+    <li><b>Teste e funil:</b> mudar uma coisa por vez no criativo; não pôr toda a verba em remarketing.</li></ul></details>`;
+
 export const view = (el) => montar(el, async (root, recarregar) => {
   const pbs = await db.listar(COL.playbooks);
   root.innerHTML = `${cabecalho('Playbooks', 'Receitas reaproveitáveis por tipo de produto: a sequência de ângulos e hooks que costuma funcionar. Para usar num cliente: escolha o playbook ao cadastrar o cliente, ou dentro dele em "Mais ações" > "Aplicar playbook" — os hooks vão para a aba Hooks e os ângulos aparecem como sugestão ao criar criativos.',
@@ -109,6 +121,7 @@ export const view = (el) => montar(el, async (root, recarregar) => {
      <button class="btn-primary" data-novo title="Escreva um playbook você mesmo"><i class="fa-solid fa-plus"></i> Novo playbook</button>`)}
     <div id="painel"></div>
     ${METODOLOGIA_HTML}
+    ${TRAFEGO_HTML}
     ${pbs.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${pbs.map((p) => `<button data-abrir="${p.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <h3 class="font-semibold leading-tight">${esc(p.nome)}</h3><p class="caption mt-1">${esc(p.tipoProduto)}</p>
       <div class="mt-3 flex flex-wrap gap-1">${tag((p.angulos || []).length + ' ângulos', 'tag-info')}${(p.angulos || []).slice(0, 3).map((a) => tag(a.angulo)).join('')}${p.origemClienteId ? tag('de um cliente', 'tag-ok') : ''}</div>

@@ -8,6 +8,7 @@ import { animarImagem, statusVideo } from './videos.js';
 import { buscarBroll, baixarBroll, statusBroll } from './broll.js';
 import { lerSite, baixarImagemSite } from './leitura-site.js';
 import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
+import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
 import { calcularCusto } from '../src/lib/precos-ia.js';
 import { lerLimite, mensagemLimite } from './limite-ia.js';
 import 'dotenv/config';
@@ -64,6 +65,7 @@ const MODELO_COMPLEXO = process.env.ANTHROPIC_MODEL_COMPLEXO || 'claude-sonnet-5
  * saúde), refino (inventava prazo/número), narracao (falas não cabiam no tempo da cena), faq (inventava garantia de
  * segurança) e leitura_respostas (deixou de ler uma resposta). Na API, o Haiku já roda sem raciocínio.
  * metodologia = acrescenta a referência opcional server/referencias/metodologia-vortex.js ao contexto estável da tarefa.
+ * trafego = acrescenta a referência opcional server/referencias/trafego.js (critérios de gestão de tráfego) ao contexto estável.
  */
 export const TAREFAS = {
   hooks:       { modelo: MODELO_LEVE,     max: 2000 },
@@ -71,15 +73,15 @@ export const TAREFAS = {
   checklist:   { modelo: MODELO_LEVE,     max: 1200, semRaciocinio: true }, // medido: 31 s -> 8 s, mesma avaliação
   imagem:      { modelo: MODELO_LEVE,     max: 1800, semRaciocinio: true }, // "Sugerir prompts": 35 s -> 16 s, prompts equivalentes
   criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', metodologia: true },
-  campanha:    { modelo: MODELO_COMPLEXO, max: 7000,  effort: 'medium', metodologia: true },
-  discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium', metodologia: true }, // chat do rascunho de campanha
+  campanha:    { modelo: MODELO_COMPLEXO, max: 7000,  effort: 'medium', metodologia: true, trafego: true },
+  discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium', metodologia: true, trafego: true }, // chat do rascunho de campanha
   referencias: { modelo: MODELO_COMPLEXO, max: 10000, effort: 'medium', web: true },
   analise:     { modelo: MODELO_COMPLEXO, max: 2500,  effort: 'low' },
   site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low', metodologia: true },
   pacote:      { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'low' },
   playbook:    { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'low' },
-  insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low' },
-  diagnostico: { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', imagens: true, web: true }, // busca web: benchmarks e práticas do nicho
+  insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low', trafego: true },
+  diagnostico: { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', imagens: true, web: true, trafego: true }, // busca web: benchmarks e práticas do nicho
   narracao:    { modelo: MODELO_LEVE,     max: 2500 },
   faq:         { modelo: MODELO_LEVE,     max: 2500 }, // FAQ do site a partir das objeções
   leitura_site: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low' },            // interpreta o texto extraído do site do cliente
@@ -99,13 +101,16 @@ export const TAREFAS = {
   palavras_nicho:   { modelo: MODELO_LEVE, max: 600 },                      // palavras-chave da Biblioteca de Anúncios do nicho (o operador edita)
   pesquisa_nicho:   { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // UMA pesquisa web por análise (nicho + destino + Brasil + ano), com cache de 7 dias no app
   resumo_documento: { modelo: MODELO_COMPLEXO, max: 2500, effort: 'low' },  // documento de referência resumido UMA vez (não é relido a cada análise)
-  recomendacao_anuncio: { modelo: MODELO_COMPLEXO, max: 8000, effort: 'medium', metodologia: true }, // "Analisar e recomendar" (sem busca: usa a pesquisa em cache)
+  recomendacao_anuncio: { modelo: MODELO_COMPLEXO, max: 8000, effort: 'medium', metodologia: true, trafego: true }, // "Analisar e recomendar" (sem busca: usa a pesquisa em cache)
   leitura_resultados: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', imagens: true }, // prints do Gerenciador de Anúncios -> números para revisão (nunca dado pessoal)
-  otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true }, // "Plano de otimização" WhatsApp x Site
+  otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true, trafego: true }, // "Plano de otimização" WhatsApp x Site
 };
 
-/** Contexto estável da tarefa + a referência opcional da metodologia (só nas tarefas com `metodologia: true`). */
-export const comMetodologia = (t, estavel) => (t?.metodologia ? [estavel, METODOLOGIA_VORTEX].filter(Boolean).join('\n\n') : estavel);
+/** Contexto estável da tarefa + as referências opcionais ligadas nela (`metodologia: true`, `trafego: true`). */
+export const comMetodologia = (t, estavel) => {
+  const refs = [t?.metodologia && METODOLOGIA_VORTEX, t?.trafego && REFERENCIA_TRAFEGO].filter(Boolean);
+  return refs.length ? [estavel, ...refs].filter(Boolean).join('\n\n') : estavel;
+};
 
 // ---------- imagens anexadas (só tarefas com `imagens: true`, hoje o diagnóstico) ----------
 export const MAX_IMAGENS = 6;
