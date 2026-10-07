@@ -10,6 +10,7 @@ import { lerSite, baixarImagemSite } from './leitura-site.js';
 import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
 import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
 import { REFERENCIA_COPY } from './referencias/copy.js';
+import { REFERENCIA_OFERTA } from './referencias/oferta.js';
 import { calcularCusto } from '../src/lib/precos-ia.js';
 import { lerLimite, mensagemLimite } from './limite-ia.js';
 import 'dotenv/config';
@@ -68,6 +69,7 @@ const MODELO_COMPLEXO = process.env.ANTHROPIC_MODEL_COMPLEXO || 'claude-sonnet-5
  * metodologia = acrescenta a referência opcional server/referencias/metodologia-vortex.js ao contexto estável da tarefa.
  * trafego = acrescenta a referência opcional server/referencias/trafego.js (critérios de gestão de tráfego) ao contexto estável.
  * copy = acrescenta a referência opcional server/referencias/copy.js (critérios de copy para anúncio) ao contexto estável.
+ * oferta = acrescenta a referência opcional server/referencias/oferta.js (critérios de oferta) ao contexto estável.
  */
 export const TAREFAS = {
   hooks:       { modelo: MODELO_LEVE,     max: 2000, copy: true },
@@ -79,7 +81,7 @@ export const TAREFAS = {
   discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium', metodologia: true, trafego: true }, // chat do rascunho de campanha
   referencias: { modelo: MODELO_COMPLEXO, max: 10000, effort: 'medium', web: true },
   analise:     { modelo: MODELO_COMPLEXO, max: 2500,  effort: 'low' },
-  site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low', metodologia: true },
+  site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low', metodologia: true, oferta: true },
   pacote:      { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'low' },
   playbook:    { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'low' },
   insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low', trafego: true },
@@ -103,14 +105,14 @@ export const TAREFAS = {
   palavras_nicho:   { modelo: MODELO_LEVE, max: 600 },                      // palavras-chave da Biblioteca de Anúncios do nicho (o operador edita)
   pesquisa_nicho:   { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // UMA pesquisa web por análise (nicho + destino + Brasil + ano), com cache de 7 dias no app
   resumo_documento: { modelo: MODELO_COMPLEXO, max: 2500, effort: 'low' },  // documento de referência resumido UMA vez (não é relido a cada análise)
-  recomendacao_anuncio: { modelo: MODELO_COMPLEXO, max: 8000, effort: 'medium', metodologia: true, trafego: true }, // "Analisar e recomendar" (sem busca: usa a pesquisa em cache)
+  recomendacao_anuncio: { modelo: MODELO_COMPLEXO, max: 8000, effort: 'medium', metodologia: true, trafego: true, oferta: true }, // "Analisar e recomendar" (sem busca: usa a pesquisa em cache)
   leitura_resultados: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', imagens: true }, // prints do Gerenciador de Anúncios -> números para revisão (nunca dado pessoal)
-  otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true, trafego: true }, // "Plano de otimização" WhatsApp x Site
+  otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true, trafego: true, oferta: true }, // "Plano de otimização" WhatsApp x Site
 };
 
-/** Contexto estável da tarefa + as referências opcionais ligadas nela (`metodologia`, `trafego`, `copy`), nessa ordem. */
+/** Contexto estável da tarefa + as referências opcionais ligadas nela (`metodologia`, `trafego`, `copy`, `oferta`), nessa ordem. */
 export const comMetodologia = (t, estavel) => {
-  const refs = [t?.metodologia && METODOLOGIA_VORTEX, t?.trafego && REFERENCIA_TRAFEGO, t?.copy && REFERENCIA_COPY].filter(Boolean);
+  const refs = [t?.metodologia && METODOLOGIA_VORTEX, t?.trafego && REFERENCIA_TRAFEGO, t?.copy && REFERENCIA_COPY, t?.oferta && REFERENCIA_OFERTA].filter(Boolean);
   return refs.length ? [estavel, ...refs].filter(Boolean).join('\n\n') : estavel;
 };
 

@@ -4,6 +4,7 @@ import { TAREFAS, calcularCusto, paramsDoModelo, validarImagens, blocosComImagen
 import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
 import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
 import { REFERENCIA_COPY } from './referencias/copy.js';
+import { REFERENCIA_OFERTA } from './referencias/oferta.js';
 import { FRAMEWORKS } from '../src/lib/constantes.js';
 
 describe('TAREFAS', () => {
@@ -29,9 +30,9 @@ describe('TAREFAS', () => {
 
   it('metodologia (referência opcional) só em criativos, campanha e site; nas outras o contexto fica igual', () => {
     expect(Object.entries(TAREFAS).filter(([, t]) => t.metodologia).map(([n]) => n).sort()).toEqual(['campanha', 'criativos', 'discussao_campanha', 'otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
-    expect(comMetodologia(TAREFAS.site, 'PERFIL')).toBe(`PERFIL
+    expect(comMetodologia(TAREFAS.site, 'PERFIL').startsWith(`PERFIL
 
-${METODOLOGIA_VORTEX}`);
+${METODOLOGIA_VORTEX}`)).toBe(true);
     expect(comMetodologia(TAREFAS.checklist, 'PERFIL')).toBe('PERFIL');
     expect(comMetodologia(TAREFAS.checklist, undefined)).toBeUndefined();
     expect(METODOLOGIA_VORTEX).toMatch(/uma referência entre outras/i);
@@ -85,6 +86,32 @@ ${REFERENCIA_COPY}`);
     expect(REFERENCIA_COPY).toContain(`use só ${FRAMEWORKS.filter(([id]) => id !== 'livre').map(([id]) => id).join(', ')} ou livre`);
     expect(REFERENCIA_COPY).not.toMatch(/\$|compre agora|imperdível/i);
     expect(REFERENCIA_COPY.length).toBeLessThan(2600); // ~650 tokens
+  });
+
+  it('referência de oferta só no site, em "Analisar e recomendar" e no plano de otimização; sempre por último', () => {
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.oferta).map(([n]) => n).sort()).toEqual(['otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
+    expect(comMetodologia(TAREFAS.site, 'PERFIL')).toBe(`PERFIL
+
+${METODOLOGIA_VORTEX}
+
+${REFERENCIA_OFERTA}`);
+    expect(comMetodologia(TAREFAS.recomendacao_anuncio, 'PERFIL')).toBe(`PERFIL
+
+${METODOLOGIA_VORTEX}
+
+${REFERENCIA_TRAFEGO}
+
+${REFERENCIA_OFERTA}`);
+    for (const n of ['criativos', 'hooks', 'campanha', 'insights', 'ajuste_site', 'faq']) expect(comMetodologia(TAREFAS[n], 'PERFIL')).not.toContain(REFERENCIA_OFERTA);
+  });
+
+  it('referência de oferta: não cria preço, garantia nem bônus para o público; sugestão só para o gestor', () => {
+    expect(REFERENCIA_OFERTA).toMatch(/uma referência entre outras/i);
+    expect(REFERENCIA_OFERTA).toMatch(/PÚBLICO FINAL[^.]*nunca crie um/);
+    expect(REFERENCIA_OFERTA).toMatch(/GESTOR, pode SUGERIR[^.]*sem número inventado/);
+    expect(REFERENCIA_OFERTA).toMatch(/"de\/por" só com preço cheio real cadastrado/);
+    expect(REFERENCIA_OFERTA).not.toMatch(/\$|valor total|10x|2x/i); // nada de "valor" em dinheiro, âncora nem multiplicador de preço
+    expect(REFERENCIA_OFERTA.length).toBeLessThan(2600); // ~650 tokens
   });
 
   it('só busca de mercado, leitura de site pela busca e diagnóstico pedem busca web', () => {

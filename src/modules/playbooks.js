@@ -125,6 +125,16 @@ const COPY_HTML = `<details class="card mb-4" data-copy><summary class="cursor-p
     <li><b>Credibilidade:</b> a promessa cabe no que o produto entrega e na prova disponível; curiosidade que o texto não cumpre é isca.</li>
     <li><b>Urgência e CTA:</b> urgência só se for real (oferta, prazo ou estoque do perfil); um anúncio, um objetivo, um CTA.</li></ul></details>`;
 
+/** Entrada fixa, só de leitura: resumo da referência de oferta que a IA usa (server/referencias/oferta.js). */
+const OFERTA_HTML = `<details class="card mb-4" data-oferta><summary class="cursor-pointer font-semibold"><i class="fa-solid fa-tags mr-1 text-indigo-500"></i> Critérios de oferta (referência)</summary>
+  <p class="hint mt-1">Resumo com palavras nossas do Hormozi Squad (Xquads, licença MIT). A IA usa como UMA referência entre outras no site, em "Analisar e recomendar" e no plano de otimização. Ficou de fora a parte do método que cria bônus, garantia, preço-âncora e escassez: a IA não inventa preço, prazo, garantia nem número.</p>
+  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">
+    <li><b>Regra de ouro:</b> no texto para o público (site, anúncio), só o que existe no cadastro: preço, garantia, brinde, frete, prazo, troca e prova. Na análise para você, a IA pode sugerir algo novo, como sugestão a combinar com o cliente e sem número inventado.</li>
+    <li><b>Valor percebido:</b> resultado desejado × confiança de que vai conseguir, dividido por tempo até o resultado × esforço. Sobe o valor sem baixar o preço.</li>
+    <li><b>Diagnóstico:</b> atacar primeiro o mais fraco dos quatro. Clique bom e pouca venda costuma ser confiança baixa (prova, garantia, troca pouco visíveis) ou esforço alto (frete, prazo, checkout).</li>
+    <li><b>Objeções:</b> cada objeção do perfil vira uma resposta na oferta ou na página.</li>
+    <li><b>Preço e prazo:</b> justificar pelo resultado, não pelo concorrente; desconto, "de/por", escassez e prazo só se forem reais e estiverem cadastrados.</li></ul></details>`;
+
 export const view = (el) => montar(el, async (root, recarregar) => {
   const pbs = await db.listar(COL.playbooks);
   root.innerHTML = `${cabecalho('Playbooks', 'Receitas reaproveitáveis por tipo de produto: a sequência de ângulos e hooks que costuma funcionar. Para usar num cliente: escolha o playbook ao cadastrar o cliente, ou dentro dele em "Mais ações" > "Aplicar playbook" — os hooks vão para a aba Hooks e os ângulos aparecem como sugestão ao criar criativos.',
@@ -134,6 +144,7 @@ export const view = (el) => montar(el, async (root, recarregar) => {
     ${METODOLOGIA_HTML}
     ${TRAFEGO_HTML}
     ${COPY_HTML}
+    ${OFERTA_HTML}
     ${pbs.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${pbs.map((p) => `<button data-abrir="${p.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <h3 class="font-semibold leading-tight">${esc(p.nome)}</h3><p class="caption mt-1">${esc(p.tipoProduto)}</p>
       <div class="mt-3 flex flex-wrap gap-1">${tag((p.angulos || []).length + ' ângulos', 'tag-info')}${(p.angulos || []).slice(0, 3).map((a) => tag(a.angulo)).join('')}${p.origemClienteId ? tag('de um cliente', 'tag-ok') : ''}</div>
