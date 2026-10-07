@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { TAREFAS, calcularCusto, paramsDoModelo, validarImagens, blocosComImagens, lerSaidaCli, MAX_IMAGENS, comMetodologia } from './index.js';
 import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
 import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
+import { REFERENCIA_COPY } from './referencias/copy.js';
+import { FRAMEWORKS } from '../src/lib/constantes.js';
 
 describe('TAREFAS', () => {
   it('toda tarefa tem modelo e limite de tokens de saída', () => {
@@ -27,11 +29,11 @@ describe('TAREFAS', () => {
 
   it('metodologia (referência opcional) só em criativos, campanha e site; nas outras o contexto fica igual', () => {
     expect(Object.entries(TAREFAS).filter(([, t]) => t.metodologia).map(([n]) => n).sort()).toEqual(['campanha', 'criativos', 'discussao_campanha', 'otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
-    expect(comMetodologia(TAREFAS.criativos, 'PERFIL')).toBe(`PERFIL
+    expect(comMetodologia(TAREFAS.site, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}`);
-    expect(comMetodologia(TAREFAS.hooks, 'PERFIL')).toBe('PERFIL');
-    expect(comMetodologia(TAREFAS.hooks, undefined)).toBeUndefined();
+    expect(comMetodologia(TAREFAS.checklist, 'PERFIL')).toBe('PERFIL');
+    expect(comMetodologia(TAREFAS.checklist, undefined)).toBeUndefined();
     expect(METODOLOGIA_VORTEX).toMatch(/uma referência entre outras/i);
     expect(METODOLOGIA_VORTEX.length).toBeLessThan(1600); // curta: ~400 tokens
   });
@@ -57,6 +59,32 @@ ${REFERENCIA_TRAFEGO}`);
     expect(REFERENCIA_TRAFEGO).toMatch(/NÃO médias de mercado/);
     expect(REFERENCIA_TRAFEGO).not.toMatch(/\$|R\$|ROAS (médio|de \d)|CPM de \d/); // nenhum valor em moeda nem meta de ROAS/CPM
     expect(REFERENCIA_TRAFEGO.length).toBeLessThan(2400); // ~600 tokens
+  });
+
+  it('referência de copy só em criativos, hooks e refino; vem depois da metodologia; site e checklist ficam de fora', () => {
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.copy).map(([n]) => n).sort()).toEqual(['criativos', 'hooks', 'refino']);
+    expect(comMetodologia(TAREFAS.criativos, 'PERFIL')).toBe(`PERFIL
+
+${METODOLOGIA_VORTEX}
+
+${REFERENCIA_COPY}`);
+    expect(comMetodologia(TAREFAS.hooks, 'PERFIL')).toBe(`PERFIL
+
+${REFERENCIA_COPY}`);
+    expect(comMetodologia(TAREFAS.refino, undefined)).toBe(REFERENCIA_COPY);
+    expect(comMetodologia(TAREFAS.site, 'PERFIL')).not.toContain(REFERENCIA_COPY);
+    expect(comMetodologia(TAREFAS.campanha, 'PERFIL')).not.toContain(REFERENCIA_COPY);
+  });
+
+  it('referência de copy: curta, opcional, subordinada às regras críticas e sem urgência fabricada', () => {
+    expect(REFERENCIA_COPY).toMatch(/uma referência entre outras/i);
+    expect(REFERENCIA_COPY).toMatch(/nunca passa por cima das REGRAS CRÍTICAS/);
+    expect(REFERENCIA_COPY).toMatch(/nunca fabricada/);
+    expect(REFERENCIA_COPY).toMatch(/formato de saída, as categorias e os campos pedidos/); // hooks têm categorias fixas
+    // o campo "framework" do criativo só aceita a lista do app (senão vira "livre" ao editar)
+    expect(REFERENCIA_COPY).toContain(`use só ${FRAMEWORKS.filter(([id]) => id !== 'livre').map(([id]) => id).join(', ')} ou livre`);
+    expect(REFERENCIA_COPY).not.toMatch(/\$|compre agora|imperdível/i);
+    expect(REFERENCIA_COPY.length).toBeLessThan(2600); // ~650 tokens
   });
 
   it('só busca de mercado, leitura de site pela busca e diagnóstico pedem busca web', () => {

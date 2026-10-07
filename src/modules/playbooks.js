@@ -114,6 +114,17 @@ const TRAFEGO_HTML = `<details class="card mb-4" data-trafego><summary class="cu
     <li><b>Classificar:</b> vencedor (escalar), na meta (otimizar), abaixo (corrigir ou pausar), sem volume nem função (desligar).</li>
     <li><b>Teste e funil:</b> mudar uma coisa por vez no criativo; não pôr toda a verba em remarketing.</li></ul></details>`;
 
+/** Entrada fixa, só de leitura: resumo da referência de copy que a IA usa (server/referencias/copy.js). */
+const COPY_HTML = `<details class="card mb-4" data-copy><summary class="cursor-pointer font-semibold"><i class="fa-solid fa-pen-nib mr-1 text-indigo-500"></i> Critérios de copy (referência)</summary>
+  <p class="hint mt-1">Resumo com palavras nossas do Copy Squad (Xquads, licença MIT). A IA usa como UMA referência entre outras ao criar criativos, hooks e nos ajustes de criativo, junto com a Metodologia Vortex. As regras do app vêm antes: tom orgânico, sem linguagem de venda óbvia, termos proibidos e "não inventar dados". Ficaram de fora o drama ao falar da dor e a urgência inventada.</p>
+  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">
+    <li><b>Escorregador:</b> cada frase existe para fazer ler a próxima. Para público frio, nada de saudação ou marca abrindo o texto.</li>
+    <li><b>Gancho pela consciência:</b> não sabe do problema = cena ou história, sem o produto; sabe do problema = a dor com as palavras do público; conhece soluções = o mecanismo; conhece o produto = prova real e objeção; pronto para comprar = a oferta ativa.</li>
+    <li><b>Variar o gancho:</b> pergunta, "como...", "por que...", novidade, curiosidade, número específico, ordem direta.</li>
+    <li><b>Específico e benefício:</b> cena e detalhe concreto em vez de adjetivo; o que muda na vida da pessoa, com a característica como prova.</li>
+    <li><b>Credibilidade:</b> a promessa cabe no que o produto entrega e na prova disponível; curiosidade que o texto não cumpre é isca.</li>
+    <li><b>Urgência e CTA:</b> urgência só se for real (oferta, prazo ou estoque do perfil); um anúncio, um objetivo, um CTA.</li></ul></details>`;
+
 export const view = (el) => montar(el, async (root, recarregar) => {
   const pbs = await db.listar(COL.playbooks);
   root.innerHTML = `${cabecalho('Playbooks', 'Receitas reaproveitáveis por tipo de produto: a sequência de ângulos e hooks que costuma funcionar. Para usar num cliente: escolha o playbook ao cadastrar o cliente, ou dentro dele em "Mais ações" > "Aplicar playbook" — os hooks vão para a aba Hooks e os ângulos aparecem como sugestão ao criar criativos.',
@@ -122,6 +133,7 @@ export const view = (el) => montar(el, async (root, recarregar) => {
     <div id="painel"></div>
     ${METODOLOGIA_HTML}
     ${TRAFEGO_HTML}
+    ${COPY_HTML}
     ${pbs.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${pbs.map((p) => `<button data-abrir="${p.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <h3 class="font-semibold leading-tight">${esc(p.nome)}</h3><p class="caption mt-1">${esc(p.tipoProduto)}</p>
       <div class="mt-3 flex flex-wrap gap-1">${tag((p.angulos || []).length + ' ângulos', 'tag-info')}${(p.angulos || []).slice(0, 3).map((a) => tag(a.angulo)).join('')}${p.origemClienteId ? tag('de um cliente', 'tag-ok') : ''}</div>
