@@ -21,3 +21,6 @@ public/ffmpeg/
 
 # Backup real de produção para teste local: contém dados de clientes, nunca entra no Git
 backup-teste/
+
+# Screenshots dos testes de navegador (webapp-testing): só para conferência local, nunca entram no Git
+tests/screenshots/

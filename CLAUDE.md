@@ -21,6 +21,15 @@ Responda em português do Brasil.
 ## Testes com IA real (regra permanente)
 Testes com IA real: no máximo 1 chamada real por função nova ou alterada em cada fase, com o menor max_tokens que valide o formato. Todo o resto usa respostas gravadas (fixtures) ou IA simulada. Nunca repetir chamada real para confirmar algo já confirmado. O resumo final informa quantas chamadas reais foram feitas e o custo estimado. (Chamada real em teste também gasta o limite da assinatura do operador, e isso para o app para os clientes.) Fixtures ficam em `tests/fixtures/ia/`; a IA simulada no navegador intercepta `/api/claude` (ver `tests/fixtures/ia/README.md`).
 
+## Testes no navegador (skill `webapp-testing`, em `.claude/skills/`)
+- Teste de navegador das fases usa `webapp-testing`: app local em modo demo (receita acima), Playwright headless. Não há Python na máquina: escreva o script em Node (`require('playwright')`, devDependency; só o Chromium está baixado, em `%LOCALAPPDATA%\ms-playwright`) seguindo o mesmo padrão da skill (esperar `networkidle`, reconhecer o DOM e depois agir). Script descartável fica no scratchpad.
+- Semear o banco com `context.addInitScript` (`gcc_demo_user` + `gccdb_<coleção>`), só na janela de cima (`window === window.top`), porque as prévias são iframes em sandbox. A aba do cliente só aparece se estiver em `cliente.escopo` (ex.: `site: true`). Use os fixtures de `tests/fixtures/ia/` para conteúdo gerado, sem IA real.
+- Testar em largura de computador (1440×900) e no celular real (390×844, `isMobile`, `hasTouch`); rolar até a tela nova ou alterada e tirar screenshot de cada uma em `tests/screenshots/` (no `.gitignore`). Olhar as imagens antes de dizer que está pronto, e conferir que a página não rola para o lado no celular.
+- A regra de "no máximo 1 chamada real" (acima) continua valendo também aqui.
+
+## Visual (skill `frontend-design`)
+Mudança de tela segue a `frontend-design` dentro do estilo que o app já tem: mesmas classes (`card`, `btn-*`, `caption`, `hint`), o tema escuro (botão da lua) e o layout atual. Nada de redesenho, paleta ou fonte nova sem pedido.
+
 ## Armadilhas
 - Vários arquivos são CRLF; scripts de patch devem normalizar `\r\n`. Heredoc do Bash quebra com aspas: escreva o script com Write.
 - Aba de automação do Chrome fica oculta: sem screenshot confiável, timers lentos (espere com `computer wait`, cheque em chamadas curtas).
