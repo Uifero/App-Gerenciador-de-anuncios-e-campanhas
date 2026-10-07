@@ -156,6 +156,11 @@ aoMudarUsuario((u) => {
   if (!u) { telaLogin(); return; }
   layout(); rotear();
 });
+// Ícones Font Awesome são decorativos em todo o app (painel e links públicos): o nome vem do texto do botão ou do
+// aria-label dele. Um observador só, em vez de aria-hidden em cada um dos centenas de <i> dos módulos.
+const esconderIcones = (n) => { if (n.nodeType !== 1) return; if (n.matches('i[class*="fa-"]')) n.setAttribute('aria-hidden', 'true'); else n.querySelectorAll('i[class*="fa-"]:not([aria-hidden])').forEach((i) => i.setAttribute('aria-hidden', 'true')); };
+esconderIcones(document.body);
+new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach(esconderIcones))).observe(document.body, { childList: true, subtree: true });
 // Texto não salvo: ao trocar de tela, pergunta antes (confirmação nativa). Se a pessoa ficar, a barra de endereço volta
 // para a tela atual sem recarregar nada (replaceState não dispara outro hashchange).
 ligarSalvamento();

@@ -13,8 +13,9 @@ import { tokenAtual } from '../core/auth.js';
 import { db, COL } from '../core/storage.js';
 import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
-  FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
+  FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, desenharGuiaZona, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
+import { foraDaZona, nomeFormato, zonaSegura } from '../lib/formatos-instagram.js';
 import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo, mostrarResultado, confirmar } from '../core/ui.js';
 import { CENAS_UNBOXING } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
@@ -48,7 +49,7 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
   const pref = lerPref(cliente.id);
   const est = {
     midias: [], logo: null, musica: null, cenas: extrairCenas(criativo), cor: pref.cor || '#4f46e5', corTexto: pref.corTexto || '#ffffff',
-    template: 'destaque', formato: '1080x1350', formatoVideo: '1080x1920', urlVideo: null, ctrl: null,
+    template: 'destaque', formato: '1080x1350', guiaZona: true, formatoVideo: '1080x1920', urlVideo: null, ctrl: null,
   };
   const fmtVideo = formatoDeVideo();
   const m = modal(`Gerar material — ${criativo.nome}`, `<div id="est"></div>`, {
@@ -124,7 +125,9 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
       <div class="sm:col-span-2"><label class="label">Texto principal (hook)</label><input class="input" data-hook value="${esc(criativo.hook)}"></div>
       <div class="sm:col-span-2"><label class="label">Botão / CTA</label><input class="input" data-cta value="${esc(criativo.cta)}"></div>
     </div>
-    <div class="mt-3 flex justify-center rounded-lg bg-slate-100 p-2"><canvas data-previa style="max-width:100%;max-height:420px" class="rounded"></canvas></div>
+    <div class="mt-3 flex flex-wrap items-center gap-2"><label class="flex min-h-[44px] items-center gap-2 text-sm"><input type="checkbox" data-guia-zona checked> Mostrar a zona segura do Instagram <span class="hint">(só na tela; não vai para o arquivo)</span></label></div>
+    <p class="mt-1 hidden rounded bg-amber-50 p-2 text-sm text-amber-800" role="status" data-aviso-zona></p>
+    <div class="mt-2 flex justify-center rounded-lg bg-slate-100 p-2"><canvas data-previa style="max-width:100%;max-height:420px" class="rounded"></canvas></div>
     <div class="mt-3 flex flex-wrap gap-2"><button class="btn-primary btn-sm" data-baixar-foto><i class="fa-solid fa-download"></i> Baixar este formato</button>
       <button class="btn-ghost btn-sm" data-baixar-todas><i class="fa-solid fa-file-zipper"></i> Baixar os 3 formatos</button>
       <button class="btn-ghost btn-sm" data-baixar-por-foto title="Uma peça para cada foto enviada, no formato escolhido (ótimo para testar várias fotos ou montar carrossel)"><i class="fa-solid fa-images"></i> Uma peça para cada foto</button></div>
@@ -180,14 +183,29 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
     $('[data-aviso-fotos]', raiz).textContent = est.template === 'colagem' ? (n < 2 ? 'A colagem precisa de 2 a 4 fotos (você enviou ' + n + ').' : `Colagem com as ${Math.min(4, n)} primeiras fotos.`)
       : n > 1 ? `Você enviou ${n} fotos: este template usa só a escolhida em "Foto de fundo". Para usar várias na mesma peça, escolha "Colagem"; para uma peça por foto, use "Uma peça para cada foto".` : '';
     const [w, h] = dims(est.formato); canvas.width = w; canvas.height = h;
-    desenharPeca(canvas.getContext('2d'), w, h, cfgPeca());
+    const ctx = canvas.getContext('2d'), usadas = desenharPeca(ctx, w, h, cfgPeca());
+    if (est.guiaZona) desenharGuiaZona(ctx, w, h);
+    avisarZona(usadas, w, h);
+  };
+  // Texto, CTA ou logo fora da zona segura: a interface do Instagram cobre essa parte no celular.
+  const LIMITE_PALAVRAS_TELA = 12;
+  const NOMES_ZONA = { hook: 'o texto principal', cta: 'o botão/CTA', logo: 'o logo' };
+  const avisarZona = (usadas, w, h) => {
+    const fora = foraDaZona(usadas, w, h), aviso = $('[data-aviso-zona]', raiz), z = zonaSegura(w, h);
+    const palavras = $('[data-hook]', raiz).value.trim().split(/\s+/).filter(Boolean).length;
+    const msgs = [
+      fora.length && `<i class="fa-solid fa-triangle-exclamation"></i> Fora da zona segura: <b>${fora.map((n) => NOMES_ZONA[n] || n).join(', ')}</b>. No celular, a interface do Instagram cobre ${z.topo}px em cima e ${z.base}px embaixo neste formato. Encurte o texto ou troque o template.`,
+      palavras > LIMITE_PALAVRAS_TELA && `<i class="fa-solid fa-mobile-screen"></i> O texto principal tem ${palavras} palavras: no celular a letra fica pequena. Poucas palavras por tela leem melhor (até ${LIMITE_PALAVRAS_TELA}); o resto pode ir na legenda do post.`,
+    ].filter(Boolean);
+    aviso.classList.toggle('hidden', !msgs.length);
+    aviso.innerHTML = msgs.join('<br>');
   };
   let agendado = 0;
   const agendarPrevia = () => { cancelAnimationFrame(agendado); agendado = requestAnimationFrame(previa); };
 
   const listarMidias = () => {
     $('[data-lista-midias]', raiz).innerHTML = est.midias.map((x, i) => `<div class="relative h-20 w-20 overflow-hidden rounded-lg border bg-slate-100">
-      ${x.tipo === 'imagem' ? `<img src="${esc(x.url)}" class="h-full w-full object-cover" alt="">` : `<button data-ver-midia="${i}" class="flex h-full w-full items-center justify-center bg-slate-200 text-slate-600" title="Assistir e anotar o segundo do corte"><i class="fa-solid fa-circle-play text-2xl"></i></button>`}
+      ${x.tipo === 'imagem' ? `<img src="${esc(x.url)}" class="h-full w-full object-cover" alt="">` : `<button data-ver-midia="${i}" class="flex h-full w-full items-center justify-center bg-slate-200 text-slate-600" title="Assistir e anotar o segundo do corte" aria-label="Assistir e anotar o segundo do corte"><i class="fa-solid fa-circle-play text-2xl"></i></button>`}
       <button data-rm-midia="${i}" class="absolute right-0 top-0 bg-black/60 px-1.5 text-xs text-white" title="Excluir desta sessão">×</button></div>`).join('')
       || '<p class="hint">Nenhuma foto ou vídeo ainda. Sem material, o app usa um fundo de cor (só texto).</p>';
     const rotulo = $('[data-etapa="materiais"] [data-upload-rotulo]', raiz);
@@ -384,6 +402,7 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
   on(raiz, 'input', '[data-cor-texto]', (i) => { est.corTexto = i.value; gravarPref(cliente.id, { cor: est.cor, corTexto: est.corTexto }); agendarPrevia(); });
   on(raiz, 'change', '[data-template]', (s) => { est.template = s.value; agendarPrevia(); });
   on(raiz, 'change', '[data-formato]', (s) => { est.formato = s.value; agendarPrevia(); });
+  on(raiz, 'change', '[data-guia-zona]', (i) => { est.guiaZona = i.checked; agendarPrevia(); });
   on(raiz, 'change', '[data-fundo]', agendarPrevia);
   on(raiz, 'input', '[data-hook]', agendarPrevia);
   on(raiz, 'input', '[data-cta]', agendarPrevia);
@@ -395,16 +414,16 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
     desenharPeca(c.getContext('2d'), w, h, { ...cfgPeca(), ...extra });
     return canvasParaPng(c);
   };
-  on(raiz, 'click', '[data-baixar-foto]', (b) => ocupado(b, async () => { baixar(await pngDe(est.formato), `${nomeArquivo(criativo.nome)}-${est.formato}.png`); toast('Foto baixada (pasta Downloads). Próximo passo: suba no Gerenciador de Anúncios, ou anexe como peça final no criativo (Mais opções > Peça final).'); }));
+  on(raiz, 'click', '[data-baixar-foto]', (b) => ocupado(b, async () => { baixar(await pngDe(est.formato), `${nomeArquivo(criativo.nome)}-${nomeFormato(est.formato)}.png`); toast('Foto baixada (pasta Downloads). Próximo passo: suba no Gerenciador de Anúncios, ou anexe como peça final no criativo (Mais opções > Peça final).'); }));
   on(raiz, 'click', '[data-baixar-todas]', (b) => ocupado(b, async () => {
-    for (const [f] of FORMATOS_IMAGEM) { baixar(await pngDe(f), `${nomeArquivo(criativo.nome)}-${f}.png`); await new Promise((r) => setTimeout(r, 400)); }
+    for (const [f] of FORMATOS_IMAGEM) { baixar(await pngDe(f), `${nomeArquivo(criativo.nome)}-${nomeFormato(f)}.png`); await new Promise((r) => setTimeout(r, 400)); }
     toast('3 fotos baixadas. Se o navegador pedir, permita downloads múltiplos.');
   }));
 
   on(raiz, 'click', '[data-baixar-por-foto]', (b) => ocupado(b, async () => {
     const lista = fotos();
     if (!lista.length) throw new Error('Envie pelo menos uma foto em "Materiais".');
-    for (const [i, f] of lista.entries()) { baixar(await pngDe(est.formato, { midia: f }), `${nomeArquivo(criativo.nome)}-${est.formato}-foto${i + 1}.png`); await new Promise((r) => setTimeout(r, 400)); }
+    for (const [i, f] of lista.entries()) { baixar(await pngDe(est.formato, { midia: f }), `${nomeArquivo(criativo.nome)}-${nomeFormato(est.formato)}-foto${i + 1}.png`); await new Promise((r) => setTimeout(r, 400)); }
     toast(`${lista.length} peça(s) baixada(s). Se o navegador pedir, permita downloads múltiplos.`);
   }));
 
@@ -589,7 +608,7 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
         });
         if (est.urlVideo) URL.revokeObjectURL(est.urlVideo);
         est.urlVideo = URL.createObjectURL(r.blob);
-        const nome = `${nomeArquivo(criativo.nome)}-${est.formatoVideo}.${r.ext}`;
+        const nome = `${nomeArquivo(criativo.nome)}-${nomeFormato(est.formatoVideo, 'video')}.${r.ext}`;
         $('[data-resultado]', raiz).innerHTML = `<video src="${esc(est.urlVideo)}" controls playsinline class="mx-auto max-h-[420px] rounded-lg bg-black"></video>
           <div class="mt-2 flex flex-wrap items-center gap-2"><button class="btn-primary btn-sm" data-baixar-video><i class="fa-solid fa-download"></i> Baixar ${esc(r.ext.toUpperCase())} (${r.duracao.toFixed(0)} s)</button></div>
           ${r.ext === 'webm' ? '<p class="mt-2 text-sm text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> Este navegador só gravou em WebM. O Meta Ads e o TikTok pedem MP4: atualize o Chrome/Edge ou converta o arquivo antes de subir.</p>' : ''}`;

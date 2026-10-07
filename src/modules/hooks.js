@@ -30,11 +30,11 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       <div class="mt-2 flex flex-wrap gap-1">${h.angulo ? tag('ângulo: ' + h.angulo, 'tag-info') : tag(nomeCat(h.categoria), 'tag-info')}${tag(h.clienteId === 'generico' ? 'genérico' : 'de ' + (h.clienteNome || 'cliente'))}${tag(estrelas(h.nota))}</div>
       <p class="hint mt-2">${dataBR(h.criadoEm)}</p>
       <div class="mt-2 flex flex-wrap gap-1">
-        <button class="btn-ghost btn-sm" data-copiar="${h.id}" title="Copiar o texto"><i class="fa-solid fa-copy"></i></button>
+        <button class="btn-ghost btn-sm" data-copiar="${h.id}" title="Copiar o texto" aria-label="Copiar o texto"><i class="fa-solid fa-copy"></i></button>
         <select class="input !w-auto !py-1 text-xs" data-nota="${h.id}" title="Nota de performance"><option value="">Nota</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${h.nota === n ? 'selected' : ''}>${n}★</option>`).join('')}</select>
         ${h.clienteId !== 'generico' && h.clienteId === cliente.id ? `<button class="btn-ghost btn-sm" data-generico="${h.id}" title="Deixa este hook disponível para todos os clientes">Tornar genérico</button>` : ''}
         ${h.clienteId !== cliente.id ? `<button class="btn-ghost btn-sm" data-usar="${h.id}" title="Copia este hook para a biblioteca deste cliente">Usar aqui</button>` : ''}
-        <button class="btn-danger btn-sm" data-apagar="${h.id}" title="Apagar"><i class="fa-solid fa-trash"></i></button></div></div>`).join('')}</div>`;
+        <button class="btn-danger btn-sm" data-apagar="${h.id}" title="Apagar" aria-label="Apagar"><i class="fa-solid fa-trash"></i></button></div></div>`).join('')}</div>`;
   };
 
   root.innerHTML = `${cabecalho('Hooks', 'Hook é a primeira frase do anúncio: a que faz a pessoa parar de rolar a tela. Guarde aqui os bons, dê nota depois de ver o resultado e reaproveite entre clientes.',

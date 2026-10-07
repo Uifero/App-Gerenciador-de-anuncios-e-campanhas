@@ -413,7 +413,7 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
         return `<div class="rounded-lg border border-slate-200 p-2 text-sm"><div class="flex flex-wrap items-center justify-between gap-2">
           <span><b>${esc(cr.nome)}</b> ${cr.emUsoDesde ? tag('início ' + dataBR(k.inicio || cr.emUsoDesde), 'tag-ok') : tag('ainda não subiu')} ${fadiga ? tag(`fadiga · ${dias} dias`, 'tag-bad') : ''}</span>
           <span class="flex gap-1">${cr.status !== 'em_uso' ? `<button class="btn-primary btn-sm" data-uso="${cr.id}" title="Registra a data de início e passa a contar a fadiga">Marcar em uso</button>` : `<button class="btn-ghost btn-sm" data-pausar="${cr.id}">Pausar</button>`}
-          <button class="btn-danger btn-sm" data-tirar="${cr.id}" title="Remover da campanha"><i class="fa-solid fa-xmark"></i></button></span></div>
+          <button class="btn-danger btn-sm" data-tirar="${cr.id}" title="Remover da campanha" aria-label="Remover da campanha"><i class="fa-solid fa-xmark"></i></button></span></div>
           ${motivo ? `<p class="hint mt-1"><i class="fa-solid fa-chart-simple"></i> Escolhido pela IA: ${esc(motivo)}</p>` : ''}</div>`;
       }).join('')}</div>` : '<p class="hint">Nenhum criativo vinculado ainda.</p>'}
       ${disponiveis.length ? `<div class="mt-2 flex gap-2"><select class="input" data-add>${'<option value="">Adicionar criativo aprovado…</option>' + disponiveis.map((x) => `<option value="${x.id}">${esc(x.nome)}</option>`).join('')}</select></div>`

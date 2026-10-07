@@ -135,7 +135,7 @@ export async function viewPublicaSite(app, token, doc) {
   // Personalizado: o site de verdade. Pacote com prévia (links novos): a loja aproximada. Pacote antigo: só os textos.
   const corpo = doc.modo === 'custom'
     ? `<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[75vh] w-full rounded-lg border border-slate-200 bg-white" data-site-previa></iframe>`
-    : doc.previa ? `<div data-site-previa>${previaLojaHtml()}</div>`
+    : doc.previa ? `<div data-site-previa>${previaLojaHtml({ soNoComputador: true })}</div>`
     : `<pre class="max-h-[75vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-3 text-sm" data-site-previa>${esc(doc.texto || '')}</pre>`;
 
   const blocoResposta = () => {
@@ -148,14 +148,14 @@ export async function viewPublicaSite(app, token, doc) {
       return `<div class="rounded-lg p-3 text-sm ${r.status === 'aprovado' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}" data-resposta-dada>
         ${r.status === 'aprovado' ? '<b><i class="fa-solid fa-circle-check"></i> Você aprovou este site.</b>' : '<b><i class="fa-solid fa-pen"></i> Você pediu ajuste.</b>'}
         ${secao ? `<p class="mt-1"><b>Seção:</b> ${esc(secao)}</p>` : ''}${texto ? `<p class="mt-1 whitespace-pre-wrap">${esc(texto)}</p>` : ''}
-        <button class="btn-ghost btn-sm mt-2" data-alterar>Alterar resposta</button></div>`;
+        <button class="btn-ghost btn-sm alvo-toque mt-2" data-alterar>Alterar resposta</button></div>`;
     }
     return `<label class="label" for="secao">Seção <span class="font-normal text-slate-500">(ao pedir ajuste)</span></label>
       <select id="secao" class="input" data-secao>${SECOES_SITE.map((s) => `<option>${esc(s)}</option>`).join('')}</select>
       <label class="label mt-2" for="coment">Comentário <span class="font-normal text-slate-500">(opcional ao aprovar; explique o ajuste ao pedir)</span></label>
       <textarea id="coment" class="input" rows="3" maxlength="900" data-comentario></textarea><p class="hint" data-erro role="alert"></p>
-      <div class="mt-2 flex flex-wrap gap-2"><button class="btn-primary" data-responder="aprovado"><i class="fa-solid fa-check"></i> Aprovar</button>
-        <button class="btn-ghost" data-responder="ajuste"><i class="fa-solid fa-pen"></i> Pedir ajuste</button></div>`;
+      <div class="mt-2 flex flex-wrap gap-2"><button class="btn-primary alvo-toque" data-responder="aprovado"><i class="fa-solid fa-check"></i> Aprovar</button>
+        <button class="btn-ghost alvo-toque" data-responder="ajuste"><i class="fa-solid fa-pen"></i> Pedir ajuste</button></div>`;
   };
 
   app.innerHTML = `<div class="mx-auto max-w-5xl p-4 sm:p-6">

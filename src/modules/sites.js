@@ -450,14 +450,14 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     alvo.innerHTML = `${tarefasT}<div class="card border-violet-200" data-ancora="gerar">
         <div class="flex flex-wrap items-center justify-between gap-2"><div><h3 class="font-semibold">${gerado ? 'Site gerado' : 'Gerar o site'}</h3>
           <p class="caption">${plat ? `${custom ? 'Site personalizado' : `Pacote para ${esc(nomePlat(site.plataforma))}${nomeTema(site) ? ` · tema ${esc(nomeTema(site))}` : ''}`}. A IA escreve banner, história, FAQ e textos com tudo dos passos 1 a 3. Escolhas feitas à mão (fotos, banner, seções, ajustes) nunca são desfeitas.` : 'Escolha a plataforma no passo 3 antes de gerar.'}</p></div>
-          <button type="button" class="btn-ia" data-gerar-site ${plat ? '' : 'disabled'}><i class="fa-solid fa-wand-magic-sparkles"></i> ${gerado ? 'Gerar site de novo' : 'Gerar site'}</button></div>
+          <button type="button" class="btn-ia alvo-toque" data-gerar-site ${plat ? '' : 'disabled'}><i class="fa-solid fa-wand-magic-sparkles"></i> ${gerado ? 'Gerar site de novo' : 'Gerar site'}</button></div>
         ${!plat ? `<a class="btn-ghost btn-sm mt-2" href="${rotaDoPasso(cliente.id, 3)}">Ir para o passo 3</a>` : ''}
         ${dif.length ? `<div class="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-divergencia><p><b><i class="fa-solid fa-code-compare mr-1"></i> O texto do site personalizado está diferente do pacote em: ${esc(dif.join(', '))}.</b> Nada é copiado sozinho.</p>
           <div class="mt-2 flex flex-wrap gap-2"><button class="${custom ? 'btn-primary' : 'btn-ghost'} btn-sm" data-sincronizar-modos><i class="fa-solid fa-arrows-rotate"></i> Levar o texto do site personalizado para o pacote</button>
           <button class="${custom ? 'btn-ghost' : 'btn-primary'} btn-sm" data-sincronizar-inverso><i class="fa-solid fa-arrows-rotate"></i> Levar o texto do pacote para o site personalizado</button></div></div>` : ''}
         ${gerado ? `<div class="mt-4" data-area-resultado>
-          <div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm" data-mostrar-previa-loja><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button>${custom ? '<button type="button" class="btn-ghost btn-sm" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button>' : ''}</div>
-          <div class="mt-2" data-area-previa-loja>${custom ? '<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe>' : previaLojaHtml({ telaCheia: true })}</div>
+          <div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm" data-mostrar-previa-loja aria-expanded="true" aria-controls="area-previa-loja"><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button>${custom ? '<button type="button" class="btn-ghost btn-sm" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button>' : ''}</div>
+          <div class="mt-2" id="area-previa-loja" data-area-previa-loja>${custom ? '<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe>' : previaLojaHtml({ telaCheia: true })}</div>
           ${ajustesRapidosHtml()}
           ${resultadoFotosTextoHtml(site.fotosTexto)}${conferenciaHtml(site)}</div>` : ''}</div>
       <details class="card mt-4" data-conteudo-manual ${!gerado && plat ? '' : ''}><summary class="cursor-pointer font-semibold">Editar os textos à mão (sem IA)</summary>
@@ -485,7 +485,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     on(alvo, 'click', '[data-corrigir-faltou]', (b) => ocupado(b, () => corrigirFaltou()));
     on(alvo, 'click', '[data-conferir-de-novo]', (b) => ocupado(b, async () => { await conferirDoSite(); recarregar(); mostrarResultado('[data-conferencia]', 'Conferência refeita.'); }));
     on(alvo, 'click', '[data-ver-plano]', (b) => abrirPlanoDaVersao(site, b.dataset.verPlano, site.conferencia?.versao || null));
-    on(alvo, 'click', '[data-mostrar-previa-loja]', (b) => { const a = $('[data-area-previa-loja]', alvo); a.classList.toggle('hidden'); b.innerHTML = a.classList.contains('hidden') ? '<i class="fa-solid fa-eye"></i> Ver prévia' : '<i class="fa-solid fa-eye-slash"></i> Esconder prévia'; });
+    on(alvo, 'click', '[data-mostrar-previa-loja]', (b) => { const a = $('[data-area-previa-loja]', alvo); a.classList.toggle('hidden'); b.setAttribute('aria-expanded', String(!a.classList.contains('hidden'))); b.innerHTML = a.classList.contains('hidden') ? '<i class="fa-solid fa-eye"></i> Ver prévia' : '<i class="fa-solid fa-eye-slash"></i> Esconder prévia'; });
     on(alvo, 'click', '[data-preview]', () => abrirNovaAba());
     if (plat) ligarFormularioConteudo(c, cfg);
     on(alvo, 'click', '[data-salvar-provas-site]', (b) => ocupado(b, async () => {
@@ -565,26 +565,26 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   // ---------- "Conteúdo da loja" (o caminho sem IA) ----------
   function formularioConteudoHtml(c, cfg) {
     return `<form id="fc" class="mt-3 space-y-3"><p class="caption">Preencha à mão e clique em "Salvar conteúdo". "Gerar site" (acima) escreve estes campos com a IA. Depoimentos: os reais (provas em texto, prints, criativos) entram sozinhos; sem nenhuma prova, a IA escreve modelos marcados "[MODELO – substituir]".</p>
-      <div><label class="label">Título do banner (hero)</label><input class="input" name="heroTitulo" value="${esc(c.heroTitulo)}"></div>
-      <div><label class="label">Subtítulo</label><input class="input" name="heroSubtitulo" value="${esc(c.heroSubtitulo)}"></div>
-      <div><label class="label">Texto do botão do banner</label><input class="input" name="heroCta" value="${esc(c.heroCta)}"></div>
-      <div><label class="label">História da marca</label><textarea class="input" rows="4" name="storytelling">${esc(c.storytelling)}</textarea></div>
+      <div><label class="label" for="fc-heroTitulo">Título do banner (hero)</label><input id="fc-heroTitulo" class="input" name="heroTitulo" value="${esc(c.heroTitulo)}"></div>
+      <div><label class="label" for="fc-heroSubtitulo">Subtítulo</label><input id="fc-heroSubtitulo" class="input" name="heroSubtitulo" value="${esc(c.heroSubtitulo)}"></div>
+      <div><label class="label" for="fc-heroCta">Texto do botão do banner</label><input id="fc-heroCta" class="input" name="heroCta" value="${esc(c.heroCta)}"></div>
+      <div><label class="label" for="fc-storytelling">História da marca</label><textarea id="fc-storytelling" class="input" rows="4" name="storytelling">${esc(c.storytelling)}</textarea></div>
       <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções</summary><div class="mt-3 space-y-3">
-        ${custom ? `<div class="grid grid-cols-2 gap-3"><div><label class="label">Cor principal</label><input type="color" class="h-10 w-full rounded" name="corPrimaria" value="${esc(cfg.corPrimaria || '#4f46e5')}"></div>
-          <div><label class="label">Cor de fundo</label><input type="color" class="h-10 w-full rounded" name="corFundo" value="${esc(cfg.corFundo || '#ffffff')}"></div></div>
-          <div><label class="label">WhatsApp (com DDD)</label><input class="input" name="whatsapp" value="${esc(cfg.whatsapp)}" placeholder="5511999999999"></div>` : ''}
-        <div><label class="label">Depoimentos escritos (um por linha: Nome | texto)</label><textarea class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => !depoimentoGerido(d) && d.origem !== 'prova_texto').map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
+        ${custom ? `<div class="grid grid-cols-2 gap-3"><div><label class="label" for="fc-corPrimaria">Cor principal</label><input id="fc-corPrimaria" type="color" class="h-10 w-full rounded" name="corPrimaria" value="${esc(cfg.corPrimaria || '#4f46e5')}"></div>
+          <div><label class="label" for="fc-corFundo">Cor de fundo</label><input id="fc-corFundo" type="color" class="h-10 w-full rounded" name="corFundo" value="${esc(cfg.corFundo || '#ffffff')}"></div></div>
+          <div><label class="label" for="fc-whatsapp">WhatsApp (com DDD)</label><input id="fc-whatsapp" class="input" name="whatsapp" value="${esc(cfg.whatsapp)}" placeholder="5511999999999"></div>` : ''}
+        <div><label class="label" for="fc-depoimentos">Depoimentos escritos (um por linha: Nome | texto)</label><textarea id="fc-depoimentos" class="input" rows="3" name="depoimentos" placeholder="Ana | Chegou rápido e serviu certinho">${esc((c.depoimentos || []).filter((d) => !depoimentoGerido(d) && d.origem !== 'prova_texto').map((d) => `${d.nome} | ${d.texto}`).join('\n'))}</textarea>
           <p class="hint">Use depoimentos reais. Os que começam com "[MODELO" foram escritos pela IA só porque ainda não havia prova social: troque por reais. As provas em texto do perfil de marca, os prints e os criativos não aparecem aqui: são lidos da fonte.</p></div>
-        ${custom ? `<div><label class="label">Perguntas frequentes (uma por linha: pergunta | resposta)</label><textarea class="input" rows="4" name="faq" placeholder="E se não servir? | A troca é grátis em até 30 dias.">${esc(faqParaTexto(c.faq || []))}</textarea>
+        ${custom ? `<div><label class="label" for="fc-faq">Perguntas frequentes (uma por linha: pergunta | resposta)</label><textarea id="fc-faq" class="input" rows="4" name="faq" placeholder="E se não servir? | A troca é grátis em até 30 dias.">${esc(faqParaTexto(c.faq || []))}</textarea>
           <p class="hint">Pergunta sem resposta não aparece. ${objecoesDe(cliente).length ? `Base: as ${objecoesDe(cliente).length} objeção(ões) do perfil de marca.` : 'Sem objeções no perfil de marca: com o campo vazio, a seção não aparece.'}</p>
           ${objecoesDe(cliente).length ? `<div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ia btn-sm" data-faq-ia title="Só a FAQ: não mexe no resto do conteúdo"><i class="fa-solid fa-wand-magic-sparkles"></i> Escrever só a FAQ com IA</button>
             <button type="button" class="btn-ghost btn-sm" data-faq-manual title="Coloca as objeções como perguntas; você escreve as respostas">Montar perguntas das objeções (sem IA)</button></div>` : ''}</div>
-        <div><label class="label">Formas de pagamento no selo "Compra segura"</label><div class="flex flex-wrap gap-3 text-sm">${FORMAS_PAGAMENTO.map(([k, t]) => `<label class="flex items-center gap-1"><input type="checkbox" name="pag_${k}" ${(cfg.pagamentos || PAGAMENTOS_PADRAO).includes(k) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
-          <p class="hint">Marque só o que o checkout do cliente aceita de verdade.</p></div>` : ''}
-        <div><label class="label">Newsletter — título</label><input class="input" name="newsletterTitulo" value="${esc(c.newsletterTitulo)}"></div>
-        <div><label class="label">Política de trocas</label><textarea class="input" rows="2" name="trocas">${esc(c.politicas?.trocas)}</textarea></div>
-        <div><label class="label">Política de envio</label><textarea class="input" rows="2" name="envio">${esc(c.politicas?.envio)}</textarea></div>
-        <div><label class="label">Política de privacidade</label><textarea class="input" rows="2" name="privacidade">${esc(c.politicas?.privacidade)}</textarea></div>
+        <fieldset><legend class="label">Formas de pagamento no selo "Compra segura"</legend><div class="flex flex-wrap gap-3 text-sm">${FORMAS_PAGAMENTO.map(([k, t]) => `<label class="flex items-center gap-1"><input type="checkbox" name="pag_${k}" ${(cfg.pagamentos || PAGAMENTOS_PADRAO).includes(k) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
+          <p class="hint">Marque só o que o checkout do cliente aceita de verdade.</p></fieldset>` : ''}
+        <div><label class="label" for="fc-newsletterTitulo">Newsletter — título</label><input id="fc-newsletterTitulo" class="input" name="newsletterTitulo" value="${esc(c.newsletterTitulo)}"></div>
+        <div><label class="label" for="fc-trocas">Política de trocas</label><textarea id="fc-trocas" class="input" rows="2" name="trocas">${esc(c.politicas?.trocas)}</textarea></div>
+        <div><label class="label" for="fc-envio">Política de envio</label><textarea id="fc-envio" class="input" rows="2" name="envio">${esc(c.politicas?.envio)}</textarea></div>
+        <div><label class="label" for="fc-privacidade">Política de privacidade</label><textarea id="fc-privacidade" class="input" rows="2" name="privacidade">${esc(c.politicas?.privacidade)}</textarea></div>
       </div></details>
       <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar conteúdo</button></form>`;
   }

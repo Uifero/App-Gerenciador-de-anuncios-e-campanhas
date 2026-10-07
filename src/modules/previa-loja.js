@@ -4,12 +4,15 @@
 import { LEGENDA_PREVIA_PACOTE } from '../lib/pacote-loja.js';
 import { $, $$, on, modal } from '../core/ui.js';
 
-/** `telaCheia` = botão "Abrir em tela cheia" (no painel; a página pública já é a tela do cliente). */
-export const previaLojaHtml = ({ telaCheia = false } = {}) => `<div data-previa-loja>
-  <div class="mb-2 flex flex-wrap items-center gap-2"><span class="text-sm font-medium">Ver como:</span>
-    <button type="button" class="btn-primary btn-sm" data-largura="desktop"><i class="fa-solid fa-desktop"></i> Computador</button>
-    <button type="button" class="btn-ghost btn-sm" data-largura="mobile"><i class="fa-solid fa-mobile-screen"></i> Celular</button>
-    ${telaCheia ? '<button type="button" class="btn-ghost btn-sm" data-tela-cheia title="A prévia ocupa a tela inteira; no celular, fica na largura real do aparelho"><i class="fa-solid fa-expand"></i> Abrir em tela cheia</button>' : ''}</div>
+/**
+ * `telaCheia` = botão "Abrir em tela cheia" (no painel; a página pública já é a tela do cliente).
+ * `soNoComputador` = "Ver como" some em tela estreita (link de aprovação no celular: a tela já é a do celular).
+ */
+export const previaLojaHtml = ({ telaCheia = false, soNoComputador = false } = {}) => `<div data-previa-loja>
+  <div class="mb-2 ${soNoComputador ? 'hidden sm:flex' : 'flex'} flex-wrap items-center gap-2" data-ver-como><span class="text-sm font-medium">Ver como:</span>
+    <button type="button" class="btn-primary btn-sm" data-largura="desktop" aria-pressed="true"><i class="fa-solid fa-desktop"></i> Computador</button>
+    <button type="button" class="btn-ghost btn-sm" data-largura="mobile" aria-pressed="false"><i class="fa-solid fa-mobile-screen"></i> Celular</button>
+    ${telaCheia ? '<button type="button" class="btn-ghost btn-sm alvo-toque" data-tela-cheia title="A prévia ocupa a tela inteira; no celular, fica na largura real do aparelho"><i class="fa-solid fa-expand"></i> Abrir em tela cheia</button>' : ''}</div>
   <p class="mb-2 rounded bg-amber-50 p-2 text-xs text-amber-800" data-legenda-previa><i class="fa-solid fa-circle-info"></i> ${LEGENDA_PREVIA_PACOTE}</p>
   <div class="-mx-4 flex justify-center bg-slate-100 sm:mx-0 sm:rounded-lg sm:p-2"><iframe title="Prévia da loja" sandbox="" referrerpolicy="no-referrer" class="h-[75vh] w-full border-slate-200 bg-white transition-all sm:rounded sm:border" data-iframe-loja></iframe></div></div>`;
 
@@ -21,7 +24,7 @@ export function ligarPreviaLoja(alvo, documentoHtml) {
   on(caixa, 'click', '[data-largura]', (b) => {
     const celular = b.dataset.largura === 'mobile';
     ifr.style.maxWidth = celular ? '390px' : '';
-    $$('[data-largura]', caixa).forEach((x) => { x.className = `${x === b ? 'btn-primary' : 'btn-ghost'} btn-sm`; });
+    $$('[data-largura]', caixa).forEach((x) => { x.className = `${x === b ? 'btn-primary' : 'btn-ghost'} btn-sm`; x.setAttribute('aria-pressed', String(x === b)); });
   });
   // Tela cheia: a mesma janela do app (Esc e trocar de tela fecham), sem margem; respeita o "Ver como".
   on(caixa, 'click', '[data-tela-cheia]', () => {

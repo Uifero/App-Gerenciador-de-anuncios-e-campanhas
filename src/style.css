@@ -38,7 +38,7 @@
   --color-emerald-50: #06281f; --color-emerald-100: #064e3b; --color-emerald-700: #6ee7b7; --color-emerald-800: #a7f3d0;
   --color-amber-50: #2f2410; --color-amber-100: #78350f; --color-amber-300: #92400e; --color-amber-700: #fcd34d; --color-amber-800: #fde68a;
   --color-rose-50: #3b0f1c; --color-rose-100: #881337; --color-rose-300: #9f1239; --color-rose-600: #fb7185; --color-rose-700: #fda4af;
-  --color-indigo-100: #312e81; --color-indigo-700: #c7d2fe; --color-indigo-800: #c7d2fe;
+  --color-indigo-50: #1e1b4b; --color-indigo-100: #312e81; --color-indigo-700: #c7d2fe; --color-indigo-800: #c7d2fe;
   --color-violet-50: #2e1065; --color-violet-200: #5b21b6; --color-violet-800: #ddd6fe;
   --color-sky-50: #0b2536; --color-sky-200: #0c4a6e; /* avisos informativos (ex.: "duas versões da loja" em Site/Loja) */
 }
@@ -79,3 +79,6 @@
 .faixa-rolavel.mais-dir { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); }
 .faixa-rolavel.mais-esq { -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5rem); mask-image: linear-gradient(to right, transparent, #000 2.5rem); }
 .faixa-rolavel.mais-esq.mais-dir { -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent); }
+
+/* ===== Ações principais no celular (passo 4 do "Montar site" e link de aprovação): pelo menos 44px de altura ===== */
+@media (max-width: 639px) { .alvo-toque { min-height: 2.75rem; } }

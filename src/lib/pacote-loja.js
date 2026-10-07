@@ -8,6 +8,7 @@ import { normalizarVisual, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js'
 import { produtosComFotos, imagemDoLugar, fotosDoUso, rotuloFoto, slidesDoBanner, arquivosPorPasta } from './fotos-site.js';
 import { medidasDe, posicaoCss, textoMedida, nomeLugar } from './medidas-site.js';
 import { carrosselHtml, carrosselCss } from './carrossel.js';
+import { textoSobre, corLegivel } from './contraste.js';
 import { plataformaDoSite, nomeTema } from './etapas-site.js';
 import { depoimentosVivos } from './prova-social.js';
 import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
@@ -178,12 +179,14 @@ export function gruposPlataforma(d) {
 /** HTML completo da prévia (documento próprio, para o iframe isolado). Sem script nenhum. */
 export function gerarPreviaLojaHTML(d) {
   const cor = HEX.test(d.cor) ? d.cor : '#111827';
+  // A cor do cliente fica no fundo; o texto sobre ela e o texto NA cor dela são calculados para chegar a 4,5:1 (lib/contraste.js).
+  const sobreCor = textoSobre(cor), corTexto = corLegivel(cor, '#ffffff');
   const fonte = /^[A-Za-zÀ-ÿ ]{2,40}$/.test(d.tipografia.split(/[,;(]/)[0].trim()) ? d.tipografia.split(/[,;(]/)[0].trim() : ''; // só nome simples de fonte
   const preco = (x) => (x.precoPromocional && x.preco && x.precoPromocional < x.preco
     ? `<span class="de">${esc(moeda(x.preco))}</span> <b>${esc(moeda(x.precoPromocional))}</b>` : x.preco || x.precoPromocional ? `<b>${esc(moeda(x.preco || x.precoPromocional))}</b>` : '<b>Sob consulta</b>');
   // Recorte pelo ponto focal da foto (só quando preenche o quadro; "Mostrar inteiras" não corta nada).
   const pos = (f) => (f?.foco && d.visual.ajusteFotos !== 'contain' ? ` style="object-position:${posicaoCss(f.foco)}"` : '');
-  const foto = (x, cls = '') => (x.fotos[0] ? `<img src="${esc(x.fotos[0])}" alt="${esc(x.nome)}" class="${cls}"${pos(x.arquivos?.[0])}>` : `<div class="semfoto ${cls}">sem foto</div>`);
+  const foto = (x, cls = '') => (x.fotos[0] ? `<img src="${esc(x.fotos[0])}" alt="${esc(x.nome)}" class="${cls}" width="800" height="800"${pos(x.arquivos?.[0])}>` : `<div class="semfoto ${cls}">sem foto</div>`);
   const marca = d.logoUrl ? `<img src="${esc(d.logoUrl)}" alt="${esc(d.nomeLoja)}" class="logo">` : `<span class="nome">${esc(d.nomeLoja)}</span>`;
   const cabecalho = `${d.recursos?.freteGratis ? `<div class="barra-frete" data-barra-frete>Frete grátis acima de ${esc(reais(d.recursos.freteGratis.valor))}</div>` : ''}<header><div class="wrap"><input type="checkbox" id="menu-loja" class="menu-toggle"><label for="menu-loja" class="hamb" title="Menu" aria-label="Abrir o menu"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></label><a href="#inicio" class="marca">${marca}</a><nav><a href="#inicio">Início</a><a href="#produtos">Produtos</a>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Dúvidas</a>' : ''}</nav><span class="sacola" title="${esc(TEXTO_COMPRA_DESATIVADA)}"><span class="txt-sacola">Carrinho (0)</span><svg class="ic-sacola" viewBox="0 0 24 24" width="24" height="24" aria-label="Carrinho (0)"><path d="M6 8h12l-1 12H7L6 8zm3 0a3 3 0 0 1 6 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><b class="qtd-sacola" aria-hidden="true">0</b></span></div></header>`;
   const rodape = `<footer><div class="wrap"><div>${marca}</div><div><b>Institucional</b>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Perguntas frequentes</a>' : ''}${d.politicas.trocas ? '<span>Trocas e devoluções</span>' : ''}${d.politicas.envio ? '<span>Envio</span>' : ''}${d.politicas.privacidade ? '<span>Privacidade</span>' : ''}</div><div><b>Compra segura</b><span>Pagamento e frete configurados na plataforma</span>${d.recursos?.pagamentos?.length ? `<span class="pags" data-pagamentos-rodape>${d.recursos.pagamentos.map((k) => `<span>${esc(NOME_PAG[k] || k)}</span>`).join('')}</span>` : ''}</div></div><p class="aviso">${esc(LEGENDA_PREVIA_PACOTE)}</p></footer>`;
@@ -198,10 +201,10 @@ export function gerarPreviaLojaHTML(d) {
     const s = sugeridoPara(x.id || String(i), d.produtos.map((p, k) => ({ ...p, id: p.id || String(k) })), R); if (!s) return '';
     const k = d.produtos.findIndex((p) => (p.id || '') === (s.id || '') && p.nome === s.nome);
     return `<div class="junto" data-compre-junto><p class="junto-t">Compre junto${R.compreJunto.onde === 'carrinho' ? ' <small>(na loja: sugestão no carrinho)</small>' : ''}</p>
-      <a href="#produto-${k}" class="junto-item">${s.fotos[0] ? `<img src="${esc(s.fotos[0])}" alt="">` : ''}<span>+ ${esc(s.nome)}<br><b>${esc(moeda(s.precoPromocional || s.preco) || 'Sob consulta')}</b></span></a></div>`;
+      <a href="#produto-${k}" class="junto-item">${s.fotos[0] ? `<img src="${esc(s.fotos[0])}" alt="" width="72" height="72" loading="lazy">` : ''}<span>+ ${esc(s.nome)}<br><b>${esc(moeda(s.precoPromocional || s.preco) || 'Sob consulta')}</b></span></a></div>`;
   };
   const paginasProduto = d.produtos.map((x, i) => `<section id="produto-${i}" class="pagina"><div class="wrap"><a href="#produtos" class="voltar">&larr; Voltar aos produtos</a>
-    <div class="pdp"><div class="galeria">${foto(x, 'principal')}${x.fotos.length > 1 ? `<div class="miniaturas">${miniaturas(x).map((u, k) => `<img src="${esc(u)}" alt=""${pos(x.arquivos?.[k + 1])}>`).join('')}</div>` : ''}</div>
+    <div class="pdp"><div class="galeria">${foto(x, 'principal')}${x.fotos.length > 1 ? `<div class="miniaturas">${miniaturas(x).map((u, k) => `<img src="${esc(u)}" alt="" width="64" height="64" loading="lazy"${pos(x.arquivos?.[k + 1])}>`).join('')}</div>` : ''}</div>
     <div><h1>${esc(x.nome)}</h1><p class="preco">${preco(x)}</p>${avisoFrete ? `<p class="frete-pdp" data-frete-pdp>${avisoFrete}</p>` : ''}
       ${x.variacoes.map((v) => `<div class="var"><span>${esc(v.nome)}</span><div>${v.valores.map((val) => `<span class="chip">${esc(val)}</span>`).join('')}</div></div>`).join('')}
       <button type="button" class="comprar${R.botaoGrande ? ' grande' : ''}" disabled data-compra-desativada>${esc(TEXTO_COMPRA_DESATIVADA)}</button>${pags}
@@ -233,26 +236,26 @@ header{border-bottom:1px solid #e5e7eb;position:sticky;top:0;background:#fff;z-i
 .marca{text-decoration:none;display:flex;align-items:center}.logo{max-height:44px;max-width:160px;display:block}.nome{font-weight:800;font-size:20px}
 nav{display:flex;gap:16px;flex:1;flex-wrap:wrap}nav a{text-decoration:none;font-size:14px}.sacola{font-size:13px;border:1px solid #d1d5db;border-radius:999px;padding:6px 12px;color:#6b7280}
 .menu-toggle,.hamb,.ic-sacola,.qtd-sacola{display:none}
-.banner{background:${cor};color:#fff;padding:56px 0;text-align:center}.banner h1{margin:0 0 8px;font-size:clamp(24px,4vw,40px)}.banner p{margin:0 0 18px;opacity:.92}
-.cta{display:inline-block;background:#fff;color:${cor};padding:12px 22px;border-radius:6px;font-weight:700;text-decoration:none}
+.banner{background:${cor};color:${sobreCor};padding:56px 0;text-align:center}.banner h1{margin:0 0 8px;font-size:clamp(24px,4vw,40px)}.banner p{margin:0 0 18px;opacity:.92}
+.cta{display:inline-block;background:#fff;color:${corTexto};padding:12px 22px;border-radius:6px;font-weight:700;text-decoration:none}
 h2{margin:36px 0 14px;font-size:22px}.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
 .card{text-decoration:none;display:flex;flex-direction:column;gap:6px}
-.barra-frete{background:${cor};color:#fff;text-align:center;font-size:13px;font-weight:600;padding:8px 12px}.frete-pdp{margin:-8px 0 12px;font-size:14px;color:${cor};font-weight:600}
+.barra-frete{background:${cor};color:${sobreCor};text-align:center;font-size:13px;font-weight:600;padding:8px 12px}.frete-pdp{margin:-8px 0 12px;font-size:14px;color:${corTexto};font-weight:600}
 .pags{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}.pags span{border:1px solid #d1d5db;border-radius:4px;padding:3px 8px;font-size:12px;color:#374151;background:#fff}
-.comprar.grande{font-size:19px;padding:20px;border-radius:10px}.card-btn{display:block;text-align:center;background:${cor};color:#fff;margin:6px 0 0;cursor:default}
+.comprar.grande{font-size:19px;padding:20px;border-radius:10px}.card-btn{display:block;text-align:center;background:${cor};color:${sobreCor};margin:6px 0 0;cursor:default}
 .secao-prod{margin-top:12px;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px}.secao-prod p{margin:8px 0 0;line-height:1.6;font-size:15px}
 .junto{margin-top:20px;border:2px dashed ${cor};border-radius:8px;padding:12px}.junto-t{margin:0 0 8px;font-weight:700}.junto-item{display:flex;gap:12px;align-items:center;text-decoration:none}.junto-item img{width:72px;height:72px;object-fit:cover;border-radius:6px}
-${d.recursos?.colunasProdutos ? `.grade{grid-template-columns:repeat(${d.recursos.colunasProdutos},1fr)}@media(max-width:640px){.grade{grid-template-columns:repeat(${Math.min(2, d.recursos.colunasProdutos)},1fr)}}` : ''}.card img,.card .semfoto{width:100%;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:6px;background:#f3f4f6}
-.semfoto{display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px}.nomep{font-size:14px}.preco b{color:${cor}}.de{text-decoration:line-through;color:#9ca3af;font-size:13px}
+${d.recursos?.colunasProdutos ? `.grade{grid-template-columns:repeat(${d.recursos.colunasProdutos},1fr)}@media(max-width:640px){.grade{grid-template-columns:repeat(${Math.min(2, d.recursos.colunasProdutos)},1fr)}}` : ''}.card img,.card .semfoto{width:100%;height:auto;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:6px;background:#f3f4f6}
+.semfoto{display:flex;align-items:center;justify-content:center;color:#4b5563;font-size:13px}.nomep{font-size:14px}.preco b{color:${corTexto}}.de{text-decoration:line-through;color:#6b7280;font-size:13px}
 .confianca{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:32px}.confianca div{border:1px solid #e5e7eb;border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:4px;font-size:13px}
 .depos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}blockquote{margin:0;border:1px solid #e5e7eb;border-radius:6px;padding:12px;font-size:14px}cite{display:block;margin-top:6px;color:#6b7280;font-style:normal;font-size:12px}
 .sobre{line-height:1.6}details{border-bottom:1px solid #e5e7eb;padding:10px 0}summary{cursor:pointer;font-weight:600}
-.pagina{display:none;padding:20px 0 40px}.pagina:target{display:block}.pagina:target~.home{display:none}.voltar{font-size:14px}
-.pdp{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:14px}.principal{width:100%;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:8px;background:#f3f4f6}
+.pagina{display:none;padding:20px 0 40px}.pagina:target{display:block}.pagina:target~.home{display:none}.voltar{font-size:14px;display:inline-block;padding:12px 0}
+.pdp{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:14px}.principal{width:100%;height:auto;aspect-ratio:1;object-fit:${V.ajusteFotos};border-radius:8px;background:#f3f4f6}
 .miniaturas{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.miniaturas img{width:64px;height:64px;object-fit:${V.ajusteFotos};border-radius:4px}
 .pdp h1{margin:0 0 8px;font-size:26px}.pdp .preco{font-size:22px;margin:0 0 16px}.var{margin:10px 0}.var>span{font-size:13px;color:#6b7280;display:block;margin-bottom:6px}
 .chip{display:inline-block;border:1px solid #d1d5db;border-radius:4px;padding:6px 10px;margin:0 6px 6px 0;font-size:13px}
-.comprar{width:100%;margin:16px 0;padding:14px;border:0;border-radius:6px;background:#9ca3af;color:#fff;font-weight:700;font-size:15px;cursor:not-allowed}
+.comprar{width:100%;margin:16px 0;padding:14px;border:0;border-radius:6px;background:#6b7280;color:#fff;font-weight:700;font-size:15px;cursor:not-allowed}
 .desc{line-height:1.6;font-size:15px}footer{margin-top:48px;border-top:1px solid #e5e7eb;background:#f9fafb;padding:24px 0;font-size:13px}
 footer .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}footer .wrap div{display:flex;flex-direction:column;gap:6px}footer a{text-decoration:none}
 .aviso{text-align:center;color:#6b7280;margin:18px 16px 0}.card img,.principal,.miniaturas img{background:#fff}.banner.com-img{background-size:cover;background-position:center;padding:90px 0}
@@ -264,7 +267,7 @@ ${slides.length ? carrosselCss({ n: slides.length, id: 'bn' }) : ''}
 @media(max-width:640px){header .wrap{flex-wrap:wrap;gap:8px;min-height:56px}.hamb{display:flex;align-items:center;padding:6px;margin-left:-6px;cursor:pointer;color:#111827}
 .marca{flex:1;min-width:0}.nome{font-size:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.logo{max-height:36px}
 nav{display:none;order:3;flex-basis:100%;flex-direction:column;gap:0;padding-bottom:6px}.menu-toggle:checked~nav{display:flex}nav a{padding:12px 2px;border-top:1px solid #f3f4f6;font-size:15px}
-.sacola{position:relative;border:0;padding:6px;color:#111827;display:flex}.txt-sacola{display:none}.ic-sacola{display:block}.qtd-sacola{display:flex;position:absolute;top:0;right:0;min-width:16px;height:16px;border-radius:999px;background:${cor};color:#fff;font-size:10px;align-items:center;justify-content:center}
+.sacola{position:relative;border:0;padding:6px;color:#111827;display:flex}.txt-sacola{display:none}.ic-sacola{display:block}.qtd-sacola{display:flex;position:absolute;top:0;right:0;min-width:16px;height:16px;border-radius:999px;background:${cor};color:${sobreCor};font-size:10px;align-items:center;justify-content:center}
 .pdp{grid-template-columns:1fr}.banner{padding:36px 0}.banner.com-carrossel{padding:0}.sobre-img{aspect-ratio:${pr(med.sobre, true)}}}`;
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
 <base href="about:srcdoc"><title>${esc(d.nomeLoja)} — prévia</title><style>${css}</style></head><body>${cabecalho}${paginasProduto}${home}${rodape}${lightbox}</body></html>`;

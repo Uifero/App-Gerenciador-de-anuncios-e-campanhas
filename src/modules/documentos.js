@@ -26,7 +26,7 @@ export async function lerTextoArquivo(file) {
 
 const cartao = (d, clientes) => `<li class="rounded-lg border border-slate-200 p-2 text-sm" data-documento="${esc(d.id)}">
   <div class="flex flex-wrap items-start justify-between gap-2"><p><b>${esc(d.titulo)}</b> ${d.fixo ? tag('fixo', 'tag-info') : ''}${d.clienteId ? tag(`só ${clientes.find((c) => c.id === d.clienteId)?.nome || 'um cliente'}`) : tag('todos os clientes')}${d.origemResumo === 'manual' ? tag('resumo à mão') : d.fixo ? '' : tag('resumo da IA', 'tag-info')}</p>
-    ${d.fixo ? '' : `<button type="button" class="btn-danger btn-sm" data-apagar-doc="${esc(d.id)}" title="Apagar este documento"><i class="fa-solid fa-trash"></i></button>`}</div>
+    ${d.fixo ? '' : `<button type="button" class="btn-danger btn-sm" data-apagar-doc="${esc(d.id)}" title="Apagar este documento" aria-label="Apagar este documento"><i class="fa-solid fa-trash"></i></button>`}</div>
   <p class="mt-1 text-xs text-slate-600">${esc(d.resumo)}</p>
   ${(d.partes || []).length ? `<details class="mt-1 text-xs"><summary class="cursor-pointer">Partes que a análise pode citar (${d.partes.length})</summary><ul class="ml-4 list-disc">${d.partes.map((p) => `<li><b>${esc(p.parte)}</b>${p.pontos ? `: ${esc(p.pontos)}` : ''}</li>`).join('')}</ul></details>` : ''}
   ${d.resumidoEm ? `<p class="hint">Resumido em ${dataBR(d.resumidoEm)}${d.cortado ? ' · documento longo: só o começo foi resumido' : ''}. Não é relido a cada análise.</p>` : ''}</li>`;

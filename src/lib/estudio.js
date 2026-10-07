@@ -2,9 +2,10 @@
 // Sem servidor e sem custo por peça: usa <canvas> (imagem) e canvas + MediaRecorder (vídeo).
 // A parte de roteiro (extrairCenas) é pura e testável; o resto só roda no navegador.
 
-export const FORMATOS_IMAGEM = [
-  ['1080x1080', 'Feed quadrado 1:1 (1080×1080)'], ['1080x1350', 'Feed 4:5 (1080×1350)'], ['1080x1920', 'Stories/Reels 9:16 (1080×1920)'],
-];
+import { FORMATOS_INSTAGRAM, zonaSegura } from './formatos-instagram.js';
+
+/** Formatos do Instagram no celular: 9:16 e 4:5 primeiro; 1:1 só quando pedirem (lib/formatos-instagram.js). */
+export const FORMATOS_IMAGEM = FORMATOS_INSTAGRAM;
 export const TEMPLATES = [['destaque', 'Foto em tela cheia'], ['cartao', 'Foto + painel de cor'], ['colagem', 'Colagem (2 a 4 fotos)'], ['texto', 'Só texto (sem foto)']];
 
 const FONTE = '"Segoe UI", Inter, Roboto, Arial, sans-serif';
@@ -161,50 +162,89 @@ function grade(ctx, fotos, x, y, w, h) {
   celulas.forEach(([cx, cy, cw, ch], i) => cobrir(ctx, fotos[i], x + cx * w + g / 2, y + cy * h + g / 2, cw * w - g, ch * h - g));
 }
 
-const zonaSegura = (w, h) => (h / w > 1.5 ? { topo: 0.12, base: 0.2 } : { topo: 0.05, base: 0.06 });
-
 // ---------------- foto (PNG) ----------------
+/**
+ * Onde cada parte da peça pode ficar (px), já dentro da zona segura do Instagram (lib/formatos-instagram.js).
+ * Pura (sem canvas): o desenho usa estes lugares e os testes conferem que nenhum sai da zona.
+ * layoutPeca devolve { hImg, hook, cta, logo, yCta, ... }; caixasDaPeca, só as caixas ocupadas: [{nome,x,y,w,h}].
+ */
+export const caixasDaPeca = (w, h, opts) => layoutPeca(w, h, opts).caixas;
+function layoutPeca(w, h, { template = 'destaque', hook = '', cta = '', temLogo = false, temMidia = true } = {}) {
+  const z = zonaSegura(w, h), vert = h / w > 1.5;
+  const mx = Math.max(w * 0.08, z.lados), larg = w - mx * 2, tamCta = w * 0.04, hCta = cta ? tamCta * 2.24 : 0;
+  const fundoZona = z.y + z.h, logo = { x: mx, y: z.y, w: w * 0.22, h: h * 0.06 }, abaixoLogo = z.y + (temLogo ? logo.h + h * 0.02 : 0);
+  let hImg = 0, yCta = fundoZona, caixaHook;
+  if (template === 'cartao' || template === 'colagem') {
+    // No 9:16 a foto fica menor: o painel com o texto precisa caber acima da faixa da legenda do Reels.
+    hImg = h * (vert ? 0.38 : template === 'colagem' ? 0.6 : 0.56);
+    const y = hImg + h * 0.035; caixaHook = { x: mx, y, w: larg, h: yCta - hCta - h * 0.035 - y, ancora: 'topo' };
+  } else if (template === 'texto' || !temMidia) {
+    yCta = fundoZona - h * 0.03;
+    const alt = (yCta - hCta - abaixoLogo) * 0.85, centro = (abaixoLogo + yCta - hCta) / 2;
+    caixaHook = { x: mx, y: centro - alt / 2, w: larg, h: alt, ancora: 'centro' };
+  } else {
+    const base = yCta - hCta - h * 0.03, topo = Math.max(base - h * 0.34, abaixoLogo);
+    caixaHook = { x: mx, y: topo, w: larg, h: base - topo, ancora: 'base' };
+  }
+  const caixaCta = { x: mx, y: yCta - hCta, w: larg, h: hCta };
+  const caixas = [hook ? { nome: 'hook', ...caixaHook } : null, cta ? { nome: 'cta', ...caixaCta } : null, temLogo ? { nome: 'logo', ...logo } : null].filter(Boolean);
+  return { hImg, hook: caixaHook, cta: caixaCta, logo, yCta, tamCta, mx, larg, caixas };
+}
+
 /**
  * Desenha a peça estática no ctx (w × h).
  * opts: { template, hook, cta, midia ({tipo:'imagem',el} ou null), midias (fotos da colagem), cor, corTexto, logo (HTMLImageElement|null) }
+ * Devolve as caixas que o texto ocupou de verdade ([{nome,x,y,w,h}]): texto longo demais pode passar do lugar previsto,
+ * e o Estúdio avisa quando sai da zona segura (foraDaZona).
  */
 export function desenharPeca(ctx, w, h, { template = 'destaque', hook = '', cta = '', midia = null, midias = [], cor = '#4f46e5', corTexto = '#ffffff', logo = null }) {
-  const zs = zonaSegura(w, h), mx = w * 0.08, larg = w - mx * 2;
-  const tamCta = w * 0.04, corPilula = cor, tintaPilula = tintaSobre(cor);
+  const temMidia = template === 'colagem' ? true : !!midia;
+  const L = layoutPeca(w, h, { template, hook, cta, temLogo: !!logo, temMidia });
+  const { mx, larg, tamCta, yCta } = L;
+  const corPilula = cor, tintaPilula = tintaSobre(cor);
+  const usadas = [];
+  const marcarCta = (hp) => { if (cta && hp) usadas.push({ nome: 'cta', x: mx, y: yCta - hp, w: larg, h: hp }); };
+  const marcarHook = (b) => { if (hook) usadas.push({ nome: 'hook', x: mx, y: b.topo, w: larg, h: b.base - b.topo }); };
+  const H = L.hook;
   ctx.clearRect(0, 0, w, h);
 
   if (template === 'cartao' || template === 'colagem') {
-    const hImg = h * (template === 'colagem' ? 0.6 : 0.56);
+    const hImg = L.hImg;
     ctx.fillStyle = cor; ctx.fillRect(0, 0, w, h);
     if (template === 'colagem' && midias.length >= 2) grade(ctx, midias, 0, 0, w, hImg);
     else if (midia) cobrir(ctx, midia, 0, 0, w, hImg);
     else { const g = ctx.createLinearGradient(0, 0, w, hImg); g.addColorStop(0, escurecer(cor, 0.85)); g.addColorStop(1, escurecer(cor, 0.5)); ctx.fillStyle = g; ctx.fillRect(0, 0, w, hImg); }
     const tinta = tintaSobre(cor);
-    const yCta = h - h * zs.base;
-    const hp = pilula(ctx, { texto: cta, x: mx, yBase: yCta, tam: tamCta, fundo: tinta, tinta: cor, larguraMax: larg });
-    blocoTexto(ctx, { texto: hook, x: mx, y: hImg + h * 0.035, largura: larg, alturaMax: yCta - hp - hImg - h * 0.07, tamMax: w * 0.075, tamMin: w * 0.04, cor: tinta, ancora: 'topo' });
-    logotipo(ctx, logo, mx, h * zs.topo, w * 0.22, h * 0.06);
-    return;
-  }
-
-  if (template === 'texto' || !midia) {
+    marcarCta(pilula(ctx, { texto: cta, x: mx, yBase: yCta, tam: tamCta, fundo: tinta, tinta: cor, larguraMax: larg }));
+    marcarHook(blocoTexto(ctx, { texto: hook, x: mx, y: H.y, largura: larg, alturaMax: H.h, tamMax: w * 0.075, tamMin: w * 0.04, cor: tinta, ancora: 'topo' }));
+  } else if (template === 'texto' || !midia) {
     const g = ctx.createLinearGradient(0, 0, w * 0.4, h); g.addColorStop(0, cor); g.addColorStop(1, escurecer(cor, 0.45));
     ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-    const yCta = h - h * zs.base - h * 0.03;
-    const hp = pilula(ctx, { texto: cta, x: w / 2, yBase: yCta, tam: tamCta, fundo: tintaSobre(cor), tinta: cor, centro: true, larguraMax: larg });
-    blocoTexto(ctx, { texto: hook, x: mx, y: (h * zs.topo + yCta - hp) / 2 + h * 0.03, largura: larg, alturaMax: (yCta - hp - h * zs.topo) * 0.85, tamMax: w * 0.11, tamMin: w * 0.05, cor: corTexto, alinhar: 'center', ancora: 'centro' });
-    logotipo(ctx, logo, mx, h * zs.topo, w * 0.22, h * 0.06);
-    return;
+    marcarCta(pilula(ctx, { texto: cta, x: w / 2, yBase: yCta, tam: tamCta, fundo: tintaSobre(cor), tinta: cor, centro: true, larguraMax: larg }));
+    marcarHook(blocoTexto(ctx, { texto: hook, x: mx, y: H.y + H.h / 2, largura: larg, alturaMax: H.h, tamMax: w * 0.11, tamMin: w * 0.05, cor: corTexto, alinhar: 'center', ancora: 'centro' }));
+  } else {
+    // destaque: foto em tela cheia + degradê + hook embaixo + botão
+    cobrir(ctx, midia, 0, 0, w, h);
+    const g = ctx.createLinearGradient(0, h * 0.35, 0, h); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.82)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    marcarCta(pilula(ctx, { texto: cta, x: mx, yBase: yCta, tam: tamCta, fundo: corPilula, tinta: tintaPilula, larguraMax: larg }));
+    marcarHook(blocoTexto(ctx, { texto: hook, x: mx, y: H.y + H.h, largura: larg, alturaMax: H.h, tamMax: w * 0.085, tamMin: w * 0.04, cor: corTexto, ancora: 'base' }));
   }
+  logotipo(ctx, logo, L.logo.x, L.logo.y, L.logo.w, L.logo.h);
+  if (logo) usadas.push({ nome: 'logo', ...L.logo });
+  return usadas;
+}
 
-  // destaque: foto em tela cheia + degradê + hook embaixo + botão
-  cobrir(ctx, midia, 0, 0, w, h);
-  const g = ctx.createLinearGradient(0, h * 0.35, 0, h); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.82)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-  const yCta = h - h * zs.base;
-  const hp = pilula(ctx, { texto: cta, x: mx, yBase: yCta, tam: tamCta, fundo: corPilula, tinta: tintaPilula, larguraMax: larg });
-  blocoTexto(ctx, { texto: hook, x: mx, y: yCta - hp - h * 0.03, largura: larg, alturaMax: h * 0.34, tamMax: w * 0.085, tamMin: w * 0.04, cor: corTexto, ancora: 'base' });
-  logotipo(ctx, logo, mx, h * zs.topo, w * 0.22, h * 0.06);
+/** Guia da zona segura por cima da prévia (só na tela: o arquivo baixado é desenhado num canvas novo, sem o guia). */
+export function desenharGuiaZona(ctx, w, h) {
+  const z = zonaSegura(w, h);
+  ctx.save();
+  ctx.fillStyle = 'rgba(225,29,72,.18)';
+  ctx.fillRect(0, 0, w, z.topo); ctx.fillRect(0, h - z.base, w, z.base);
+  ctx.fillRect(0, z.topo, z.lados, z.h); ctx.fillRect(w - z.lados, z.topo, z.lados, z.h);
+  ctx.setLineDash([w * 0.02, w * 0.012]); ctx.lineWidth = Math.max(2, w * 0.004); ctx.strokeStyle = 'rgba(225,29,72,.9)';
+  ctx.strokeRect(z.x, z.y, z.w, z.h);
+  ctx.restore();
 }
 
 export function canvasParaPng(canvas) {
@@ -313,7 +353,7 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
   rec.ondataavailable = (e) => { if (e.data.size) pedacos.push(e.data); };
   const parou = new Promise((ok) => { rec.onstop = ok; });
 
-  const zs = zonaSegura(largura, altura);
+  const zs = zonaSegura(largura, altura), baseLegenda = Math.min(altura * 0.66, zs.y + zs.h); // legenda acima da faixa de baixo do Reels
   let cenaAnterior = -1, videoAtual = null;
   const desenhar = (t) => {
     let i = cenas.length - 1;
@@ -339,11 +379,11 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
 
     const aparece = Math.min(1, tLocal / 0.3), mx = largura * 0.08;
     if (cena.tipo === 'cta') {
-      pilula(ctx, { texto: cena.texto, x: largura / 2, yBase: altura * 0.62, tam: largura * 0.058, fundo: cor, tinta: tintaSobre(cor), centro: true, alpha: aparece, larguraMax: largura - mx * 2 });
+      pilula(ctx, { texto: cena.texto, x: largura / 2, yBase: Math.min(altura * 0.62, baseLegenda), tam: largura * 0.058, fundo: cor, tinta: tintaSobre(cor), centro: true, alpha: aparece, larguraMax: largura - mx * 2 });
     } else {
-      blocoTexto(ctx, { texto: cena.texto, x: mx, y: altura * 0.66, largura: largura - mx * 2, alturaMax: altura * 0.3, tamMax: largura * 0.085, tamMin: largura * 0.045, cor: corTexto, alinhar: 'center', ancora: 'base', alpha: aparece, dy: (1 - aparece) * altura * 0.02 });
+      blocoTexto(ctx, { texto: cena.texto, x: mx, y: baseLegenda, largura: largura - mx * 2, alturaMax: Math.min(altura * 0.3, baseLegenda - zs.y - altura * 0.08), tamMax: largura * 0.085, tamMin: largura * 0.045, cor: corTexto, alinhar: 'center', ancora: 'base', alpha: aparece, dy: (1 - aparece) * altura * 0.02 });
     }
-    logotipo(ctx, logo, mx, altura * zs.topo, largura * 0.22, altura * 0.06);
+    logotipo(ctx, logo, mx, zs.y, largura * 0.22, altura * 0.06);
     ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(0, 0, largura * (t / total), 8); // barra de progresso do vídeo
   };
 

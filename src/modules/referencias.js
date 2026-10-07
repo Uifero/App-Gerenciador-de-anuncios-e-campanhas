@@ -123,7 +123,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     <div class="mt-2 flex flex-wrap gap-1">
       <button class="btn-primary btn-sm" data-criativo="${r.id}" title="Abre a aba Criativos já usando esta referência como ponto de partida"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar criativo a partir desta</button>
       ${!r.analise ? `<button class="btn-ia btn-sm" data-analisar="${r.id}" title="A IA identifica ângulo, framework, público e o que vale replicar">Analisar o que replicar (IA)</button>` : ''}
-      <button class="btn-danger btn-sm" data-apagar="${r.id}" title="Apagar esta referência"><i class="fa-solid fa-trash"></i></button></div></div>`;
+      <button class="btn-danger btn-sm" data-apagar="${r.id}" title="Apagar esta referência" aria-label="Apagar esta referência"><i class="fa-solid fa-trash"></i></button></div></div>`;
 
   // Da 2ª vez em diante a busca não roda sozinha: ao entrar aqui, um aviso discreto pergunta (uma vez por sessão).
   const pedido = consumirPedidoBusca(cliente.id);

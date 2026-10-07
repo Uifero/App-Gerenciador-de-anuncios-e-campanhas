@@ -10,6 +10,7 @@ import {
 import { db, COL, removerArquivo } from '../core/storage.js';
 import { enviarArquivoOuAvisar } from '../lib/uploads.js';
 import { previaEmSegundoPlano } from '../lib/previa.js';
+import { nomeFormato } from '../lib/formatos-instagram.js';
 import { statusAposTrocarArquivo } from './aprovacao.js';
 import { $, $$, esc, on, toast, ocupado, opcoes, confirmar, campoArquivo } from '../core/ui.js';
 
@@ -272,14 +273,16 @@ export function montarEditorVideo(raiz, { criativo, cliente, obterNarracao = () 
     est.atual = anterior; est.url = URL.createObjectURL(anterior);
     metadadosVideo(anterior).then((m) => { est.meta = m; desenharCorpo(); });
   });
+  // Nome do arquivo diz o formato (reels-9x16, feed-4x5...), pela medida real do vídeo atual.
+  const formatoDoArquivo = () => nomeFormato(`${est.meta?.largura || 0}x${est.meta?.altura || 0}`, 'video');
   on(raiz, 'click', '[data-baixar-editado]', () => {
-    const a = document.createElement('a'); a.href = est.url; a.download = `${(criativo?.nome || 'video').replace(/[^\w.-]/g, '_')}-editado.mp4`; a.click();
+    const a = document.createElement('a'); a.href = est.url; a.download = `${(criativo?.nome || 'video').replace(/[^\w.-]/g, '_')}-${formatoDoArquivo()}-editado.mp4`; a.click();
   });
   on(raiz, 'click', '[data-usar-como-peca]', async (b) => {
     if (!criativo || !cliente) return toast('Abra o editor a partir de um criativo para usar esta opção.', 'erro');
     if (!(await confirmar('Usar este vídeo editado como a peça final deste criativo? Substitui o arquivo atual, se houver.', 'Usar'))) return;
     await ocupado(b, async () => {
-      const nomeArquivo = `${(criativo.nome || 'video').replace(/[^\w.-]/g, '_')}-editado.mp4`;
+      const nomeArquivo = `${(criativo.nome || 'video').replace(/[^\w.-]/g, '_')}-${formatoDoArquivo()}-editado.mp4`;
       const caminho = `gcc/${cliente.id}/criativos/${criativo.id}/${Date.now()}_${nomeArquivo}`;
       const arquivo = new File([est.atual], nomeArquivo, { type: 'video/mp4' });
       const r = await enviarArquivoOuAvisar(caminho, arquivo);

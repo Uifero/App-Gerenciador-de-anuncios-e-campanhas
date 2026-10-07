@@ -6,6 +6,7 @@ import { paisDoCliente, infoPais, descreverMercado, simboloDoCliente } from '../
 import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloNarrativa } from '../lib/narrativas.js';
 import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
 import { textoComoAnuncia } from '../lib/anuncio.js';
+import { REGRA_INSTAGRAM } from '../lib/formatos-instagram.js';
 import { juntarItensSoltos } from '../lib/prints-resultado.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
@@ -218,6 +219,8 @@ const estavelDe = (cliente) => `${REGRA_CRITICA(cliente)}\n\n${contextoCliente(c
 const idiomaLinha = (cliente) => `IDIOMA DOS TEXTOS (obrigatório): ${IDIOMA_NOME[cliente.marca?.idioma] || IDIOMA_NOME['pt-BR']}. Escreva TODO o conteúdo voltado ao público nesse idioma, mesmo que o briefing e o perfil estejam em outro (traduza e adapte, não traduza literalmente). As chaves do JSON ficam exatamente como pedido.`;
 
 const SO_JSON = 'Responda APENAS com JSON válido, sem texto antes ou depois, sem cercas de código.';
+/** Sites são feitos primeiro para o celular (regra no CLAUDE.md): vale para o site personalizado e para o pacote de loja. */
+export const CELULAR_PRIMEIRO = 'CELULAR PRIMEIRO: a maioria dos compradores chega pelo anúncio do Instagram, no celular. Escreva para a tela de 390px: títulos curtos, parágrafos curtos (até 2-3 frases), seções que funcionam em uma coluna, benefícios em itens curtos que se leem rolando a tela, e o motivo para comprar logo no começo.';
 
 // ---------- criativos ----------
 /** Descrição estruturada do produto (aba Produtos), além do que já foi escrito no briefing — reforça preço/categoria. */
@@ -242,6 +245,7 @@ export async function gerarCriativos({ cliente, briefing, modelo, framework, for
     framework && framework !== 'livre' && `Framework de copy obrigatório: ${framework}`,
     formato && `Formato: ${formato}`,
     linhaNarrativa(narrativa, cliente).linha,
+    REGRA_INSTAGRAM,
     base && `Ponto de partida — anúncio de referência de mercado (adapte o ÂNGULO ao cliente, sem copiar o texto): ${base.titulo || ''}\n${base.texto || ''}\nAnálise: ${JSON.stringify(base.analise || {})}`,
     `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação), "narrativa" (só se a variação seguir uma das narrativas da referência de metodologia: ${NARRATIVAS.map((x) => x.id).join('|')}; senão null).`,
     idiomaLinha(cliente),
@@ -273,7 +277,7 @@ export async function refinarCriativo({ cliente, criativo, instrucao, conversa =
 // ---------- hooks ----------
 export async function gerarHooks({ cliente, tema, categoria, quantidade = 8 }) {
   const system = 'Você cria hooks (ganchos de abertura) para anúncios.';
-  const pedido = `Crie ${quantidade} hooks${categoria ? ` da categoria "${categoria}"` : ' de categorias variadas'}${tema ? ` sobre: ${tema}` : ''}. Cada um deve caber em 1-2 frases faladas. Saída: array JSON de {"texto","categoria"} com categoria em: dor, curiosidade, prova, resultado, erro_comum, contraintuitivo, pergunta. ${idiomaLinha(cliente)} ${SO_JSON}`;
+  const pedido = `Crie ${quantidade} hooks${categoria ? ` da categoria "${categoria}"` : ' de categorias variadas'}${tema ? ` sobre: ${tema}` : ''}. Cada um deve caber em 1-2 frases faladas e funcionar como texto na tela do Instagram no celular (poucas palavras, lido sem som, nos 3 primeiros segundos). Saída: array JSON de {"texto","categoria"} com categoria em: dor, curiosidade, prova, resultado, erro_comum, contraintuitivo, pergunta. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'hooks', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return (Array.isArray(dados) ? dados : dados.hooks || []).filter((h) => h.texto);
 }
@@ -746,6 +750,7 @@ Saída JSON: {"resultados": [{"id": string, "status": "atendido"|"parcial"|"nao"
 export async function gerarConteudoSite({ cliente, produtos, base = null, semDepoimentos = false, materiais = [], obrigatorios = '', semPreferencias = false }) {
   const system = 'Você é copywriter de e-commerce.';
   const pedido = `Escreva o conteúdo da loja. Produtos: ${produtos.map((p) => p.nome).join(', ') || 'a definir'}.${linhaBase(base)}${semPreferencias ? '' : contextoPreferencias(cliente)}${linhaImagens(materiais)}${obrigatorios}
+${CELULAR_PRIMEIRO}
 Se couber neste cliente (opcional), organize o banner e a história como uma página de produto: título; prova social só se for real do perfil; uma frase de solução; 3 argumentos tirados das crenças e dores do público; texto curto.
 Saída JSON: {"heroTitulo","heroSubtitulo","heroCta","storytelling" (2 parágrafos curtos sobre a marca, usando só fatos do perfil), "depoimentos": ${semDepoimentos ? '[] (vazio: a loja já tem depoimentos reais, que o app coloca)' : '[{"nome","texto"}] (3 MODELOS de depoimento com nomes genéricos como "Cliente", para serem substituídos por reais — não invente nomes de pessoas reais)'},"newsletterTitulo","newsletterTexto","politicas": {"trocas","envio","privacidade"} (textos-base curtos, marcados para revisão jurídica),"bannersPromo": [{"titulo","subtitulo"}], "faq": [{"p","r"}] (${INSTRUCAO_FAQ(cliente)}), ${PEDIDO_VISUAL('hero, provas, categorias, vendidos, sale, catalogo, marca, galeria, depoimentos, faq, newsletter')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   const d = (await gerarJSON({ tarefa: 'site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
@@ -776,6 +781,7 @@ Saída: array JSON de {"p","r"}. ${idiomaLinha(cliente)} ${SO_JSON}`;
 export async function gerarTextosPacote({ cliente, produtos, plataforma, base = null, materiais = [], obrigatorios = '', semPreferencias = false }) {
   const system = `Você prepara lojas para ${plataforma}.`;
   const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})${p.descricao ? `: ${String(p.descricao).slice(0, 400)}` : ''}${p.formula ? ` | fórmula: ${String(p.formula).slice(0, 300)}` : ''}${p.beneficios ? ` | benefícios: ${String(p.beneficios).slice(0, 300)}` : ''}`).join('; ') || 'a definir'}.${linhaBase(base)}${base?.cores?.length ? ` Paleta já usada: ${base.cores.join(', ')} (comece a paletaSugerida por ela).` : ''}${semPreferencias ? '' : contextoPreferencias(cliente)}${linhaImagens(materiais)}${obrigatorios}
+${CELULAR_PRIMEIRO}
 Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}], ${PEDIDO_VISUAL('banner, provas, produtos, confianca, depoimentos, sobre, galeria, faq')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'pacote', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }

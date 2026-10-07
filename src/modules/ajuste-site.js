@@ -144,7 +144,7 @@ export async function montarAjusteSite(alvo, ctx) {
         <button type="button" class="${aba === 'depois' ? 'btn-primary' : 'btn-ghost'} btn-sm" data-aba="depois">Com a mudança</button>
         ${custom ? '<button type="button" class="btn-ghost btn-sm" data-previa-aba title="Abre numa aba separada, isolada do painel"><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button>' : ''}</div>
       ${previaHTML(d)}
-      <div class="mt-3 flex flex-wrap gap-2"><button type="button" class="btn-primary" data-aceitar><i class="fa-solid fa-check"></i> Aceitar mudança</button>
+      <div class="mt-3 flex flex-wrap gap-2"><button type="button" class="btn-primary alvo-toque" data-aceitar><i class="fa-solid fa-check"></i> Aceitar mudança</button>
         <button type="button" class="btn-ghost" data-descartar><i class="fa-solid fa-xmark"></i> Descartar</button></div></div>`;
   }
 
@@ -216,8 +216,9 @@ export async function montarAjusteSite(alvo, ctx) {
       ${aposAceitar && !d ? `<p class="mt-2 rounded bg-emerald-50 p-2 text-sm text-emerald-800" data-aceito><i class="fa-solid fa-circle-check"></i> <b>Aplicado (v${aposAceitar.n}).</b> Próximo passo: ${custom ? 'baixe a pasta do site de novo (botão "Baixar pasta do site…") e publique por cima da versão antiga na hospedagem' : 'baixe o catálogo (CSV), os banners e o manual de novo para entregar a versão nova'}.</p>` : ''}
       ${aposAceitar ? outroModoHTML() : ''}
       <div class="mt-3 space-y-2 text-sm" data-chat>${conversa().map(itemChat).join('') || '<p class="hint">Exemplos: “coloca os depoimentos antes dos produtos”, “troca o título do banner para algo mais direto”, “deixa o site em tons de verde”, “esconde a newsletter”.</p>'}</div>
-      <form class="mt-2 flex flex-wrap gap-2" data-form-ajuste><input class="input min-w-0 flex-1" name="pedido" maxlength="600" placeholder="O que você quer mudar${custom ? ' no site' : ' no pacote'}?" required>
-        <button class="btn-ia" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Pedir mudança à IA</button></form>
+      <form class="mt-2" data-form-ajuste><label class="label" for="pedido-ajuste-${modo}">O que você quer mudar${custom ? ' no site' : ' no pacote'}?</label>
+        <div class="flex flex-col gap-2 sm:flex-row"><input id="pedido-ajuste-${modo}" class="input min-w-0 sm:flex-1" name="pedido" maxlength="600" placeholder="Ex.: troca o título do banner…" autocomplete="off" required>
+        <button class="btn-ia alvo-toque" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Pedir mudança à IA</button></div></form>
       <p class="hint">A IA responde marcando se <b>só explicou (nada mudou)</b> ou se <b>propôs uma mudança</b>; a mudança aparece abaixo com prévia. Pedidos simples levam ~15 s; pedidos amplos ~40 s.</p>
       ${d ? rascunhoHTML(d) : ''}
       <details class="mt-4 rounded-lg border border-slate-200 p-3" data-manuais><summary class="cursor-pointer text-sm font-medium text-slate-600">Ajustar à mão (sem IA)</summary><div class="mt-2">${manuaisHTML(e)}</div></details>
