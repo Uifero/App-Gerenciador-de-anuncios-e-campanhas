@@ -5,6 +5,7 @@ import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
 import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
 import { REFERENCIA_COPY } from './referencias/copy.js';
 import { REFERENCIA_OFERTA } from './referencias/oferta.js';
+import { REFERENCIA_GANCHOS, GANCHOS } from './referencias/ganchos.js';
 import { FRAMEWORKS } from '../src/lib/constantes.js';
 
 describe('TAREFAS', () => {
@@ -68,13 +69,31 @@ ${REFERENCIA_TRAFEGO}`);
 
 ${METODOLOGIA_VORTEX}
 
-${REFERENCIA_COPY}`);
+${REFERENCIA_COPY}
+
+${REFERENCIA_GANCHOS}`);
     expect(comMetodologia(TAREFAS.hooks, 'PERFIL')).toBe(`PERFIL
 
-${REFERENCIA_COPY}`);
+${REFERENCIA_COPY}
+
+${REFERENCIA_GANCHOS}`);
     expect(comMetodologia(TAREFAS.refino, undefined)).toBe(REFERENCIA_COPY);
     expect(comMetodologia(TAREFAS.site, 'PERFIL')).not.toContain(REFERENCIA_COPY);
     expect(comMetodologia(TAREFAS.campanha, 'PERFIL')).not.toContain(REFERENCIA_COPY);
+  });
+
+  it('modelos de gancho só em criativos e hooks, com a lista inteira numerada e as regras de uso', () => {
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.ganchos).map(([n]) => n).sort()).toEqual(['criativos', 'hooks']);
+    expect(GANCHOS).toHaveLength(100);
+    expect(new Set(GANCHOS.map((g) => g.n)).size).toBe(100);
+    expect(GANCHOS.filter((g) => g.cuidado).map((g) => g.n).sort((a, b) => a - b)).toEqual([14, 37, 59, 64, 67, 74, 84]);
+    for (const g of GANCHOS) expect(REFERENCIA_GANCHOS).toContain(`${g.n}. ${g.texto}`);
+    expect(REFERENCIA_GANCHOS).toMatch(/nunca tem colchetes/);
+    expect(REFERENCIA_GANCHOS).toMatch(/nunca o mesmo número duas vezes/);
+    expect(REFERENCIA_GANCHOS).toContain("(*) NUNCA vira resultado no corpo");
+    expect(REFERENCIA_GANCHOS).toMatch(/nunca passa por cima das REGRAS CRÍTICAS/);
+    expect(comMetodologia(TAREFAS.refino, 'PERFIL')).not.toContain(REFERENCIA_GANCHOS);
+    expect(comMetodologia(TAREFAS.site, 'PERFIL')).not.toContain(REFERENCIA_GANCHOS);
   });
 
   it('referência de copy: curta, opcional, subordinada às regras críticas e sem urgência fabricada', () => {

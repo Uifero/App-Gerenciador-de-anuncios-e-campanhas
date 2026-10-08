@@ -1,9 +1,9 @@
 // Configurações > "Documentos de referência": envia PDF ou texto, resume UMA vez (com IA ou à mão) e guarda só a
-// referência compacta (gcc_documentos). Vale para todos os clientes ou para um só. A Metodologia Vortex é entrada fixa.
+// referência compacta (gcc_documentos). Vale para todos os clientes ou para um só. A Metodologia Vortex e os modelos de gancho são entradas fixas.
 // Interno: nada daqui vai para o site nem para link de aprovação.
 import { db, COL } from '../core/storage.js';
 import { resumirDocumento } from '../core/ia.js';
-import { DOC_VORTEX, ACEITA_DOCUMENTO, prepararTexto, partesDoTexto } from '../lib/documentos.js';
+import { DOC_VORTEX, DOC_GANCHOS, ACEITA_DOCUMENTO, prepararTexto, partesDoTexto } from '../lib/documentos.js';
 import { esc, $, on, toast, ocupado, campoArquivo, dataBR, tag, mostrarResultado, confirmar } from '../core/ui.js';
 
 /** Texto de um PDF (pdf.js carregado só quando precisa) ou de um arquivo de texto. */
@@ -28,7 +28,8 @@ const cartao = (d, clientes) => `<li class="rounded-lg border border-slate-200 p
   <div class="flex flex-wrap items-start justify-between gap-2"><p><b>${esc(d.titulo)}</b> ${d.fixo ? tag('fixo', 'tag-info') : ''}${d.clienteId ? tag(`só ${clientes.find((c) => c.id === d.clienteId)?.nome || 'um cliente'}`) : tag('todos os clientes')}${d.origemResumo === 'manual' ? tag('resumo à mão') : d.fixo ? '' : tag('resumo da IA', 'tag-info')}</p>
     ${d.fixo ? '' : `<button type="button" class="btn-danger btn-sm" data-apagar-doc="${esc(d.id)}" title="Apagar este documento" aria-label="Apagar este documento"><i class="fa-solid fa-trash"></i></button>`}</div>
   <p class="mt-1 text-xs text-slate-600">${esc(d.resumo)}</p>
-  ${(d.partes || []).length ? `<details class="mt-1 text-xs"><summary class="cursor-pointer">Partes que a análise pode citar (${d.partes.length})</summary><ul class="ml-4 list-disc">${d.partes.map((p) => `<li><b>${esc(p.parte)}</b>${p.pontos ? `: ${esc(p.pontos)}` : ''}</li>`).join('')}</ul></details>` : ''}
+  ${d.usoEm ? `<p class="hint">Usado em: ${esc(d.usoEm)}.</p>` : ''}
+  ${(d.partes || []).length ? `<details class="mt-1 text-xs"><summary class="cursor-pointer">${d.usoEm ? 'Modelos' : 'Partes que a análise pode citar'} (${d.partes.length})</summary><ul class="ml-4 list-disc">${d.partes.map((p) => `<li><b>${esc(p.parte)}</b>${p.pontos ? `: ${esc(p.pontos)}` : ''}</li>`).join('')}</ul></details>` : ''}
   ${d.resumidoEm ? `<p class="hint">Resumido em ${dataBR(d.resumidoEm)}${d.cortado ? ' · documento longo: só o começo foi resumido' : ''}. Não é relido a cada análise.</p>` : ''}</li>`;
 
 /** Seção da página de Configurações. */
@@ -37,7 +38,7 @@ export async function montarDocumentos(el) {
   const desenhar = () => {
     el.innerHTML = `<h3 class="font-semibold"><i class="fa-solid fa-book mr-1 text-slate-400"></i>Documentos de referência</h3>
       <p class="caption mb-2">PDF ou texto que a IA usa nas análises ("Analisar e recomendar" e plano de otimização), citando o documento e a parte. Cada documento é resumido UMA vez e só o resumo fica guardado. Interno: nunca aparece no site nem em link de aprovação.</p>
-      <ul class="space-y-2" data-lista-docs>${[DOC_VORTEX, ...docs].map((d) => cartao(d, clientes)).join('')}</ul>
+      <ul class="space-y-2" data-lista-docs>${[DOC_VORTEX, DOC_GANCHOS, ...docs].map((d) => cartao(d, clientes)).join('')}</ul>
       <form class="mt-3 space-y-2 rounded-lg border border-slate-200 p-3" data-form-doc>
         <div class="grid gap-2 sm:grid-cols-2"><label class="text-sm">Título<input class="input mt-0.5" name="titulo" placeholder="Ex.: Guia de anúncios para WhatsApp"></label>
           <label class="text-sm">Vale para<select class="input mt-0.5" name="clienteId"><option value="">Todos os clientes</option>${clientes.map((c) => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')}</select></label></div>

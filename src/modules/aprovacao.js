@@ -6,6 +6,7 @@
 // As regras do Firestore (firestore.rules) permitem ao público APENAS ler o documento do token e gravar a própria resposta.
 import { db, COL } from '../core/storage.js';
 import { acharTermosProibidos } from '../core/ia.js';
+import { motivoGancho } from '../lib/ganchos.js';
 import { CHECKLIST_QUALIDADE, FORMATOS } from '../lib/constantes.js';
 import { garantirPrevia, previaAtual } from '../lib/previa.js';
 import { esc, $, on, modal, toast, copiar, ocupado, confirmar, dataBR, tag, mostrarResultado } from '../core/ui.js';
@@ -33,6 +34,8 @@ export const linkSoLocal = () => !BASE_PUBLICA && /^(localhost|127.|[::1])/.test
 export function motivoBloqueio(c, cliente) {
   if (!CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k])) return 'checklist de qualidade incompleto';
   if (acharTermosProibidos(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) return 'contém termos proibidos';
+  const gancho = motivoGancho(c, cliente);
+  if (gancho) return gancho;
   return null;
 }
 

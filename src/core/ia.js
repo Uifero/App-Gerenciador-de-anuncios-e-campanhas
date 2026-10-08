@@ -7,6 +7,7 @@ import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloN
 import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
 import { textoComoAnuncia } from '../lib/anuncio.js';
 import { REGRA_INSTAGRAM } from '../lib/formatos-instagram.js';
+import { linhaGanchos, conferirGanchos, numeroModelo } from '../lib/ganchos.js';
 import { juntarItensSoltos } from '../lib/prints-resultado.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
@@ -235,7 +236,7 @@ function contextoProduto(p) {
   return `\nPRODUTO SELECIONADO (dados exatos do catálogo — use-os, não invente outros): "${p.nome}"${p.categoria ? `, categoria ${p.categoria}` : ''}${p.preco ? `, preço R$ ${p.preco}` : ''}${p.precoPromocional ? ` (promocional R$ ${p.precoPromocional})` : ''}.${p.descricao ? ` Descrição: ${p.descricao}` : ''}`;
 }
 
-export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base, produto, catalogo = [], narrativa = '' }) {
+export async function gerarCriativos({ cliente, briefing, modelo, framework, formato, referencias, resultados, quantidade = 4, base, produto, catalogo = [], narrativa = '', modeloGancho = null }) {
   const n = Math.min(5, Math.max(1, Number(quantidade) || 4));
   const system = `Você é um copywriter e estrategista de tráfego pago sênior. Cria anúncios que parecem conteúdo orgânico.${contextoReferencias(referencias)}${contextoResultados(resultados)}${contextoProduto(produto)}${produto ? '' : contextoCatalogo(catalogo)}`;
   const pedido = [
@@ -246,20 +247,22 @@ export async function gerarCriativos({ cliente, briefing, modelo, framework, for
     formato && `Formato: ${formato}`,
     linhaNarrativa(narrativa, cliente).linha,
     REGRA_INSTAGRAM,
+    linhaGanchos({ fixo: modeloGancho, quantidade: n, cliente }),
     base && `Ponto de partida — anúncio de referência de mercado (adapte o ÂNGULO ao cliente, sem copiar o texto): ${base.titulo || ''}\n${base.texto || ''}\nAnálise: ${JSON.stringify(base.analise || {})}`,
-    `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação), "narrativa" (só se a variação seguir uma das narrativas da referência de metodologia: ${NARRATIVAS.map((x) => x.id).join('|')}; senão null).`,
+    `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação), "narrativa" (só se a variação seguir uma das narrativas da referência de metodologia: ${NARRATIVAS.map((x) => x.id).join('|')}; senão null), "modeloGancho" (número do modelo da biblioteca de ganchos de onde veio o hook; null se não veio de nenhum).`,
     idiomaLinha(cliente),
     SO_JSON,
   ].filter(Boolean).join('\n');
   const { dados } = await gerarJSON({ tarefa: 'criativos', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   const escolhida = linhaNarrativa(narrativa, cliente).bloqueada ? null : narrativaPorId(narrativa)?.id || null;
-  return (Array.isArray(dados) ? dados : dados.variacoes || []).map((c) => ({ ...normalizarCriativo(c), narrativa: narrativaDevolvida(c.narrativa, cliente) || escolhida }));
+  return conferirGanchos((Array.isArray(dados) ? dados : dados.variacoes || []).map((c) => ({ ...normalizarCriativo(c), narrativa: narrativaDevolvida(c.narrativa, cliente) || escolhida })), cliente);
 }
 
 function normalizarCriativo(c) {
   return {
     nome: c.nome || c.hook?.slice(0, 60) || 'Criativo', hook: c.hook || '', angulo: c.angulo || '', gatilho: c.gatilho || '',
     framework: c.framework || 'livre', formato: c.formato || 'video_curto', copy: c.copy || '', cta: c.cta || '', porque: c.porque || '',
+    modeloGancho: numeroModelo(c.modeloGancho),
   };
 }
 
@@ -277,9 +280,9 @@ export async function refinarCriativo({ cliente, criativo, instrucao, conversa =
 // ---------- hooks ----------
 export async function gerarHooks({ cliente, tema, categoria, quantidade = 8 }) {
   const system = 'Você cria hooks (ganchos de abertura) para anúncios.';
-  const pedido = `Crie ${quantidade} hooks${categoria ? ` da categoria "${categoria}"` : ' de categorias variadas'}${tema ? ` sobre: ${tema}` : ''}. Cada um deve caber em 1-2 frases faladas e funcionar como texto na tela do Instagram no celular (poucas palavras, lido sem som, nos 3 primeiros segundos). Saída: array JSON de {"texto","categoria"} com categoria em: dor, curiosidade, prova, resultado, erro_comum, contraintuitivo, pergunta. ${idiomaLinha(cliente)} ${SO_JSON}`;
+  const pedido = `Crie ${quantidade} hooks${categoria ? ` da categoria "${categoria}"` : ' de categorias variadas'}${tema ? ` sobre: ${tema}` : ''}. Cada um deve caber em 1-2 frases faladas e funcionar como texto na tela do Instagram no celular (poucas palavras, lido sem som, nos 3 primeiros segundos). Saída: array JSON de {"texto","categoria","modeloGancho"} com categoria em: dor, curiosidade, prova, resultado, erro_comum, contraintuitivo, pergunta. ${linhaGanchos({ quantidade, cliente })} ${idiomaLinha(cliente)} ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'hooks', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
-  return (Array.isArray(dados) ? dados : dados.hooks || []).filter((h) => h.texto);
+  return conferirGanchos((Array.isArray(dados) ? dados : dados.hooks || []).filter((h) => h.texto), cliente);
 }
 
 // ---------- campanhas ----------

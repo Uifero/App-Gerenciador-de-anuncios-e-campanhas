@@ -3,6 +3,7 @@
 import { db, COL } from '../core/storage.js';
 import { gerarPlaybook } from '../core/ia.js';
 import { CATEGORIAS_HOOK } from '../lib/constantes.js';
+import { GANCHOS, GRUPOS_GANCHO, nomeGrupo } from '../lib/ganchos.js';
 import { esc, $, on, montar, cabecalho, vazio, tag, dataBR, toast, modal, ocupado, lerForm, confirmar } from '../core/ui.js';
 
 const nomeCat = (v) => (CATEGORIAS_HOOK.find(([k]) => k === v) || [, v])[1];
@@ -125,6 +126,14 @@ const COPY_HTML = `<details class="card mb-4" data-copy><summary class="cursor-p
     <li><b>Credibilidade:</b> a promessa cabe no que o produto entrega e na prova disponível; curiosidade que o texto não cumpre é isca.</li>
     <li><b>Urgência e CTA:</b> urgência só se for real (oferta, prazo ou estoque do perfil); um anúncio, um objetivo, um CTA.</li></ul></details>`;
 
+/** Entrada fixa, só de leitura: a biblioteca de modelos de gancho que a IA usa (server/referencias/ganchos.js). */
+const GANCHOS_HTML = `<details class="card mb-4" data-ganchos><summary class="cursor-pointer font-semibold"><i class="fa-solid fa-anchor mr-1 text-indigo-500" aria-hidden="true"></i> Modelos de gancho de abertura (referência)</summary>
+  <p class="hint mt-1">${GANCHOS.length} estruturas de abertura do material "Swipe" (Rodrigo Vincenzi / STINT), anotadas só como estrutura. A IA usa ao criar criativos e hooks quando couber: adapta ao produto e ao tom do cliente, sem colchetes, um modelo diferente em cada variação, e mostra de qual modelo veio. Número ou prazo do modelo só fica se for verdade; "segredo" só com algo real a revelar.</p>
+  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">
+    <li><b>(*) em saúde:</b> os modelos marcados (${GANCHOS.filter((g) => g.cuidado).map((g) => g.n).sort((a, b) => a - b).join(', ')}) nunca viram resultado no corpo (peso, medidas, antes e depois) em suplemento ou emagrecimento: política do Meta e Anvisa. Se virar, o criativo fica bloqueado para aprovação.</li>
+    <li><b>Escolher à mão:</b> em Criativos > "Mais opções" > "Modelo de gancho", ou em Hooks > "Escrever um hook" (o modelo entra no campo para você trocar os colchetes).</li></ul>
+  ${GRUPOS_GANCHO.map((g) => `<details class="mt-2 text-sm"><summary class="cursor-pointer text-slate-600">${esc(nomeGrupo(g))}</summary><ul class="ml-5 mt-1 list-none space-y-0.5">${GANCHOS.filter((x) => x.grupo === g).sort((a, b) => a.n - b.n).map((x) => `<li>${x.n}. ${esc(x.texto)}${x.cuidado ? ' <b>(*)</b>' : ''}</li>`).join('')}</ul></details>`).join('')}</details>`;
+
 /** Entrada fixa, só de leitura: resumo da referência de oferta que a IA usa (server/referencias/oferta.js). */
 const OFERTA_HTML = `<details class="card mb-4" data-oferta><summary class="cursor-pointer font-semibold"><i class="fa-solid fa-tags mr-1 text-indigo-500"></i> Critérios de oferta (referência)</summary>
   <p class="hint mt-1">Resumo com palavras nossas do Hormozi Squad (Xquads, licença MIT). A IA usa como UMA referência entre outras no site, em "Analisar e recomendar" e no plano de otimização. Ficou de fora a parte do método que cria bônus, garantia, preço-âncora e escassez: a IA não inventa preço, prazo, garantia nem número.</p>
@@ -144,6 +153,7 @@ export const view = (el) => montar(el, async (root, recarregar) => {
     ${METODOLOGIA_HTML}
     ${TRAFEGO_HTML}
     ${COPY_HTML}
+    ${GANCHOS_HTML}
     ${OFERTA_HTML}
     ${pbs.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${pbs.map((p) => `<button data-abrir="${p.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <h3 class="font-semibold leading-tight">${esc(p.nome)}</h3><p class="caption mt-1">${esc(p.tipoProduto)}</p>

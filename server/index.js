@@ -11,6 +11,7 @@ import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
 import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
 import { REFERENCIA_COPY } from './referencias/copy.js';
 import { REFERENCIA_OFERTA } from './referencias/oferta.js';
+import { REFERENCIA_GANCHOS } from './referencias/ganchos.js';
 import { calcularCusto } from '../src/lib/precos-ia.js';
 import { lerLimite, mensagemLimite } from './limite-ia.js';
 import 'dotenv/config';
@@ -70,13 +71,14 @@ const MODELO_COMPLEXO = process.env.ANTHROPIC_MODEL_COMPLEXO || 'claude-sonnet-5
  * trafego = acrescenta a referência opcional server/referencias/trafego.js (critérios de gestão de tráfego) ao contexto estável.
  * copy = acrescenta a referência opcional server/referencias/copy.js (critérios de copy para anúncio) ao contexto estável.
  * oferta = acrescenta a referência opcional server/referencias/oferta.js (critérios de oferta) ao contexto estável.
+ * ganchos = acrescenta a biblioteca de modelos de gancho de abertura (server/referencias/ganchos.js) ao contexto estável.
  */
 export const TAREFAS = {
-  hooks:       { modelo: MODELO_LEVE,     max: 2000, copy: true },
+  hooks:       { modelo: MODELO_LEVE,     max: 2000, copy: true, ganchos: true },
   refino:      { modelo: MODELO_LEVE,     max: 3000, copy: true },
   checklist:   { modelo: MODELO_LEVE,     max: 1200, semRaciocinio: true }, // medido: 31 s -> 8 s, mesma avaliação
   imagem:      { modelo: MODELO_LEVE,     max: 1800, semRaciocinio: true }, // "Sugerir prompts": 35 s -> 16 s, prompts equivalentes
-  criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', metodologia: true, copy: true },
+  criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', metodologia: true, copy: true, ganchos: true },
   campanha:    { modelo: MODELO_COMPLEXO, max: 7000,  effort: 'medium', metodologia: true, trafego: true },
   discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium', metodologia: true, trafego: true }, // chat do rascunho de campanha
   referencias: { modelo: MODELO_COMPLEXO, max: 10000, effort: 'medium', web: true },
@@ -110,9 +112,9 @@ export const TAREFAS = {
   otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true, trafego: true, oferta: true }, // "Plano de otimização" WhatsApp x Site
 };
 
-/** Contexto estável da tarefa + as referências opcionais ligadas nela (`metodologia`, `trafego`, `copy`, `oferta`), nessa ordem. */
+/** Contexto estável da tarefa + as referências opcionais ligadas nela (`metodologia`, `trafego`, `copy`, `ganchos`, `oferta`), nessa ordem. */
 export const comMetodologia = (t, estavel) => {
-  const refs = [t?.metodologia && METODOLOGIA_VORTEX, t?.trafego && REFERENCIA_TRAFEGO, t?.copy && REFERENCIA_COPY, t?.oferta && REFERENCIA_OFERTA].filter(Boolean);
+  const refs = [t?.metodologia && METODOLOGIA_VORTEX, t?.trafego && REFERENCIA_TRAFEGO, t?.copy && REFERENCIA_COPY, t?.ganchos && REFERENCIA_GANCHOS, t?.oferta && REFERENCIA_OFERTA].filter(Boolean);
   return refs.length ? [estavel, ...refs].filter(Boolean).join('\n\n') : estavel;
 };
 

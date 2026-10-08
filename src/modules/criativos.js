@@ -13,7 +13,8 @@ import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '..
 import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
 import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../lib/narrativas.js';
 import { abrirMateriais } from './materiais-cliente.js';
-import { AVISO_META_SAUDE } from '../lib/saude.js';
+import { AVISO_META_SAUDE, ehProdutoSaude } from '../lib/saude.js';
+import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, ganchoPorNumero, rotuloModelo, descricaoModelo, motivoGancho } from '../lib/ganchos.js';
 import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
 import { briefsAbertos, briefsHtml, textoDoBrief } from './tarefas-site.js';
@@ -192,13 +193,15 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
         ${sugestaoInsight ? `<div class="mt-2 flex flex-wrap items-center gap-1" title="${esc(`Insights: ${sugestaoInsight.rotulo} "${sugestaoInsight.grupo.valor}" teve ROAS médio ${sugestaoInsight.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x em ${sugestaoInsight.grupo.amostras} resultado(s) de clientes de nicho semelhante — e este cliente ainda não testou.`)}">
           <span class="hint !mt-0"><i class="fa-solid fa-chart-simple"></i> Insights sugere (ainda não testado aqui):</span>
           <button type="button" class="tag tag-info hover:bg-indigo-100" data-insight="${esc(sugestaoInsight.grupo.valor)}" data-insight-campo="${sugestaoInsight.campo}">${esc(sugestaoInsight.rotulo)}: ${esc(sugestaoInsight.grupo.valor)} (ROAS ${sugestaoInsight.grupo.roasMedio?.toFixed(2) ?? 'n/d'}x)</button></div>` : ''}</div>
-      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, narrativa, variações, referência)</summary>
+      <details class="rounded-lg border border-slate-200 p-3"><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (modelo, framework, formato, narrativa, gancho, variações, referência)</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           <div><label class="label">Modelo pronto</label><select class="input" name="modelo">${opcoes(MODELOS_CRIATIVO, '')}</select></div>
           <div><label class="label">Framework de copy</label><select class="input" name="framework">${opcoes(FRAMEWORKS, 'livre')}</select><p class="hint">A estrutura do texto (ex.: problema → solução). Na dúvida, deixe "livre".</p></div>
           <div><label class="label">Formato</label><select class="input" name="formato">${opcoes(FORMATOS, 'video_curto')}</select></div>
           <div><label class="label">Narrativa (opcional)</label><select class="input" name="narrativa"><option value="">A IA escolhe</option>${Object.entries(ETAPAS_FUNIL).map(([e, nome]) => `<optgroup label="${nome} do funil">${NARRATIVAS.filter((n) => n.etapa === e).map((n) => `<option value="${n.id}">${esc(n.nome)}</option>`).join('')}</optgroup>`).join('')}</select>
             <p class="hint" data-aviso-narrativa>Referência da Metodologia Vortex. Na dúvida, deixe "A IA escolhe".</p></div>
+          <div><label class="label" for="modelo-gancho">Modelo de gancho (opcional)</label><select class="input" id="modelo-gancho" name="modeloGancho"><option value="">A IA escolhe</option>${opcoesGancho()}</select>
+            <p class="hint" data-aviso-gancho>${AVISO_GANCHO}</p></div>
           <div><label class="label">Variações a gerar</label><select class="input" name="quantidade" title="Menos variações = menos custo de IA nesta geração">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === (Number(cfg.variacoesPadrao) || 4) ? 'selected' : ''}>${n}</option>`).join('')}</select><p class="hint">Menos variações = menos custo nesta geração.</p></div>
           <div><label class="label">Partir de uma referência salva</label><select class="input" name="referenciaId">
             <option value="">Nenhuma</option>${referencias.map((r) => `<option value="${r.id}" ${base?.id === r.id ? 'selected' : ''}>${esc(r.titulo || 'Referência')}${r.sinal ? ' · ' + r.sinal : ''}</option>`).join('')}</select></div>
@@ -218,6 +221,12 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
       ? `${AVISO_META_SAUDE}. A IA usa um ângulo permitido (experiência, rotina, como é usar, número de clientes) e explica a troca.`
       : motivo === 'prova' ? 'Este cliente não tem prova social real no perfil: a IA vai escolher outra abordagem, sem inventar resultado.'
         : 'Referência da Metodologia Vortex. Na dúvida, deixe "A IA escolhe".';
+  });
+  on(alvo, 'change', '[name=modeloGancho]', (s) => {
+    const g = ganchoPorNumero(s.value);
+    $('[data-aviso-gancho]', alvo).textContent = g?.cuidado && ehProdutoSaude(cliente)
+      ? `Modelo com (*): ${AVISO_META_SAUDE}. A IA adapta sem resultado no corpo (só experiência de uso, rotina, disposição); se sobrar resultado no corpo, o criativo fica bloqueado para aprovação.`
+      : g ? `A variação 1 parte deste modelo, adaptado ao produto; as outras usam modelos diferentes.` : AVISO_GANCHO;
   });
   on(alvo, 'change', '[name=quantidade]', (s) => { alvo.querySelectorAll('[data-qtd]').forEach((e) => { e.textContent = s.value; }); });
   on(alvo, 'click', '[data-ang]', (b) => { const t = form.elements.briefing; t.value = (t.value ? t.value + '\n' : '') + 'Ângulo: ' + b.dataset.ang; t.focus(); });
@@ -260,7 +269,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
     if (!v.briefing && !v.modelo && !ref) return toast('Escreva um briefing curto, escolha um modelo, um produto ou uma referência.', 'erro');
     await ocupado(form.querySelector('.btn-ia'), async () => {
       const vars = await gerarCriativos({
-        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref, produto, quantidade: Number(v.quantidade) || cfg.variacoesPadrao || 4, narrativa: v.narrativa || '',
+        cliente, briefing: v.briefing, modelo: v.modelo, framework: v.framework, formato: v.formato, base: ref, produto, quantidade: Number(v.quantidade) || cfg.variacoesPadrao || 4, narrativa: v.narrativa || '', modeloGancho: Number(v.modeloGancho) || null,
         referencias: referencias.filter((r) => r.analise), resultados, catalogo: produtos, // produtos reais (alguns lidos do site do cliente)
       });
       if (!vars.length) throw new Error('A IA não devolveu variações. Tente reescrever o briefing.');
@@ -293,8 +302,9 @@ function variacao(x, i, cliente) {
   const proibidos = acharTermosProibidos(`${x.hook} ${x.copy} ${x.cta}`, cliente);
   return `<div class="rounded-lg border border-slate-200 p-3">
     <div class="flex flex-wrap items-center gap-1">${tag(x.angulo || 'ângulo', 'tag-info')}${tagNarrativa(x)}${x.gatilho ? tag('gatilho: ' + x.gatilho) : ''}${tag(x.framework)}${tag(rotulo(FORMATOS, x.formato))}
-      ${proibidos.length ? tag('termos proibidos: ' + proibidos.join(', '), 'tag-bad') : ''}</div>
+      ${proibidos.length ? tag('termos proibidos: ' + proibidos.join(', '), 'tag-bad') : ''}${(x.avisosGancho || []).map((a) => tag(a, 'tag-bad')).join('')}</div>
     <p class="mt-2 font-semibold">“${esc(x.hook)}”</p>
+    ${origemGancho(x)}
     <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700">${esc(x.copy)}</p>
     <p class="mt-1 text-sm"><b>CTA:</b> ${esc(x.cta)}</p>
     ${x.porque ? `<p class="hint">Por quê: ${esc(x.porque)}</p>` : ''}
@@ -305,6 +315,11 @@ function variacao(x, i, cliente) {
 
 /** Etiqueta pequena com a narrativa e a etapa do funil — só quando o criativo segue uma das narrativas. */
 const tagNarrativa = (c) => (c.narrativa && rotuloNarrativa(c.narrativa) ? tag(rotuloNarrativa(c.narrativa)) : '');
+const AVISO_GANCHO = 'Biblioteca de 100 ganchos (Configurações > Documentos de referência). Na dúvida, deixe "A IA escolhe": ela usa quando couber, adaptado ao produto.';
+/** Opções do select, por grupo; (*) = modelo de transformação, com cuidado em produto de saúde. */
+const opcoesGancho = () => GRUPOS_GANCHO.map((g) => `<optgroup label="${esc(nomeGrupo(g))}">${GANCHOS.filter((x) => x.grupo === g).sort((a, b) => a.n - b.n).map((x) => `<option value="${x.n}">${x.n}. ${esc(x.texto)}${x.cuidado ? ' (*)' : ''}</option>`).join('')}</optgroup>`).join('');
+/** De qual modelo da biblioteca o hook veio (só quando veio de um). */
+const origemGancho = (c) => (c.modeloGancho && ganchoPorNumero(c.modeloGancho) ? `<p class="hint !mt-0.5" data-origem-gancho><i class="fa-solid fa-anchor mr-1" aria-hidden="true"></i>Gancho a partir do ${esc(descricaoModelo(c.modeloGancho))}</p>` : '');
 
 async function salvarNovo(cliente, x, ctx) {
   const angulo = x.angulo || '', framework = x.framework || 'livre', gatilho = x.gatilho || '', formato = x.formato || 'video_curto';
@@ -313,7 +328,7 @@ async function salvarNovo(cliente, x, ctx) {
   const snap = { n: 1, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo, framework, gatilho, formato, nota: 'Versão inicial', quando: new Date().toISOString() };
   return db.criar(COL.criativos, {
     clienteId: cliente.id, nome: x.nome, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo, gatilho,
-    framework, formato, idioma: cliente.marca?.idioma || 'pt-BR', ...(x.narrativa ? { narrativa: x.narrativa } : {}),
+    framework, formato, idioma: cliente.marca?.idioma || 'pt-BR', ...(x.narrativa ? { narrativa: x.narrativa } : {}), ...(x.modeloGancho ? { modeloGancho: x.modeloGancho } : {}),
     status: 'rascunho', checklist: {}, versoes: [snap], referenciaId: ctx.referenciaId || null, modeloUsado: ctx.modelo || null,
     origem: ctx.referenciaId || ctx.modelo || x.porque ? 'ia' : 'manual', produtoId: ctx.produtoId || null,
     arquivoUrl: null, arquivoPath: null, arquivoNome: null, emUsoDesde: null, provaSocial: false,
@@ -334,13 +349,15 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
     const tudoOk = CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k]);
     alvo.innerHTML = `
     <div class="mb-3 flex flex-wrap gap-1">${tag(rotulo(STATUS_CRIATIVO, c.status), STATUS_COR[c.status])}${c.framework ? tag(c.framework, 'tag-info') : ''}
-      ${c.angulo ? tag(c.angulo) : ''}${tagNarrativa(c)}${c.gatilho ? tag('gatilho: ' + c.gatilho) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma)}
+      ${c.angulo ? tag(c.angulo) : ''}${tagNarrativa(c)}${c.modeloGancho ? tag(rotuloModelo(c.modeloGancho)) : ''}${c.gatilho ? tag('gatilho: ' + c.gatilho) : ''}${tag(rotulo(FORMATOS, c.formato))}${tag(c.idioma)}
       ${c.emUsoDesde ? tag(`em uso desde ${dataBR(c.emUsoDesde)}`, 'tag-ok') : ''}${tagAprovacao(c)}</div>
     ${c.status === 'reaprovacao' ? `<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-aviso-reaprovacao><b><i class="fa-solid fa-rotate"></i> Aguardando nova aprovação</b>
       <p class="mt-1">${esc(legendaReaprovacao(c))}</p>
       <button class="btn-primary btn-sm mt-2" data-enviar-um><i class="fa-solid fa-paper-plane"></i> Gerar novo link de aprovação com o arquivo atual</button></div>` : ''}
     ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.arquivoNome ? ` · arquivo que ele viu: <b>${esc(c.aprovacaoCliente.arquivoNome)}</b>${c.aprovacaoCliente.arquivoPath !== c.arquivoPath ? ' (não é mais o arquivo atual)' : ''}` : ''}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
     ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
+    ${motivoGancho(c, cliente) ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-gancho><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${esc(motivoGancho(c, cliente))}. Ajuste antes de aprovar.</div>` : ''}
+    ${origemGancho(c)}
     ${produtoHtml()}
     <form id="fe" class="space-y-3" data-aviso-sair>
       <p class="caption">Edite direto (sem IA) e salve como nova versão, ou peça um ajuste ao chat abaixo.</p>
@@ -511,6 +528,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
     if (s.value === 'aprovado' || s.value === 'em_uso') {
       if (!CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k])) { toast('Complete o checklist de qualidade antes de aprovar/usar.', 'erro'); return desenhar(); }
       if (acharTermosProibidos(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) { toast('Remova os termos proibidos antes de aprovar.', 'erro'); return desenhar(); }
+      if (motivoGancho(c, cliente)) { toast(`Não dá para aprovar: ${motivoGancho(c, cliente)}.`, 'erro'); return desenhar(); }
     }
     await definirStatus(c, s.value); toast('Status atualizado.'); desenhar(); recarregar();
   });

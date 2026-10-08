@@ -1,0 +1,14 @@
+{
+  "_origem": "chamada real, 08/10/2026, tarefa criativos (Sonnet 5, assinatura), Thermora (produto de saúde), modelo de gancho 37 (*) escolhido à mão, 1 variação",
+  "texto": "[{\"nome\":\"UGC rotina de manhã com 1 cápsula\",\"hook\":\"Testei uma cápsula de manhã por 30 dias. Conto como foi a rotina.\",\"angulo\":\"Teste de rotina\",\"gatilho\":\"Curiosidade\",\"framework\":\"livre\",\"formato\":\"UGC\",\"copy\":\"CENA 1 (0-3s) — Mulher no celular, na cozinha, de manhã, segurando o copo d'água e a cápsula. Fala e legenda: \\\"Testei uma cápsula de manhã por 30 dias.\\\" Texto na tela: \\\"TESTEI 30 DIAS\\\"\\n\\nCENA 2 (3-8s) — Ela mostra o pote e coloca a cápsula na mão. Fala e legenda: \\\"É a Thermora Caps. Tem cafeína e chá verde, nada de estimulante forte.\\\" Texto na tela: \\\"CAFEÍNA + CHÁ VERDE\\\"\\n\\nCENA 3 (8-14s) — Ela engole a cápsula e segue a manhã: pega a bolsa, calça o tênis, sai de casa. Fala e legenda: \\\"Eu tinha medo de ficar acelerada, porque já tentei outros e não senti nada. Aqui, pra mim, foi uma manhã normal, sem agitação.\\\" Texto na tela: \\\"SEM ACELERAR\\\"\\n\\nCENA 4 (14-20s) — Ela no carro ou no ônibus, a caminho do trabalho. Fala e legenda: \\\"Virou parte da rotina: acordo, tomo a cápsula e sigo o dia. Só 1 por manhã.\\\" Texto na tela: \\\"1 CÁPSULA DE MANHÃ\\\"\\n\\nCENA 5 (20-25s) — Close nela, sorrindo, com o pote na mão. Fala e legenda: \\\"Se a sua rotina é corrida igual a minha, vale conhecer.\\\" Texto na tela: \\\"VALE CONHECER\\\"\\n\\nObservação de produção: textos grandes, no centro do quadro, longe das faixas de cima e de baixo do 9:16. O vídeo precisa funcionar sem som, com legenda em todas as falas. Gravar com a creator relatando a experiência própria, sem citar resultado no corpo e sem números de resultado.\",\"cta\":\"Conheça a Thermora Caps\",\"porque\":\"Adapta o modelo 37 para uma experiência de uso e rotina, sem resultado no corpo. O vídeo responde às duas objeções do perfil (medo de taquicardia e produtos que não fizeram diferença) com a promessa do diferencial: cafeína e chá verde, sem estimulante forte, em 1 cápsula de manhã.\",\"narrativa\":\"por_que_funciona\",\"modeloGancho\":37}]",
+  "uso": {
+    "entrada": 2,
+    "saida": 959,
+    "cacheEscrita": 8429,
+    "cacheLeitura": 8460,
+    "buscasWeb": 0,
+    "custoUsd": 0,
+    "modelo": "claude-sonnet-5",
+    "provedor": "cli"
+  }
+}
