@@ -107,6 +107,8 @@ export const TAREFAS_IA = {
   pesquisa_nicho: ['Pesquisa web do nicho', 'mercado', 4000, 'Sonnet'], resumo_documento: ['Resumo de documento de referência', 'mercado', 2500, 'Sonnet'],
   recomendacao_anuncio: ['Analisar e recomendar', 'campanhas', 8000, 'Sonnet'], leitura_resultados: ['Leitura de prints de resultado', 'campanhas', 5000, 'Sonnet'],
   otimizacao_anuncio: ['Plano de otimização WhatsApp x Site', 'campanhas', 6000, 'Sonnet'],
+  especialista_trafego: ['Especialista de tráfego', 'campanhas', 4000, 'Sonnet'], especialista_copy: ['Especialista de copy', 'criativos', 4000, 'Sonnet'],
+  especialista_oferta: ['Especialista de oferta', 'campanhas', 4000, 'Sonnet'],
 };
 export const CATEGORIAS_CUSTO = { criativos: 'Criativos', hooks: 'Hooks', mercado: 'Análise de mercado', site: 'Site/Loja', campanhas: 'Campanhas', playbooks: 'Playbooks', insights: 'Insights' };
 

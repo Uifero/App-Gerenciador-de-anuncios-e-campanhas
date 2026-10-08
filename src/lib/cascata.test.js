@@ -133,7 +133,7 @@ describe('arquivos retidos para links de aprovação', () => {
 describe('apagarClienteEmCascata — análises, tarefas, prints, documentos e cache do nicho', () => {
   it('apaga os do cliente; documento geral fica; cache do nicho só sai se ninguém mais usa o nicho', async () => {
     popular('clientes', [{ id: 'cli1', nicho: 'Moda' }, { id: 'cli2', nicho: 'moda' }, { id: 'cli3', nicho: 'Pet' }]);
-    popular('analises', [{ id: 'a1', clienteId: 'cli1' }, { id: 'a2', clienteId: 'cli2' }]);
+    popular('analises', [{ id: 'a1', clienteId: 'cli1', tipo: 'especialista' }, { id: 'a2', clienteId: 'cli2' }]);
     popular('tarefas', [{ id: 't1', clienteId: 'cli1' }]);
     popular('printsResultado', [{ id: 'p1', clienteId: 'cli1' }]);
     popular('documentos', [{ id: 'd1', clienteId: 'cli1' }, { id: 'dg', clienteId: null }]);

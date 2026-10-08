@@ -17,6 +17,7 @@ import { marcasQueContinuam, textoMarca } from '../lib/leitura.js';
 import { normalizarRastreamento, indicadorPixel } from '../lib/rastreamento.js';
 import { PAISES, PAIS_PADRAO, paisDoCliente } from '../lib/pais.js';
 import { ehProdutoSaude, AVISO_META_SAUDE } from '../lib/saude.js';
+import { abrirEspecialistas } from './especialistas.js';
 
 /**
  * Busca de exemplos de mercado do primeiro uso: roda sozinha na tela do cliente recém-cadastrado, mostra o que está
@@ -320,6 +321,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       ${indicadorPixel(c, id)}</div>
     <div class="flex flex-wrap gap-2"><a class="btn-ghost btn-sm" href="#/c/${id}/editar" title="Editar dados, marca, metas e escopo"><i class="fa-solid fa-pen"></i> Editar</a>
       <button class="btn-ghost btn-sm" data-exportar title="Baixa um arquivo JSON com todos os dados deste cliente (backup)"><i class="fa-solid fa-file-export"></i> Baixar backup</button>
+      <button class="btn-ghost btn-sm" data-especialistas title="Consultar um especialista do app (tráfego, copy, oferta) sobre um item deste cliente"><i class="fa-solid fa-user-tie" aria-hidden="true"></i> Especialistas</button>
       <button class="btn-ghost btn-sm" data-mais title="Duplicar como base, playbooks e excluir o cliente (ações de uso raro)"><i class="fa-solid fa-ellipsis"></i> Mais ações</button></div></div>
     <div id="busca-inicial" data-cliente="${esc(id)}">${buscaEmAndamento(id) ? `<div class="card mb-5 border-indigo-200 bg-indigo-50/50 text-sm"><i class="fa-solid fa-spinner fa-spin mr-1 text-indigo-500"></i>Busca inicial de exemplos de mercado em andamento… os resultados abrem numa janela assim que chegarem.</div>` : ''}</div>
     <div id="cards"><div class="card mb-5 h-16 animate-pulse" aria-hidden="true"></div></div>
@@ -370,6 +372,7 @@ export async function viewCliente(el, id, aba, abasMap) {
   on(el, 'click', '[data-ok-busca]', () => { $('#busca-inicial', el).innerHTML = ''; });
   on(el, 'click', '[data-tentar-busca]', () => buscaInicial(c));
 
+  on(el, 'click', '[data-especialistas]', () => { abrirEspecialistas(c).catch((e) => { console.error(e); toast('Não consegui abrir os especialistas. Recarregue a página e tente de novo.', 'erro'); }); });
   on(el, 'click', '[data-mais]', async () => {
     const pbs = await db.listar(COL.playbooks);
     const m = modal('Mais ações', `<div class="space-y-3">

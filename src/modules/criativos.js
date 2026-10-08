@@ -5,6 +5,7 @@ import { obterConfig } from './configuracoes.js';
 import { abrirEnvio, sincronizarAprovacoes, tagAprovacao, statusAposTrocarArquivo, legendaReaprovacao } from './aprovacao.js';
 import { perguntarBuscaMercado } from './busca-mercado.js';
 import { abrirEstudio } from './estudio.js';
+import { abrirEspecialistas } from './especialistas.js';
 import { abrirBiblioteca } from './modelos-prompt.js';
 import { montarQuestionarioNaAba } from './perguntas-site.js';
 import { apagarCriativoEmCascata } from '../lib/cascata.js';
@@ -387,7 +388,8 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
 
     <div class="mt-5 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3"><h4 class="mb-1 text-sm font-semibold"><i class="fa-solid fa-clapperboard"></i> Material para a campanha</h4>
       <p class="hint mb-2">Gera a foto (PNG) e o vídeo prontos para subir no gerenciador de anúncios, a partir deste criativo.</p>
-      <button class="btn-primary btn-sm" data-estudio><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar foto e vídeo</button></div>
+      <button class="btn-primary btn-sm" data-estudio><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar foto e vídeo</button>
+      <button class="btn-ghost btn-sm" type="button" data-pedir-especialista title="Abre os Especialistas com este criativo escolhido"><i class="fa-solid fa-user-tie" aria-hidden="true"></i> Pedir opinião a um especialista</button></div>
 
     <details class="mt-5 rounded-lg border border-slate-200 p-3" ${c.arquivoUrl ? 'open' : ''}><summary class="cursor-pointer text-sm font-medium text-slate-600">Mais opções (enviar a peça final e histórico)</summary>
     <div class="mt-3"><h4 class="mb-2 text-sm font-semibold">Peça final (arquivo)</h4>
@@ -480,6 +482,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
   });
   on(alvo, 'click', '[data-copiar]', () => copiar(`${c.hook}\n\n${c.copy}\n\n${c.cta}`));
   on(alvo, 'click', '[data-estudio]', () => abrirEstudio(c, cliente, fonte));
+  on(alvo, 'click', '[data-pedir-especialista]', () => abrirEspecialistas(cliente, { alvoInicial: { tipo: 'criativo', id: c.id } }).catch((e) => toast(e.message || 'Não consegui abrir os especialistas.', 'erro')));
   on(alvo, 'submit', '#fc', async (f, ev) => {
     ev.preventDefault();
     const instrucao = lerForm(f).instrucao;

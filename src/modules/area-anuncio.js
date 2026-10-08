@@ -2,6 +2,7 @@
 // tarefas aceitas. O texto e os campos ficam em cliente.comoAnuncia (uma fonte só, lida por criativos, campanhas e
 // diagnóstico via core/ia.js contextoCliente). Nada é aplicado sem o operador aceitar item por item.
 import { db, COL } from '../core/storage.js';
+import { analisesDoTipo } from '../lib/analises.js';
 import { extrairCamposAnuncio, sugerirPalavrasBiblioteca } from '../core/ia.js';
 import {
   comoAnunciaDe, preencherVazios, normalizarCamposAnuncio, CAMPOS_ANUNCIO, DESTINOS, ATENDIMENTO, LEGENDA_TEXTO, AVISO_AUTO, avisosDestino, sugerirNicho,
@@ -125,7 +126,7 @@ export async function montarAreaAnuncio(alvo, { cliente, produtos = [], aoMudar 
   const el = document.createElement('div');
   const [ctx, pesquisa, tarefas] = await Promise.all([carregarContexto(cliente), pesquisaEmCache(cliente), db.listar(COL.tarefas, { clienteId: cliente.id }).catch(() => [])]);
   const fontes = montarFontes(ctx);
-  const analises = ctx.analises.filter((a) => a.tipo === 'recomendacao').sort((a, b) => String(b.criadoEm).localeCompare(String(a.criadoEm)));
+  const analises = analisesDoTipo(ctx.analises, 'recomendacao');
   const ultima = analises[0] || null;
   alvo.replaceChildren(el);
   el.innerHTML = comoAnunciaHtml(cliente, produtos) + analisarHtml(cliente, { avisos: fontes.avisos, perguntas: fontes.perguntas, pesquisa, ultima }) + tarefasHtml(tarefas) + '<div data-prints-resultado></div>';

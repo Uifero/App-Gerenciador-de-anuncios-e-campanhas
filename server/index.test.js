@@ -30,7 +30,7 @@ describe('TAREFAS', () => {
   });
 
   it('metodologia (referência opcional) só em criativos, campanha e site; nas outras o contexto fica igual', () => {
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.metodologia).map(([n]) => n).sort()).toEqual(['campanha', 'criativos', 'discussao_campanha', 'otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.metodologia).map(([n]) => n).sort()).toEqual(['campanha', 'criativos', 'discussao_campanha', 'especialista_copy', 'otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
     expect(comMetodologia(TAREFAS.site, 'PERFIL').startsWith(`PERFIL
 
 ${METODOLOGIA_VORTEX}`)).toBe(true);
@@ -41,7 +41,7 @@ ${METODOLOGIA_VORTEX}`)).toBe(true);
   });
 
   it('referência de tráfego só nas tarefas de campanha, análise e diagnóstico; vem depois da metodologia', () => {
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.trafego).map(([n]) => n).sort()).toEqual(['campanha', 'diagnostico', 'discussao_campanha', 'insights', 'otimizacao_anuncio', 'recomendacao_anuncio']);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.trafego).map(([n]) => n).sort()).toEqual(['campanha', 'diagnostico', 'discussao_campanha', 'especialista_trafego', 'insights', 'otimizacao_anuncio', 'recomendacao_anuncio']);
     expect(comMetodologia(TAREFAS.campanha, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}
@@ -64,7 +64,7 @@ ${REFERENCIA_TRAFEGO}`);
   });
 
   it('referência de copy só em criativos, hooks e refino; vem depois da metodologia; site e checklist ficam de fora', () => {
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.copy).map(([n]) => n).sort()).toEqual(['criativos', 'hooks', 'refino']);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.copy).map(([n]) => n).sort()).toEqual(['criativos', 'especialista_copy', 'hooks', 'refino']);
     expect(comMetodologia(TAREFAS.criativos, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}
@@ -110,7 +110,7 @@ ${REFERENCIA_GANCHOS}`);
   });
 
   it('referência de oferta só no site, em "Analisar e recomendar" e no plano de otimização; sempre por último', () => {
-    expect(Object.entries(TAREFAS).filter(([, t]) => t.oferta).map(([n]) => n).sort()).toEqual(['otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
+    expect(Object.entries(TAREFAS).filter(([, t]) => t.oferta).map(([n]) => n).sort()).toEqual(['especialista_oferta', 'otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
     expect(comMetodologia(TAREFAS.site, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}

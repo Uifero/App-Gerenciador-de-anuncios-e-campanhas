@@ -72,7 +72,7 @@ describe('restaurarBackup', () => {
 
 describe('montarBackup — dados da análise de anúncio', () => {
   it('inclui análises, tarefas, prints, documentos e cache da pesquisa (do cliente, no backup de um cliente)', async () => {
-    bancos.analises = new Map([['a1', { clienteId: 'c1' }], ['a2', { clienteId: 'c2' }]]);
+    bancos.analises = new Map([['a1', { clienteId: 'c1', tipo: 'especialista' }], ['a2', { clienteId: 'c2' }]]);
     bancos.tarefas = new Map([['t1', { clienteId: 'c1' }]]);
     bancos.printsResultado = new Map([['p1', { clienteId: 'c1', hash: 'h' }]]);
     bancos.documentos = new Map([['d1', { clienteId: 'c1' }], ['dg', { clienteId: null }]]);

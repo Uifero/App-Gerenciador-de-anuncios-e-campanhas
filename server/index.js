@@ -110,6 +110,10 @@ export const TAREFAS = {
   recomendacao_anuncio: { modelo: MODELO_COMPLEXO, max: 8000, effort: 'medium', metodologia: true, trafego: true, oferta: true }, // "Analisar e recomendar" (sem busca: usa a pesquisa em cache)
   leitura_resultados: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', imagens: true }, // prints do Gerenciador de Anúncios -> números para revisão (nunca dado pessoal)
   otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true, trafego: true, oferta: true }, // "Plano de otimização" WhatsApp x Site
+  // "Especialistas" (src/lib/especialistas.js): consulta a um especialista num MÉTODO sobre um item do cliente; só aconselha.
+  especialista_trafego: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'medium', trafego: true },
+  especialista_copy:    { modelo: MODELO_COMPLEXO, max: 4000, effort: 'medium', metodologia: true, copy: true },
+  especialista_oferta:  { modelo: MODELO_COMPLEXO, max: 4000, effort: 'medium', oferta: true },
 };
 
 /** Contexto estável da tarefa + as referências opcionais ligadas nela (`metodologia`, `trafego`, `copy`, `ganchos`, `oferta`), nessa ordem. */

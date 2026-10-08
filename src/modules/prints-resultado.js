@@ -3,6 +3,7 @@
 // material INTERNO, nunca vai para o site nem para link de aprovação) e o registro em gcc_prints_resultado. Os números
 // lidos NUNCA viram resultado sozinhos: só as linhas que o operador confirma na revisão.
 import { db, COL } from '../core/storage.js';
+import { analisesDoTipo } from '../lib/analises.js';
 import { lerPrintsResultado } from '../core/ia.js';
 import { salvarMaterial, hashArquivo } from '../lib/materiais.js';
 import { prepararImagem } from './diagnostico.js';
@@ -72,7 +73,7 @@ export async function montarPrintsResultado(el, { cliente, aoMudar = () => {} })
     db.listar(COL.criativos, f), db.listar(COL.produtos, f).catch(() => []), db.listar(COL.analises, f).catch(() => []),
   ]);
   const pendentes = prints.filter((p) => p.status !== 'salvo');
-  const planos = analises.filter((a) => a.tipo === 'otimizacao').sort((a, b) => String(b.criadoEm).localeCompare(String(a.criadoEm)));
+  const planos = analisesDoTipo(analises, 'otimizacao');
   const fx = faixa(resultados);
   let intervalo = { inicio: fx?.inicio || '', fim: fx?.fim || '' };
   const vinc = { campanhas, criativos: criativos.filter((c) => !c.arquivado), produtos };

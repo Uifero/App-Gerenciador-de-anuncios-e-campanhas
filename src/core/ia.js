@@ -8,6 +8,7 @@ import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
 import { textoComoAnuncia } from '../lib/anuncio.js';
 import { REGRA_INSTAGRAM } from '../lib/formatos-instagram.js';
 import { linhaGanchos, conferirGanchos, numeroModelo } from '../lib/ganchos.js';
+import { TAREFA_DA_AREA, normalizarConsulta } from '../lib/especialistas.js';
 import { juntarItensSoltos } from '../lib/prints-resultado.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
@@ -1298,4 +1299,28 @@ ${REGRAS_ANALISE}
 Saída JSON: {"resumo": string, "whatsapp": [ação], "site": [ação], "ondeVerba": {...}, "conflitos": [string]}. Textos em português do Brasil. ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'otimizacao_anuncio', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return dados || {};
+}
+
+// ---------- especialistas (src/lib/especialistas.js) ----------
+/**
+ * Consulta a um especialista do app num MÉTODO (nunca uma pessoa real) sobre um item do cliente. Só aconselha o gestor:
+ * nada é aplicado. Em cliente de saúde, o verificador local (achadosSaude) acrescenta um aviso se o que ele sugere tiver
+ * kg/cm ou antes e depois, como em lib/recomendacao.js.
+ */
+export async function consultarEspecialista({ cliente, especialista, alvo, contexto = '', pergunta = '' }) {
+  const saude = ehProdutoSaude(cliente);
+  const system = `Você é o especialista em ${especialista.nome} do app (método: ${especialista.metodo}). Fala como "o especialista em ${especialista.nome} do app"; nunca diz ser uma pessoa real nem cita ou imita alguém real. Escreve para o GESTOR de tráfego, em português do Brasil, direto e prático.
+Cite só dados que estão no contexto (perfil do cliente e item analisado). Quando faltar dado para avaliar um ponto, diga claramente (avaliacao "falta_dado") e pergunte. Nunca invente número, preço, garantia, prazo, depoimento nem benchmark de mercado.${saude ? `\n${REGRA_SAUDE}` : ''}`;
+  const pedido = `ITEM ANALISADO (${alvo?.rotulo || alvo?.tipo || 'pergunta livre'}):
+${contexto || '(nenhum item: responda à pergunta com o perfil do cliente)'}
+${pergunta ? `\nPERGUNTA DO GESTOR: ${pergunta}\n` : ''}
+CRITÉRIOS DO MÉTODO (avalie o item por eles; pule o que não se aplica):
+${especialista.foco.map((f) => `- ${f}`).join('\n')}
+
+Saída JSON: {"resumo": string (2-3 frases: o diagnóstico), "pontos": [{"ponto": string, "avaliacao": "ok"|"ajustar"|"falta_dado", "porque": string}], "acoes": [{"prioridade": n (1 = mais importante), "acao": string (concreta), "porque": string}] (no máximo 5), "perguntas": [string] (o que falta saber), "avisos": [string]}. ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: TAREFA_DA_AREA[especialista.area], cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
+  const r = normalizarConsulta(dados);
+  // Só o que o especialista SUGERE (resumo e ações): os pontos e avisos dele costumam citar o proibido para dizer "não use".
+  if (saude) { const ach = achadosSaude(JSON.stringify([r.resumo, r.acoes])); if (ach.length) r.avisos.push(`Produto de saúde: o Meta proíbe ${ach.join(', ')} em anúncios — não use isso no criativo.`); }
+  return r;
 }

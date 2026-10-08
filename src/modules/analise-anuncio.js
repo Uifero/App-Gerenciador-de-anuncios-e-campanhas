@@ -2,6 +2,7 @@
 // prints-resultado.js). Tudo lido da FONTE na hora: cliente, produtos, criativos, resultados, swipe file do nicho,
 // clientes do mesmo nicho (agregado), documentos e o cache da pesquisa web (7 dias por nicho + destino).
 import { db, COL } from '../core/storage.js';
+import { analisesDoTipo } from '../lib/analises.js';
 import { pesquisarNicho, recomendarAnuncio, planejarOtimizacao } from '../core/ia.js';
 import { comoAnunciaDe, avisosDestino, sugerirNicho } from '../lib/anuncio.js';
 import { anunciosDoNicho, resultadosDoNicho, normalizarPesquisa, chavePesquisa, pesquisaValida, mesmoNicho, normNicho } from '../lib/fontes-analise.js';
@@ -60,7 +61,7 @@ export function montarFontes(ctx, pesquisa = null) {
     perguntas: perguntasFaltantes({ cliente, resultados, sugestaoNicho: sugerirNicho(cliente, produtos) }) };
 }
 
-const ultima = (analises, tipo) => analises.filter((a) => a.tipo === tipo).sort((a, b) => String(b.criadoEm).localeCompare(String(a.criadoEm)))[0] || null;
+const ultima = (analises, tipo) => analisesDoTipo(analises, tipo)[0] || null;
 
 /**
  * "Analisar e recomendar". Com IA: pesquisa (cache ou uma busca) + uma chamada de recomendação. Sem IA: regras do app.
