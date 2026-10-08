@@ -6,6 +6,7 @@ import { db, COL } from '../core/storage.js';
 import { consultarEspecialista } from '../core/ia.js';
 import { analisesDoTipo } from '../lib/analises.js';
 import { ESPECIALISTAS, ALVOS, especialistaPorId, contextoDoAlvo, normalizarConsulta } from '../lib/especialistas.js';
+import { ehProdutoSaude } from '../lib/saude.js';
 import { esc, $, on, modal, ocupado, toast, tag, iaNota, dataBR, mostrarResultado } from '../core/ui.js';
 
 const TAG_AVALIACAO = { ok: ['ok', 'tag-ok'], ajustar: ['ajustar', 'tag-warn'], falta_dado: ['falta de dado', ''] };
@@ -41,11 +42,15 @@ function cardResultado(esp, alvo, r, quando = null) {
     <p class="hint">${esc(esp.origem.charAt(0).toUpperCase() + esp.origem.slice(1))}; o especialista segue as regras do app (não inventa dado e respeita a política do Meta).</p></div>`;
 }
 
-function cardChecklist(esp, alvo) {
+// Em cliente de saúde, o checklist de qualquer método ganha a regra do Meta (a mesma da REGRA_SAUDE).
+export const ITEM_SAUDE = 'Produto de saúde: o texto não promete efeito no corpo (metabolismo, energia, disposição, queima de gordura, apetite) nem fala da condição de quem assiste ("sem energia", "seu corpo pede")? Composição real, rotina e experiência de uso podem.';
+
+function cardChecklist(esp, alvo, saude = false) {
+  const itens = saude ? [...esp.checklist, ITEM_SAUDE] : esp.checklist;
   return `<div class="card mt-4" data-checklist-especialista tabindex="-1">
     <p class="font-semibold"><i class="fa-solid fa-list-check mr-1 text-slate-400" aria-hidden="true"></i>Checklist: ${esc(esp.nome)}${alvo ? ` · ${esc(alvo.nome)}` : ''}</p>
     <p class="caption mb-2">Sem IA: responda você mesmo, olhando o item escolhido. Nada é guardado.</p>
-    <ul class="space-y-1 text-sm">${esp.checklist.map((q, i) => `<li><label class="flex min-h-[44px] items-start gap-2 py-1"><input type="checkbox" class="mt-1 h-5 w-5 shrink-0" name="ck${i}"> <span>${esc(q)}</span></label></li>`).join('')}</ul></div>`;
+    <ul class="space-y-1 text-sm">${itens.map((q, i) => `<li><label class="flex min-h-[44px] items-start gap-2 py-1"><input type="checkbox" class="mt-1 h-5 w-5 shrink-0" name="ck${i}"> <span>${esc(q)}</span></label></li>`).join('')}</ul></div>`;
 }
 
 /** Abre a janela. `alvoInicial` = { tipo, id } (ex.: o criativo aberto). */
@@ -101,7 +106,7 @@ export async function abrirEspecialistas(cliente, { alvoInicial = null } = {}) {
   on(raiz, 'change', '[name=especialista]', (r) => { esp = especialistaPorId(r.value) || esp; alvoValor = $('[name=alvo]', raiz).value; desenharAlvos(); saida.innerHTML = ''; });
   on(raiz, 'change', '[name=alvo]', (s) => { alvoValor = s.value; });
   on(raiz, 'click', '[data-checklist-sem-ia]', () => {
-    saida.innerHTML = cardChecklist(esp, alvoAtual());
+    saida.innerHTML = cardChecklist(esp, alvoAtual(), ehProdutoSaude(cliente));
     mostrarResultado($('[data-checklist-especialista]', saida), 'Checklist abaixo.');
   });
   on(raiz, 'submit', '[data-form-especialista]', async (form, ev) => {

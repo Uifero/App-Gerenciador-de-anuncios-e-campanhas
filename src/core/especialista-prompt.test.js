@@ -56,10 +56,10 @@ describe('consultarEspecialista', () => {
     const r = await consultarEspecialista({ cliente: thermora, especialista: especialistaPorId('copy'), alvo: { tipo: 'criativo' } });
     expect(r.avisos).toEqual(['Não use antes e depois']);
   });
-  it('resposta real gravada: normalizada e sem aviso falso de saúde', async () => {
+  it('resposta real gravada: normalizada; a sugestão "usar disposição" agora gera o aviso (efeito no corpo)', async () => {
     responder(real);
     const r = await consultarEspecialista({ cliente: thermora, especialista: especialistaPorId('copy'), alvo: { tipo: 'criativo' } });
     expect(r.acoes.length).toBeGreaterThan(0);
-    expect(r.avisos.some((a) => a.startsWith('Produto de saúde: o Meta proíbe'))).toBe(false);
+    expect(r.avisos.at(-1)).toMatch(/^Produto de saúde: o Meta proíbe .*disposição/);
   });
 });

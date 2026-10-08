@@ -5,7 +5,8 @@
 // O snapshot (gcc_aprovacoes/{token}) contém só o necessário para exibir; nada mais do cliente/app é exposto pelo link.
 // As regras do Firestore (firestore.rules) permitem ao público APENAS ler o documento do token e gravar a própria resposta.
 import { db, COL } from '../core/storage.js';
-import { acharTermosProibidos } from '../core/ia.js';
+import { acharTermosDoCliente } from '../core/ia.js';
+import { motivoSaude } from '../lib/saude.js';
 import { motivoGancho } from '../lib/ganchos.js';
 import { CHECKLIST_QUALIDADE, FORMATOS } from '../lib/constantes.js';
 import { garantirPrevia, previaAtual } from '../lib/previa.js';
@@ -33,7 +34,9 @@ export const linkSoLocal = () => !BASE_PUBLICA && /^(localhost|127.|[::1])/.test
 /** Só vai para o cliente final o que passou no crivo interno: checklist completo e sem termos proibidos. */
 export function motivoBloqueio(c, cliente) {
   if (!CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k])) return 'checklist de qualidade incompleto';
-  if (acharTermosProibidos(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) return 'contém termos proibidos';
+  if (acharTermosDoCliente(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) return 'contém termos proibidos';
+  const saude = motivoSaude(`${c.hook} ${c.copy} ${c.cta}`, cliente);
+  if (saude) return saude;
   const gancho = motivoGancho(c, cliente);
   if (gancho) return gancho;
   return null;

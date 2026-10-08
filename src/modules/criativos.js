@@ -1,6 +1,6 @@
 // Aba Criativos: gerar (IA ou manual), refinar por chat com histórico de versões, aprovar, anexar arquivo final.
 import { db, COL, removerArquivo } from '../core/storage.js';
-import { gerarCriativos, refinarCriativo, checarQualidade, acharTermosProibidos } from '../core/ia.js';
+import { gerarCriativos, refinarCriativo, checarQualidade, acharTermosDoCliente } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
 import { abrirEnvio, sincronizarAprovacoes, tagAprovacao, statusAposTrocarArquivo, legendaReaprovacao } from './aprovacao.js';
 import { perguntarBuscaMercado } from './busca-mercado.js';
@@ -14,7 +14,7 @@ import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '..
 import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
 import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../lib/narrativas.js';
 import { abrirMateriais } from './materiais-cliente.js';
-import { AVISO_META_SAUDE, ehProdutoSaude } from '../lib/saude.js';
+import { AVISO_META_SAUDE, ehProdutoSaude, achadosSaude, motivoSaude } from '../lib/saude.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, ganchoPorNumero, rotuloModelo, descricaoModelo, motivoGancho } from '../lib/ganchos.js';
 import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
@@ -226,7 +226,7 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
   on(alvo, 'change', '[name=modeloGancho]', (s) => {
     const g = ganchoPorNumero(s.value);
     $('[data-aviso-gancho]', alvo).textContent = g?.cuidado && ehProdutoSaude(cliente)
-      ? `Modelo com (*): ${AVISO_META_SAUDE}. A IA adapta sem resultado no corpo (só experiência de uso, rotina, disposição); se sobrar resultado no corpo, o criativo fica bloqueado para aprovação.`
+      ? `Modelo com (*): ${AVISO_META_SAUDE}. A IA adapta sem resultado no corpo nem promessa de efeito (só experiência de uso, rotina, composição real); se sobrar resultado no corpo, o criativo fica bloqueado para aprovação.`
       : g ? `A variação 1 parte deste modelo, adaptado ao produto; as outras usam modelos diferentes.` : AVISO_GANCHO;
   });
   on(alvo, 'change', '[name=quantidade]', (s) => { alvo.querySelectorAll('[data-qtd]').forEach((e) => { e.textContent = s.value; }); });
@@ -300,10 +300,11 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
 }
 
 function variacao(x, i, cliente) {
-  const proibidos = acharTermosProibidos(`${x.hook} ${x.copy} ${x.cta}`, cliente);
+  const texto = `${x.hook} ${x.copy} ${x.cta}`, proibidos = acharTermosDoCliente(texto, cliente);
+  const saude = motivoSaude(texto, cliente) ? achadosSaude(texto) : [];
   return `<div class="rounded-lg border border-slate-200 p-3">
     <div class="flex flex-wrap items-center gap-1">${tag(x.angulo || 'ângulo', 'tag-info')}${tagNarrativa(x)}${x.gatilho ? tag('gatilho: ' + x.gatilho) : ''}${tag(x.framework)}${tag(rotulo(FORMATOS, x.formato))}
-      ${proibidos.length ? tag('termos proibidos: ' + proibidos.join(', '), 'tag-bad') : ''}${(x.avisosGancho || []).map((a) => tag(a, 'tag-bad')).join('')}</div>
+      ${proibidos.length ? tag('termos proibidos: ' + proibidos.join(', '), 'tag-bad') : ''}${saude.length ? `<span class="tag tag-bad" data-tag-saude title="${esc(motivoSaude(texto, cliente))}">saúde (Meta): ${esc(saude.join(', '))}</span>` : ''}${(x.avisosGancho || []).map((a) => tag(a, 'tag-bad')).join('')}</div>
     <p class="mt-2 font-semibold">“${esc(x.hook)}”</p>
     ${origemGancho(x)}
     <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700">${esc(x.copy)}</p>
@@ -345,7 +346,8 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
   const alvo = $('#d', m.el);
 
   const desenhar = () => {
-    const proibidos = acharTermosProibidos(`${c.hook} ${c.copy} ${c.cta}`, cliente);
+    const proibidos = acharTermosDoCliente(`${c.hook} ${c.copy} ${c.cta}`, cliente);
+    const saude = motivoSaude(`${c.hook} ${c.copy} ${c.cta}`, cliente);
     const versoes = c.versoes || [];
     const tudoOk = CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k]);
     alvo.innerHTML = `
@@ -357,6 +359,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
       <button class="btn-primary btn-sm mt-2" data-enviar-um><i class="fa-solid fa-paper-plane"></i> Gerar novo link de aprovação com o arquivo atual</button></div>` : ''}
     ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.arquivoNome ? ` · arquivo que ele viu: <b>${esc(c.aprovacaoCliente.arquivoNome)}</b>${c.aprovacaoCliente.arquivoPath !== c.arquivoPath ? ' (não é mais o arquivo atual)' : ''}` : ''}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
     ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
+    ${saude ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-saude><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não dá para aprovar nem enviar ao cliente: ${esc(saude)}.</div>` : ''}
     ${motivoGancho(c, cliente) ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-gancho><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${esc(motivoGancho(c, cliente))}. Ajuste antes de aprovar.</div>` : ''}
     ${origemGancho(c)}
     ${produtoHtml()}
@@ -530,7 +533,9 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
     if (s.value === 'pronto_aprovacao') { desenhar(); return enviarEste(); } // "aguardando cliente" só existe com um link gerado
     if (s.value === 'aprovado' || s.value === 'em_uso') {
       if (!CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k])) { toast('Complete o checklist de qualidade antes de aprovar/usar.', 'erro'); return desenhar(); }
-      if (acharTermosProibidos(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) { toast('Remova os termos proibidos antes de aprovar.', 'erro'); return desenhar(); }
+      if (acharTermosDoCliente(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) { toast('Remova os termos proibidos antes de aprovar.', 'erro'); return desenhar(); }
+      const saude = motivoSaude(`${c.hook} ${c.copy} ${c.cta}`, cliente);
+      if (saude) { toast(`Não dá para aprovar: ${saude}.`, 'erro'); return desenhar(); }
       if (motivoGancho(c, cliente)) { toast(`Não dá para aprovar: ${motivoGancho(c, cliente)}.`, 'erro'); return desenhar(); }
     }
     await definirStatus(c, s.value); toast('Status atualizado.'); desenhar(); recarregar();

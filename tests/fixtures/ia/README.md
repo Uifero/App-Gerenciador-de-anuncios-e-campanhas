@@ -22,6 +22,7 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `ganchos-criativo-moda-real.json` | "Gerar criativos" (tarefa `criativos`, Sonnet 5) com a biblioteca de ganchos, loja de moda, 3 variações: modelos 47, 68 e 5, sem colchete e sem repetir | chamada real, 08/10/2026 |
 | `ganchos-thermora-asterisco-real.json` | "Gerar criativos" (tarefa `criativos`), Thermora com o modelo 37 (*) escolhido à mão: virou experiência de rotina, sem resultado no corpo | chamada real, 08/10/2026 |
 | `especialista-thermora-real.json` | Especialistas: "Copy de resposta direta" (tarefa `especialista_copy`, Sonnet 5, limite 2500) sobre o criativo do modelo de gancho 37 da Thermora; marcou o relato de 30 dias como falta de dado | chamada real, 08/10/2026 |
+| `criativos-thermora-sem-efeito-real.json` | "Gerar criativos" (tarefa `criativos`, Sonnet 5), Thermora com a `REGRA_SAUDE` nova (sem efeito no corpo nem condição de quem assiste), perfil citando "mais energia e metabolismo acelerado" de propósito: as 3 variações usam só composição real e rotina | chamada real, 08/10/2026 |
 | `recomendacao-moda.json` | Recomendação escrita à mão (teste 60/40 e citações inventadas, para testar a conferência) | sem IA |
 | `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |

@@ -63,6 +63,6 @@ export function linhaGanchos({ fixo = null, quantidade = 1, cliente } = {}) {
   const g = ganchoPorNumero(fixo);
   const base = `Modelos de gancho: quando couber, parta de um modelo da biblioteca de ganchos, adaptado a este produto (sem colchetes), ${quantidade > 1 ? 'um modelo diferente em cada item, ' : ''}e informe o número em "modeloGancho" (null se não usou nenhum).`;
   if (!g) return base;
-  const saude = g.cuidado && ehProdutoSaude(cliente) ? ' Este modelo tem (*) e o produto é de saúde: adapte sem resultado no corpo (peso, medidas, antes e depois, transformação física); o resultado citado só pode ser experiência de uso, rotina, disposição ou praticidade.' : '';
+  const saude = g.cuidado && ehProdutoSaude(cliente) ? ' Este modelo tem (*) e o produto é de saúde: adapte sem resultado no corpo (peso, medidas, antes e depois, transformação física); o que citar só pode ser experiência de uso, rotina ou praticidade, sem prometer efeito no corpo (energia, disposição, metabolismo) nem falar da condição de quem assiste.' : '';
   return `${base} ${quantidade > 1 ? 'A variação 1 usa' : 'Use'} o modelo de gancho ${g.n}: "${g.texto}".${saude}`;
 }

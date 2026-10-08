@@ -14,6 +14,7 @@ import { avisosCampanha, lojaDoCliente, urlDoProduto, fonteDiagnostico, linhasFo
 import { produtosComFotos } from '../lib/fotos-site.js';
 import { etiquetaSite } from '../lib/aprovacao-site.js';
 import { montarAreaAnuncio } from './area-anuncio.js';
+import { motivoSaude } from '../lib/saude.js';
 import {
   esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, moeda, toast, modal, ocupado, lerForm, opcoes, copiar,
   listaDeLinhas, num, confirmar,
@@ -440,6 +441,8 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
   }));
   on(alvo, 'click', '[data-uso]', async (b) => {
     const cr = doCli(b.dataset.uso);
+    const saude = motivoSaude(`${cr.hook} ${cr.copy} ${cr.cta}`, cliente); // criativo aprovado antes da regra atual
+    if (saude) return toast(`Não dá para pôr em uso "${cr.nome}": ${saude}. Ajuste o texto em Criativos.`, 'erro');
     await definirStatus(cr, 'em_uso');
     await salvar({ criativos: c.criativos.map((k) => (k.id === cr.id ? { ...k, inicio: cr.emUsoDesde } : k)) });
     toast('Marcado em uso. A data de início foi registrada.');

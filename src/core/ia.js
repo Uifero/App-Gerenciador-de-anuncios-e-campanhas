@@ -149,13 +149,18 @@ export function termosProibidos(cliente) {
   return String(cliente.marca?.termosProibidos || '').split(/[\n,;]/).map((s) => s.trim()).filter(Boolean);
 }
 
+/** Só os termos proibidos cadastrados no perfil do cliente que aparecem no texto. */
+export function acharTermosDoCliente(texto, cliente) {
+  const t = String(texto || '').toLowerCase();
+  return termosProibidos(cliente).filter((p) => t.includes(p.toLowerCase()));
+}
+
 /**
  * Verificação LOCAL (não depende da IA): devolve os termos proibidos encontrados no texto. Em cliente de
  * saúde/emagrecimento, também resultado em kg/cm e "antes e depois" (política do Meta, lib/saude.js).
  */
 export function acharTermosProibidos(texto, cliente) {
-  const t = String(texto || '').toLowerCase();
-  const achados = termosProibidos(cliente).filter((p) => t.includes(p.toLowerCase()));
+  const achados = acharTermosDoCliente(texto, cliente);
   return ehProdutoSaude(cliente) ? [...new Set([...achados, ...achadosSaude(texto)])] : achados;
 }
 
@@ -1305,7 +1310,7 @@ Saída JSON: {"resumo": string, "whatsapp": [ação], "site": [ação], "ondeVer
 /**
  * Consulta a um especialista do app num MÉTODO (nunca uma pessoa real) sobre um item do cliente. Só aconselha o gestor:
  * nada é aplicado. Em cliente de saúde, o verificador local (achadosSaude) acrescenta um aviso se o que ele sugere tiver
- * kg/cm ou antes e depois, como em lib/recomendacao.js.
+ * kg/cm, antes e depois, promessa de efeito no corpo ou a condição de quem assiste, como em lib/recomendacao.js.
  */
 export async function consultarEspecialista({ cliente, especialista, alvo, contexto = '', pergunta = '' }) {
   const saude = ehProdutoSaude(cliente);

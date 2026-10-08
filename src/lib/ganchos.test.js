@@ -47,7 +47,7 @@ describe('motivoGancho (bloqueia aprovação)', () => {
     expect(motivoGancho({ ...c, modeloGancho: 31 }, saude)).toBe('');
   });
   it('(*) adaptado para experiência de uso passa', () => {
-    expect(motivoGancho({ modeloGancho: 84, hook: 'Eu não acreditei até experimentar uma cápsula na minha manhã corrida', copy: 'Rotina com mais disposição.' }, saude)).toBe('');
+    expect(motivoGancho({ modeloGancho: 84, hook: 'Eu não acreditei até experimentar uma cápsula na minha manhã corrida', copy: 'Uma cápsula na rotina da manhã.' }, saude)).toBe('');
   });
   it('colchete que sobrou bloqueia em qualquer cliente, no criativo e no hook', () => {
     expect(motivoGancho({ hook: 'Minha [coisa] favorita', copy: '' }, moda)).toMatch(/colchete/);
