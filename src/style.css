@@ -45,6 +45,8 @@
 /* Superfícies "brancas": classes de componente e a utilidade bg-white (usada em header, modais e busca). */
 .dark .card, .dark .input, .dark .btn-ghost, .dark .btn-danger, .dark .bg-white { background-color: #111a2e; }
 .dark .text-indigo-600 { color: #a5b4fc; }
+/* Barra "Pronto" (mostrarResultado): bg-emerald-700 vira verde claro no escuro e o texto branco sumia; fica o verde escuro. */
+.dark [data-status-resultado] { background-color: #065f46; }
 .dark ::placeholder { color: #64748b; }
 
 /* ===== Diagrama da campanha (modules/campanhas.js diagramaHtml) =====

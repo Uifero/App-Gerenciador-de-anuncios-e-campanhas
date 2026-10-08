@@ -5,6 +5,7 @@ import { db, COL } from '../core/storage.js';
 import { CONFIG_PADRAO, TAREFAS_IA } from '../lib/constantes.js';
 import { cabecalho, lerForm, num, toast, on, ocupado, esc } from '../core/ui.js';
 import { htmlFerramentas } from '../lib/ferramentas-ia.js';
+import { usoArmazenamento, situacaoCota, formatarBytes, COTA_STORAGE } from '../lib/pecas.js';
 
 const ID = 'global';
 let cache = null;
@@ -84,7 +85,9 @@ export async function view(el) {
     <p class="caption mb-2">Geradores gratuitos de imagem, vídeo e voz por IA, para colar os prompts e roteiros de narração que o Estúdio escreve ("Gerar foto e vídeo" num criativo). O app não chama nenhuma delas: é só uma lista para consulta.</p>
     ${htmlFerramentas()}</section>
   <section class="card mt-6 max-w-3xl" id="documentos-referencia" data-documentos-referencia><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando os documentos…</p></section>
-  <section class="card mt-6 max-w-5xl" id="custos-ia" data-custos-ia><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando os custos de IA…</p></section>`;
+  <section class="card mt-6 max-w-5xl" id="custos-ia" data-custos-ia><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando os custos de IA…</p></section>
+  <section class="card mt-6 max-w-3xl" id="armazenamento" data-armazenamento><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando o uso do armazenamento…</p></section>`;
+  montarArmazenamento(el.querySelector('[data-armazenamento]')).catch((e) => { console.error(e); el.querySelector('[data-armazenamento]').innerHTML = '<p class="text-rose-700" role="alert">Não consegui ler o uso do armazenamento (veja o console).</p>'; });
   montarCustos(el.querySelector("[data-custos-ia]"));
   montarDocumentos(el.querySelector('[data-documentos-referencia]')).catch((e) => { console.error(e); el.querySelector('[data-documentos-referencia]').innerHTML = '<p class="text-rose-700">Não consegui carregar os documentos de referência.</p>'; });
   on(el, 'submit', '#f', async (f, ev) => {
@@ -113,4 +116,21 @@ export async function view(el) {
       toast('Configurações salvas.');
     });
   });
+}
+
+/** Espaço usado pelas peças da Galeria (total e por cliente) e a cota gratuita do Firebase Storage, com a fonte. */
+async function montarArmazenamento(alvo) {
+  const [pecas, clientes] = await Promise.all([db.listar(COL.pecas), db.listar(COL.clientes)]);
+  const u = usoArmazenamento(pecas), sit = situacaoCota(u.bytes);
+  const nome = (id) => clientes.find((c) => c.id === id)?.nome || 'cliente excluído';
+  const linhas = Object.entries(u.porCliente).sort((a, b) => b[1].bytes - a[1].bytes);
+  alvo.innerHTML = `<h3 class="font-semibold"><i class="fa-solid fa-hard-drive mr-1 text-slate-400"></i>Armazenamento das peças (Galeria)</h3>
+    <p class="mt-1 text-sm" data-uso-total><b>${formatarBytes(u.bytes)}</b> em ${u.quantidade} peça(s) · ${(sit.fracao * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% da cota gratuita de ${formatarBytes(COTA_STORAGE.gratisBytes)}</p>
+    <div class="mt-2 h-2 w-full overflow-hidden rounded bg-slate-200" role="img" aria-label="Uso da cota gratuita"><div class="h-2 ${sit.passou ? 'bg-rose-600' : sit.perto ? 'bg-amber-500' : 'bg-emerald-600'}" style="width:${Math.min(100, sit.fracao * 100)}%"></div></div>
+    ${sit.passou ? `<p class="mt-2 rounded border border-rose-300 bg-rose-50 p-2 text-sm text-rose-700" role="alert" data-aviso-cota>Passou da cota gratuita: cerca de ${sit.excedenteGb.toFixed(2)} GB acima, ~US$ ${sit.custoMesUsd.toFixed(2)} por mês. Exclua as peças descartadas na Galeria de cada cliente.</p>`
+      : sit.perto ? `<p class="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800" role="alert" data-aviso-cota>Perto da cota gratuita (${Math.round(sit.fracao * 100)}%). Exclua as peças descartadas na Galeria de cada cliente.</p>` : ''}
+    ${linhas.length ? `<table class="mt-3 w-full text-sm tabular-nums" data-uso-clientes><thead><tr class="text-left text-slate-500"><th class="py-1 font-medium">Cliente</th><th class="py-1 font-medium">Peças</th><th class="py-1 text-right font-medium">Espaço</th></tr></thead>
+      <tbody>${linhas.map(([id, x]) => `<tr class="border-t border-slate-200"><td class="py-1">${esc(nome(id))}</td><td class="py-1">${x.quantidade}</td><td class="py-1 text-right">${formatarBytes(x.bytes)}</td></tr>`).join('')}</tbody></table>` : '<p class="hint mt-2">Nenhuma peça guardada ainda.</p>'}
+    <p class="hint mt-3">Cota gratuita do Cloud Storage for Firebase no plano Blaze (bucket *.firebasestorage.app): 5 GB-mês armazenados, ${COTA_STORAGE.downloadGbMes} GB/mês baixados, ${COTA_STORAGE.enviosMes.toLocaleString('pt-BR')} envios e ${COTA_STORAGE.downloadsMes.toLocaleString('pt-BR')} downloads por mês, só para buckets em ${COTA_STORAGE.regioes.join(', ')}. Fonte: ${esc(COTA_STORAGE.fonte)}. Acima disso vale a tabela do Cloud Storage: Standard nessas regiões ≈ US$ ${COTA_STORAGE.precoGbMesUsd.toFixed(3).replace('.', ',')} por GB-mês (${esc(COTA_STORAGE.fontePreco)}).</p>
+    <p class="hint">Conta só as peças da Galeria. Fotos de Materiais, peças finais enviadas à mão e prévias de aprovação também ocupam o Storage: o total exato fica no console do Firebase (Storage → Uso).</p>`;
 }

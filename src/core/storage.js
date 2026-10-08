@@ -4,7 +4,8 @@ import { DEMO, app } from './firebase.js';
 import {
   getFirestore, collection, getDocs, getDoc, addDoc, setDoc, updateDoc, deleteDoc, doc, query, where,
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ehCaminhoDePeca } from '../lib/pecas.js';
 
 export const COL = {
   config: 'gcc_configuracoes', clientes: 'gcc_clientes', criativos: 'gcc_criativos', hooks: 'gcc_hooks',
@@ -18,6 +19,8 @@ export const COL = {
   // pesquisa web por nicho + destino. Todos internos: nunca vão para o site nem para link de aprovação.
   analises: 'gcc_analises_anuncio', tarefas: 'gcc_tarefas_anuncio', printsResultado: 'gcc_prints_resultado',
   documentos: 'gcc_documentos', pesquisas: 'gcc_pesquisas_nicho',
+  // Peças finalizadas no Estúdio (imagem/vídeo no Storage em gcc/<cliente>/pecas/), ligadas ao criativo e ao produto.
+  pecas: 'gcc_pecas',
 };
 
 const agora = () => new Date().toISOString();
@@ -108,7 +111,30 @@ export async function enviarArquivo(caminho, file) {
   await uploadBytes(r, file, { contentType: file.type });
   return { url: await getDownloadURL(r), path: caminho };
 }
-export async function removerArquivo(caminho) {
+// Arquivo de peça da Galeria (gcc/<cliente>/pecas/) só sai pela exclusão da própria peça ({ peca: true }): a peça pode
+// estar como peça final de um criativo, e trocar/remover a peça final ali não pode apagar o arquivo da Galeria.
+export async function removerArquivo(caminho, { peca = false } = {}) {
   if (DEMO || !caminho) return;
+  if (ehCaminhoDePeca(caminho) && !peca) return;
   try { await deleteObject(ref(getStorage(app()), caminho)); } catch { /* já removido */ }
+}
+
+/**
+ * Envio com progresso (0..1) e nome de download: `nomeDownload` vira o Content-Disposition, então o link do arquivo
+ * baixa com o nome certo mesmo sem CORS no bucket. No demo, vira data URL (limite de 3 MB, como enviarArquivo).
+ */
+export async function enviarArquivoComProgresso(caminho, blob, { tipo = blob.type, nomeDownload = '', aoProgresso = () => {} } = {}) {
+  if (DEMO) {
+    if (blob.size > 3 * 1024 * 1024) throw new Error('No modo demo, o limite é 3 MB.');
+    const url = await new Promise((ok, err) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = err; r.readAsDataURL(blob); });
+    aoProgresso(1);
+    return { url, path: caminho };
+  }
+  const r = ref(getStorage(app()), caminho);
+  const meta = { contentType: tipo, ...(nomeDownload ? { contentDisposition: `attachment; filename="${nomeDownload.replace(/[^\w.-]/g, '_')}"` } : {}) };
+  await new Promise((ok, falha) => {
+    const t = uploadBytesResumable(r, blob, meta);
+    t.on('state_changed', (s) => aoProgresso(s.totalBytes ? s.bytesTransferred / s.totalBytes : 0), falha, ok);
+  });
+  return { url: await getDownloadURL(r), path: caminho };
 }

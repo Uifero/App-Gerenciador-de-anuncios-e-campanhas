@@ -31,7 +31,7 @@ describe('catálogo', () => {
   });
   it('alvos por especialista', () => {
     expect(alvosDoEspecialista('escala')).toEqual(['campanha', 'resultados']);
-    expect(alvosDoEspecialista('ganchos')).toEqual(['criativo']);
+    expect(alvosDoEspecialista('ganchos')).toEqual(['criativo', 'peca']); // peça da Galeria: o mesmo texto, já montado
     expect(alvosDoEspecialista('whatsapp')).toEqual(['resultados', 'oferta', 'livre']);
     expect(alvosDoEspecialista('inexistente')).toEqual([]);
     expect(especialistaPorId('copy').area).toBe('copy');

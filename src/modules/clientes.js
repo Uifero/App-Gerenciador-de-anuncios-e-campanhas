@@ -337,7 +337,7 @@ export async function viewCliente(el, id, aba, abasMap) {
       n.criativos && `${n.criativos} criativo(s)`, n.hooks && `${n.hooks} hook(s)`, n.referencias && `${n.referencias} referência(s)`,
       n.campanhas && `${n.campanhas} campanha(s)`, n.resultados && `${n.resultados} resultado(s)`, n.produtos && `${n.produtos} produto(s)`,
       n.sites && `${n.sites} site(s)`, n.aprovacoes && `${n.aprovacoes} link(s) de aprovação`, n.respostas && `${n.respostas} resposta(s) de cliente`, n.diagnosticos && `${n.diagnosticos} diagnóstico(s)`, n.materiais && `${n.materiais} foto(s) salva(s) em Materiais`,
-      n.analises && `${n.analises} análise(s)/recomendação(ões)`, n.tarefas && `${n.tarefas} tarefa(s)/brief(s)`, n.prints && `${n.prints} print(s) de resultado`, n.documentos && `${n.documentos} documento(s) de referência do cliente`,
+      n.analises && `${n.analises} análise(s)/recomendação(ões)`, n.tarefas && `${n.tarefas} tarefa(s)/brief(s)`, n.prints && `${n.prints} print(s) de resultado`, n.documentos && `${n.documentos} documento(s) de referência do cliente`, n.pecas && `${n.pecas} peça(s) da Galeria (com os arquivos)`,
       c.respostasCliente?.length && `${c.respostasCliente.length} resposta(s) do cliente ao questionário guardada(s)`,
     ].filter(Boolean);
     const msg = partes.length
@@ -372,7 +372,10 @@ export async function viewCliente(el, id, aba, abasMap) {
   on(el, 'click', '[data-ok-busca]', () => { $('#busca-inicial', el).innerHTML = ''; });
   on(el, 'click', '[data-tentar-busca]', () => buscaInicial(c));
 
-  on(el, 'click', '[data-especialistas]', () => { abrirEspecialistas(c).catch((e) => { console.error(e); toast('Não consegui abrir os especialistas. Recarregue a página e tente de novo.', 'erro'); }); });
+  on(el, 'click', '[data-especialistas]', () => {
+    // Aplicou algo (nova versão, tarefa, peça)? Ao fechar a janela, a aba aberta se redesenha com o dado novo.
+    let mudou = false;
+    abrirEspecialistas(c, { aoMudar: () => { mudou = true; }, aoFechar: () => { const a = $('#aba', el); if (mudou && a?.isConnected) abasMap[atual.id](a, c); } }).catch((e) => { console.error(e); toast('Não consegui abrir os especialistas. Recarregue a página e tente de novo.', 'erro'); }); });
   on(el, 'click', '[data-mais]', async () => {
     const pbs = await db.listar(COL.playbooks);
     const m = modal('Mais ações', `<div class="space-y-3">

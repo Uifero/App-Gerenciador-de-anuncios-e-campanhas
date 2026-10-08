@@ -111,7 +111,7 @@ function tarefasHtml(tarefas) {
   const abertas = tarefas.filter((t) => t.status !== 'feita' && t.tipo !== 'brief_criativo');
   const briefs = tarefas.filter((t) => t.status !== 'feita' && t.tipo === 'brief_criativo');
   if (!abertas.length && !briefs.length) return '<div data-tarefas-anuncio></div>';
-  const area = { whatsapp: 'WhatsApp', site: 'Site', campanha: 'Campanha', criativo: 'Criativo' };
+  const area = { whatsapp: 'WhatsApp', site: 'Site', campanha: 'Campanha', criativo: 'Criativo', oferta: 'Oferta' };
   return `<section class="card mb-5" data-tarefas-anuncio><h3 class="font-semibold"><i class="fa-solid fa-list-check text-emerald-600"></i> Tarefas aceitas</h3>
     ${abertas.length ? `<ul class="mt-2 space-y-1">${abertas.map((t) => `<li class="flex flex-wrap items-start justify-between gap-2 rounded border border-slate-200 p-2 text-sm" data-tarefa="${esc(t.id)}"><div class="min-w-0"><p>${tag(area[t.area] || t.area, t.area === 'site' ? 'tag-info' : '')} <b>${esc(t.titulo)}</b>${t.passoSite ? ` <span class="hint !mt-0">(também no "Montar site", passo ${esc(t.passoSite)})</span>` : ''}</p>${t.texto ? `<p class="text-xs text-slate-600">${esc(t.texto)}</p>` : ''}${t.medir ? `<p class="text-xs">Medir: ${esc(t.medir)}</p>` : ''}</div>
       <button type="button" class="btn-ghost btn-sm" data-tarefa-feita="${esc(t.id)}"><i class="fa-solid fa-check"></i> Feito</button></li>`).join('')}</ul>` : ''}
@@ -138,6 +138,12 @@ export async function montarAreaAnuncio(alvo, { cliente, produtos = [], aoMudar 
   const desenharHistorico = () => { $('[data-lista-analises]', el).innerHTML = analises.length ? analises.map((a) => `<button type="button" class="btn-ghost btn-sm w-full text-left" data-ver-analise="${esc(a.id)}">${dataBR(a.criadoEm)} · ${a.origem === 'ia' ? 'com IA' : 'sem IA'}${(a.aceitos || []).length ? ` · ${a.aceitos.length} item(ns) aplicado(s)` : ''}</button>`).join('') : '<p class="hint">Nenhuma análise ainda.</p>'; };
   if (ultima) mostrarAnalise(ultima);
   desenharHistorico();
+  // Vindo de "Abrir o campo" (falta de dado apontada por um especialista): leva até o campo, sem preencher nada.
+  try {
+    const campo = sessionStorage.getItem('gcc_focar_campo_anuncio'); sessionStorage.removeItem('gcc_focar_campo_anuncio');
+    const alvoCampo = campo && $(`[data-campo="${CSS.escape(campo)}"]`, el);
+    if (alvoCampo) { alvoCampo.closest('details')?.setAttribute('open', ''); alvoCampo.scrollIntoView({ block: 'center' }); alvoCampo.focus({ preventScroll: true }); alvoCampo.classList.add('ring-2', 'ring-amber-400'); setTimeout(() => alvoCampo.classList.remove('ring-2', 'ring-amber-400'), 3000); }
+  } catch { /* sem storage */ }
 
   // ----- Frente 1: texto, ditado, campos e nicho -----
   const status = (t) => { const s = $('[data-como-status]', el); if (s) s.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i> ${esc(t)}`; };

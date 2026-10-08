@@ -9,6 +9,7 @@ import { textoComoAnuncia } from '../lib/anuncio.js';
 import { REGRA_INSTAGRAM } from '../lib/formatos-instagram.js';
 import { linhaGanchos, conferirGanchos, numeroModelo } from '../lib/ganchos.js';
 import { TAREFA_DA_AREA, normalizarConsulta } from '../lib/especialistas.js';
+import { TIPOS_ACAO, CAMPOS_FALTA } from '../lib/aplicar-especialista.js';
 import { juntarItensSoltos } from '../lib/prints-resultado.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
@@ -1322,7 +1323,7 @@ ${pergunta ? `\nPERGUNTA DO GESTOR: ${pergunta}\n` : ''}
 CRITÉRIOS DO MÉTODO (avalie o item por eles; pule o que não se aplica):
 ${especialista.foco.map((f) => `- ${f}`).join('\n')}
 
-Saída JSON: {"resumo": string (2-3 frases: o diagnóstico), "pontos": [{"ponto": string, "avaliacao": "ok"|"ajustar"|"falta_dado", "porque": string}], "acoes": [{"prioridade": n (1 = mais importante), "acao": string (concreta), "porque": string}] (no máximo 5), "perguntas": [string] (o que falta saber), "avisos": [string]}. ${SO_JSON}`;
+Saída JSON: {"resumo": string (2-3 frases: o diagnóstico), "pontos": [{"ponto": string, "avaliacao": "ok"|"ajustar"|"falta_dado", "porque": string}], "acoes": [{"prioridade": n (1 = mais importante), "acao": string (concreta), "porque": string, "tipo": ${TIPOS_ACAO.map((t) => `"${t}"`).join('|')} (o que a ação muda: hook/copy/cta/roteiro = texto do criativo; campanha = Gerenciador de Anúncios; oferta = oferta/preço/produto; whatsapp = atendimento; falta_dado = falta um dado para decidir; outro = acompanhamento), "campo": só em falta_dado, um destes: ${Object.keys(CAMPOS_FALTA).join('|')} (o dado que falta)}] (no máximo 5), "perguntas": [string] (o que falta saber), "avisos": [string]}. ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: TAREFA_DA_AREA[especialista.area], cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   const r = normalizarConsulta(dados);
   // Só o que o especialista SUGERE (resumo e ações): os pontos e avisos dele costumam citar o proibido para dizer "não use".

@@ -1,4 +1,6 @@
-// Aba Criativos: gerar (IA ou manual), refinar por chat com histórico de versões, aprovar, anexar arquivo final.
+// Aba Criativos. Abre no fluxo guiado "Criar criativos" (modules/fluxo-criativos.js, 4 passos); a lista completa fica em
+// "Todos os criativos" (#/c/<id>/criativos/todos): gerar (IA ou manual), refinar por chat com histórico de versões,
+// aprovar, anexar arquivo final, arquivar/excluir.
 import { db, COL, removerArquivo } from '../core/storage.js';
 import { gerarCriativos, refinarCriativo, checarQualidade, acharTermosDoCliente } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
@@ -19,6 +21,9 @@ import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, ganchoPorNumero, rotuloModelo, descr
 import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
 import { briefsAbertos, briefsHtml, textoDoBrief } from './tarefas-site.js';
+import { viewFluxo } from './fluxo-criativos.js';
+import { subRotaCriativos, rotaCriativos } from '../lib/etapas-criativos.js';
+import { versaoNova } from '../lib/aplicar-especialista.js';
 import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
@@ -40,6 +45,16 @@ export async function definirStatus(criativo, status) {
 }
 
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
+  const sub = typeof location !== 'undefined' ? subRotaCriativos(location.hash) : null;
+  // Vindo da busca global ou de "Usar como base" (Referências): o pedido é para a lista, que abre o criativo/painel.
+  let paraLista = false;
+  try { paraLista = Boolean(sessionStorage.getItem('gcc_abrir_criativo') || sessionStorage.getItem('gcc_ref')); } catch { /* sem storage */ }
+  if (sub !== 'todos' && !(sub === null && paraLista)) return viewFluxo(root, cliente, recarregar, sub);
+  return viewTodos(root, cliente, recarregar);
+});
+
+/** "Todos os criativos": a lista de sempre, com arquivar/excluir, seleção múltipla e o painel "Novo criativo". */
+async function viewTodos(root, cliente, recarregar) {
   const [criativos, referencias, resultados, produtos, cfg, materiais] = await Promise.all([
     db.listar(COL.criativos, { clienteId: cliente.id }), db.listar(COL.referencias, { clienteId: cliente.id }),
     db.listar(COL.resultados, { clienteId: cliente.id }), db.listar(COL.produtos, { clienteId: cliente.id }), obterConfig(),
@@ -80,8 +95,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         '<button class="btn-primary" data-novo><i class="fa-solid fa-plus"></i> Criar primeiro criativo</button>');
   };
 
-  root.innerHTML = `${cabecalho('Criativos', 'Caminho de cada anúncio: 1. gerar ou escrever → 2. abrir, revisar e completar o checklist → 3. enviar ao cliente aprovar → 4. "Gerar foto e vídeo" → 5. vincular na aba Campanhas. Cada ajuste vira uma versão.',
-    `<select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
+  root.innerHTML = `${cabecalho('Todos os criativos', 'Caminho de cada anúncio: 1. gerar ou escrever → 2. abrir, revisar e completar o checklist → 3. enviar ao cliente aprovar → 4. "Gerar foto e vídeo" → 5. vincular na aba Campanhas. Cada ajuste vira uma versão.',
+    `<a class="btn-ghost" href="${rotaCriativos(cliente.id, 1)}" data-voltar-fluxo><i class="fa-solid fa-route"></i> Criar criativos (passo a passo)</a>
+     <select class="input !w-auto" data-filtro title="Filtrar por status"><option value="">Todos os status</option>${opcoes(STATUS_CRIATIVO, '')}</select>
      <label class="flex items-center gap-1 text-sm" title="Criativos com resultados que foram arquivados"><input type="checkbox" data-ver-arquivados> Mostrar arquivados <span data-qtd-arquivados>(${criativos.filter((c) => c.arquivado).length})</span></label>
      <button class="btn-ghost" data-modelos-prompt title="Modelos prontos de prompt para editar ou gerar fotos de produto, preenchidos com os dados deste cliente"><i class="fa-solid fa-swatchbook"></i> Modelos de prompt</button>
      <button class="btn-ghost" data-materiais-cliente-btn title="Fotos, vídeos, logo e provas do cliente: enviar, ver e apagar (vão para o Estúdio e para o site)"><i class="fa-solid fa-photo-film"></i> Materiais do cliente${cliente.logoArquivo ? '' : ' <span class="tag tag-warn">sem logo</span>'}</button>
@@ -89,7 +105,19 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
      <button class="btn-primary" data-novo title="Gerar ou escrever um criativo novo"><i class="fa-solid fa-plus"></i> Novo criativo</button>`)}
     <div class="mb-4" data-questionario></div><div data-briefs></div><div id="painel"></div><div id="lista">${lista()}</div>`;
   // Questionário único do cliente (o mesmo da aba Site/Loja): as respostas também alimentam os criativos.
-  montarQuestionarioNaAba($('[data-questionario]', root), cliente, recarregar).catch((e) => console.warn('[questionário]', e));
+  // Vindo de "Abrir o campo" (falta de dado do especialista): abre o questionário na pergunta pedida.
+  const focarPergunta = () => {
+    let id = null; try { id = sessionStorage.getItem('gcc_focar_pergunta'); sessionStorage.removeItem('gcc_focar_pergunta'); } catch { /* sem storage */ }
+    if (!id) return;
+    const card = $('[data-perguntas-site]', root); if (!card) return;
+    card.open = true;
+    const p = $(`[data-pergunta="${id}"]`, card) || card;
+    p.scrollIntoView({ block: 'center' }); p.classList.add('ring-2', 'ring-amber-400'); setTimeout(() => p.classList.remove('ring-2', 'ring-amber-400'), 3000);
+    p.querySelector?.('textarea, input:not([type=checkbox]):not([type=radio]):not([type=file]), select')?.focus({ preventScroll: true });
+  };
+  montarQuestionarioNaAba($('[data-questionario]', root), cliente, recarregar).then(focarPergunta).catch((e) => console.warn('[questionário]', e));
+  const aoFocar = () => { if (!root.isConnected) { document.removeEventListener('gcc:focar-campo', aoFocar); return; } focarPergunta(); };
+  document.addEventListener('gcc:focar-campo', aoFocar);
 
   const atualizar = async () => {
     criativos.splice(0, criativos.length, ...(await db.listar(COL.criativos, { clienteId: cliente.id })));
@@ -155,7 +183,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   try { abrirId = sessionStorage.getItem('gcc_abrir_criativo'); sessionStorage.removeItem('gcc_abrir_criativo'); } catch { /* sem storage */ }
   const alvoBusca = abrirId && criativos.find((c) => c.id === abrirId);
   if (alvoBusca) detalhe(alvoBusca, cliente, cfg, recarregar, fonte);
-});
+}
 
 function cartao(c, cfg, selecionados = new Set()) {
   const dias = c.status === 'em_uso' ? diasDesde(c.emUsoDesde) : null;
@@ -323,7 +351,7 @@ const opcoesGancho = () => GRUPOS_GANCHO.map((g) => `<optgroup label="${esc(nome
 /** De qual modelo da biblioteca o hook veio (só quando veio de um). */
 const origemGancho = (c) => (c.modeloGancho && ganchoPorNumero(c.modeloGancho) ? `<p class="hint !mt-0.5" data-origem-gancho><i class="fa-solid fa-anchor mr-1" aria-hidden="true"></i>Gancho a partir do ${esc(descricaoModelo(c.modeloGancho))}</p>` : '');
 
-async function salvarNovo(cliente, x, ctx) {
+export async function salvarNovo(cliente, x, ctx = {}) {
   const angulo = x.angulo || '', framework = x.framework || 'livre', gatilho = x.gatilho || '', formato = x.formato || 'video_curto';
   // A versão já nasce com ângulo/framework/gatilho/formato: é o que permite, mais tarde, saber com QUAL ângulo/framework
   // um resultado registrado foi gerado (ver versaoAtivaEm em resultados.js) mesmo que o criativo mude depois.
@@ -339,6 +367,8 @@ async function salvarNovo(cliente, x, ctx) {
 
 
 // ---------------- detalhe / refino ----------------
+/** Abre o detalhe de um criativo (texto, checklist, versões, peça final) fora da lista (ex.: passo 3 do fluxo). */
+export const abrirCriativo = (c, cliente, cfg, recarregar, fonte) => detalhe(c, cliente, cfg, recarregar, fonte);
 function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais: [], cliente, resultados: [] }) {
   const conversa = [];
   const dadosProduto = () => produtoDoCriativo(c, fonte); // lido agora: preço, fotos e oferta da fonte
@@ -468,12 +498,10 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
   });
 
   const novaVersao = async (patch, nota) => {
-    const versoes = [...(c.versoes || [])];
     // Sempre grava o ângulo/framework/gatilho/formato vigentes nesta versão (do patch, senão o que já estava no
     // criativo) — sem isso, um resultado registrado depois de uma edição seria atribuído ao ângulo/framework ERRADO.
-    const angulo = patch.angulo ?? c.angulo, framework = patch.framework ?? c.framework, gatilho = patch.gatilho ?? c.gatilho, formato = patch.formato ?? c.formato;
-    versoes.push({ n: Math.max(0, ...versoes.map((v) => v.n)) + 1, hook: patch.hook, copy: patch.copy, cta: patch.cta, angulo, framework, gatilho, formato, nota, quando: new Date().toISOString() }); // maior + 1: versão excluída não repete número
-    const dados = { ...patch, versoes };
+    // Número = maior + 1 (versão excluída não repete). Mesma regra do "Aplicar" do especialista (lib/aplicar-especialista.js).
+    const dados = versaoNova(c, patch, nota);
     await db.atualizar(COL.criativos, c.id, dados);
     Object.assign(c, dados);
   };
@@ -485,7 +513,9 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
   });
   on(alvo, 'click', '[data-copiar]', () => copiar(`${c.hook}\n\n${c.copy}\n\n${c.cta}`));
   on(alvo, 'click', '[data-estudio]', () => abrirEstudio(c, cliente, fonte));
-  on(alvo, 'click', '[data-pedir-especialista]', () => abrirEspecialistas(cliente, { alvoInicial: { tipo: 'criativo', id: c.id } }).catch((e) => toast(e.message || 'Não consegui abrir os especialistas.', 'erro')));
+  on(alvo, 'click', '[data-pedir-especialista]', () => abrirEspecialistas(cliente, { alvoInicial: { tipo: 'criativo', id: c.id },
+    // Ao fechar: relê o criativo (uma sugestão aceita vira nova versão) e redesenha o detalhe.
+    aoFechar: async () => { const novo = await db.obter(COL.criativos, c.id).catch(() => null); if (novo && alvo.isConnected) { Object.assign(c, novo); desenhar(); recarregar(); } } }).catch((e) => toast(e.message || 'Não consegui abrir os especialistas.', 'erro')));
   on(alvo, 'submit', '#fc', async (f, ev) => {
     ev.preventDefault();
     const instrucao = lerForm(f).instrucao;

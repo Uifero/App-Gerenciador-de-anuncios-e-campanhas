@@ -1,13 +1,14 @@
 // Estúdio de peças: entrega o material pronto (foto PNG e vídeo) a partir do criativo, direto no navegador.
-// Os arquivos são baixados no computador (não dependem do Storage); as fotos/vídeos de origem ficam só na sessão.
+// "Baixar" leva o arquivo para o computador; "Finalizar peça" guarda a peça pronta no Storage e na Galeria do cliente
+// (modules/pecas.js), ligada ao criativo e ao produto. As fotos/vídeos de ORIGEM continuam só na sessão.
 //
 // DECISÃO DE NAVEGAÇÃO (registrada, não é esquecimento): diferente dos demais módulos de entrega — que são uma
 // entrada em MODULOS, controlada por `escopo` e com rota própria (#/c/:id/:aba) — o Estúdio é aberto como um modal
 // de dentro do detalhe de UM criativo (abrirEstudio(criativo, cliente) em criativos.js), sem rota e fora do escopo.
 // Motivo: ele não é um repositório de itens do cliente como as outras abas, é uma ferramenta de exportação pontual
 // ligada a UM criativo específico (usa o hook/copy/roteiro dele para montar a peça); nada aqui fica salvo no
-// Firestore para listar depois. Reavaliar isso (virar aba própria) só faria sentido se o Estúdio passasse a guardar
-// um histórico de peças geradas por cliente — não é o caso hoje.
+// Firestore além da peça finalizada. A lista de peças (Galeria) é o passo 4 de "Criar criativos" (fluxo-criativos.js);
+// o Estúdio continua sendo a ferramenta de UM criativo, aberto já ajustado pelo passo 3 (opts abaixo).
 
 import { tokenAtual } from '../core/auth.js';
 import { db, COL } from '../core/storage.js';
@@ -28,6 +29,8 @@ import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { tipoMaterial } from '../lib/prova-social.js';
 import { produtoDoCriativo, printsParaCriativo } from '../lib/conexoes.js';
 import { excluirMateriais } from './excluir-material.js';
+import { salvarPeca } from './pecas.js';
+import { formatarBytes } from '../lib/pecas.js';
 
 const COLE_AQUI = 'Cole esse prompt numa dessas ferramentas:';
 
@@ -44,12 +47,19 @@ function baixar(blob, nome) {
 }
 
 
-/** `fonte` = { produtos, materiais } do cliente: o produto do criativo, as fotos dele e os prints são lidos daqui. */
-export function abrirEstudio(criativo, cliente, fonte = null) {
+/**
+ * `fonte` = { produtos, materiais } do cliente: o produto do criativo, as fotos dele e os prints são lidos daqui.
+ * `opts` (passo 3 de "Criar criativos" e "Aplicar" do especialista numa peça): { tipo: 'imagem'|'video' (abre na seção),
+ * formato (1080x1920, 1080x1350...), config (template/cores da peça anterior), aoFinalizar(peca), baseadaEm (id da peça
+ * anterior), especialista ({ consultaId, acao }) }.
+ */
+export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
   const pref = lerPref(cliente.id);
+  const base = opts.config || {};
   const est = {
-    midias: [], logo: null, musica: null, cenas: extrairCenas(criativo), cor: pref.cor || '#4f46e5', corTexto: pref.corTexto || '#ffffff',
-    template: 'destaque', formato: '1080x1350', guiaZona: true, formatoVideo: '1080x1920', urlVideo: null, ctrl: null,
+    midias: [], logo: null, musica: null, cenas: extrairCenas(criativo), cor: base.cor || pref.cor || '#4f46e5', corTexto: base.corTexto || pref.corTexto || '#ffffff',
+    template: base.template || 'destaque', formato: opts.tipo === 'imagem' && opts.formato ? opts.formato : '1080x1350', guiaZona: true,
+    formatoVideo: opts.tipo === 'video' && opts.formato ? opts.formato : '1080x1920', urlVideo: null, ctrl: null,
   };
   const fmtVideo = formatoDeVideo();
   const m = modal(`Gerar material — ${criativo.nome}`, `<div id="est"></div>`, {
@@ -60,7 +70,7 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
   const dims = (f) => f.split('x').map(Number);
 
   raiz.innerHTML = `
-  <p class="caption mb-2">Monte a foto e o vídeo prontos para subir na campanha. Tudo é feito neste navegador e baixado no seu computador. As fotos que você escolher aqui não ficam salvas: escolha de novo na próxima vez.</p>
+  <p class="caption mb-2">Monte a foto e o vídeo prontos para subir na campanha. Tudo é feito neste navegador. <b>"Finalizar peça"</b> guarda a peça pronta na Galeria do cliente (dá para rever e escolher depois); as fotos de origem que você escolher aqui não ficam salvas.</p>
   <nav class="mb-3 flex flex-wrap items-center gap-1 text-xs" aria-label="Etapas">
     <span class="mr-1 text-slate-500">Caminho:</span>
     <button class="btn-ghost btn-sm" data-ir="materiais">1. Enviar materiais</button><span class="text-slate-500">(+</span><button class="btn-ghost btn-sm" data-ir="broll">B-roll</button><span class="text-slate-500">opcional)</span><i class="fa-solid fa-chevron-right text-slate-400"></i>
@@ -128,10 +138,12 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
     <div class="mt-3 flex flex-wrap items-center gap-2"><label class="flex min-h-[44px] items-center gap-2 text-sm"><input type="checkbox" data-guia-zona checked> Mostrar a zona segura do Instagram <span class="hint">(só na tela; não vai para o arquivo)</span></label></div>
     <p class="mt-1 hidden rounded bg-amber-50 p-2 text-sm text-amber-800" role="status" data-aviso-zona></p>
     <div class="mt-2 flex justify-center rounded-lg bg-slate-100 p-2"><canvas data-previa style="max-width:100%;max-height:420px" class="rounded"></canvas></div>
-    <div class="mt-3 flex flex-wrap gap-2"><button class="btn-primary btn-sm" data-baixar-foto><i class="fa-solid fa-download"></i> Baixar este formato</button>
+    <div class="mt-3 flex flex-wrap gap-2"><button class="btn-primary btn-sm min-h-[44px]" data-finalizar-foto><i class="fa-solid fa-circle-check"></i> Finalizar peça (guardar na Galeria)</button>
+      <button class="btn-ghost btn-sm" data-baixar-foto><i class="fa-solid fa-download"></i> Baixar este formato</button>
       <button class="btn-ghost btn-sm" data-baixar-todas><i class="fa-solid fa-file-zipper"></i> Baixar os 3 formatos</button>
       <button class="btn-ghost btn-sm" data-baixar-por-foto title="Uma peça para cada foto enviada, no formato escolhido (ótimo para testar várias fotos ou montar carrossel)"><i class="fa-solid fa-images"></i> Uma peça para cada foto</button></div>
     <p class="hint mt-1" data-aviso-fotos></p>
+    <div class="mt-2 hidden rounded-lg border p-2 text-sm" role="status" data-status-final="foto"></div>
   </section>
 
   <section class="mt-4 rounded-lg border border-slate-200 p-3" data-etapa="video">
@@ -263,6 +275,7 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
       : '<span class="hint">Sem narração (opcional): para colocar voz, use a seção "Narração" abaixo.</span>';
   };
   listarMidias(); listarCenas(); infoNarracao();
+  if (opts.tipo) setTimeout(() => { const el = $(`[data-etapa="${opts.tipo === 'video' ? 'video' : 'foto'}"]`, raiz); el?.scrollIntoView({ block: 'start' }); el?.classList.add('ring-2', 'ring-indigo-400'); setTimeout(() => el?.classList.remove('ring-2', 'ring-indigo-400'), 2500); }, 300);
   editor = montarEditorVideo($('[data-editor-video]', raiz), { criativo, cliente, obterNarracao: () => narr?.obter() || null });
   listarMidias();
 
@@ -418,6 +431,40 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
   on(raiz, 'click', '[data-baixar-todas]', (b) => ocupado(b, async () => {
     for (const [f] of FORMATOS_IMAGEM) { baixar(await pngDe(f), `${nomeArquivo(criativo.nome)}-${nomeFormato(f)}.png`); await new Promise((r) => setTimeout(r, 400)); }
     toast('3 fotos baixadas. Se o navegador pedir, permita downloads múltiplos.');
+  }));
+
+  // ---- finalizar peça (Galeria) ----
+  // O status fica na tela (não some): andamento, erro ou "guardada", com o tamanho. A peça anterior continua na Galeria.
+  const statusFinal = (qual, html, cor) => {
+    const el = $(`[data-status-final="${qual}"]`, raiz); if (!el) return null;
+    el.className = `mt-2 rounded-lg border p-2 text-sm ${cor}`; el.innerHTML = html; return el;
+  };
+  const configPeca = () => ({ template: est.template, cor: est.cor, corTexto: est.corTexto, hook: $('[data-hook]', raiz).value, cta: $('[data-cta]', raiz).value,
+    cenas: est.cenas.map((c) => ({ texto: c.texto || '', dur: c.dur, tipo: c.tipo })) });
+  const finalizar = async (qual, peca) => {
+    const andamento = (texto, p) => statusFinal(qual, `<i class="fa-solid fa-spinner fa-spin"></i> ${esc(texto)}${p ? ` ${Math.round(p * 100)}%` : ''}<div class="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200"><div class="h-2 bg-indigo-600" style="width:${Math.round((p || 0) * 100)}%"></div></div>`, 'border-indigo-200 bg-indigo-50 text-indigo-800');
+    try {
+      const salva = await salvarPeca(cliente, criativo, { ...peca, config: configPeca(), baseadaEm: opts.baseadaEm || null, especialista: opts.especialista || null }, { aoEtapa: andamento });
+      const el = statusFinal(qual, `<i class="fa-solid fa-circle-check"></i> Peça guardada na Galeria (${esc(salva.formatoNome)}, ${formatarBytes(salva.tamanho)}${salva.comprimido ? ', comprimida para o Instagram' : ''}).${salva.avisoCompressao ? ` <span class="text-amber-800">${esc(salva.avisoCompressao)}</span>` : ''} Ajuste e finalize de novo para ter outra versão para comparar.`, 'border-emerald-300 bg-emerald-50 text-emerald-800');
+      mostrarResultado(el, 'Peça guardada na Galeria.');
+      opts.aoFinalizar?.(salva);
+      return salva;
+    } catch (e) {
+      statusFinal(qual, `<i class="fa-solid fa-triangle-exclamation"></i> Não consegui guardar a peça: ${esc(e.message || e)}`, 'border-rose-300 bg-rose-50 text-rose-700');
+      toast(`Não consegui guardar a peça: ${e.message || e}`, 'erro');
+      return null;
+    }
+  };
+  on(raiz, 'click', '[data-finalizar-foto]', (b) => ocupado(b, async () => {
+    // JPG de alta qualidade: a peça sempre tem fundo (foto ou cor), então não há transparência a preservar.
+    const [w, h] = dims(est.formato), c = document.createElement('canvas'); c.width = w; c.height = h;
+    desenharPeca(c.getContext('2d'), w, h, cfgPeca());
+    const blob = await new Promise((ok, falha) => c.toBlob((x) => (x ? ok(x) : falha(new Error('Não consegui gerar a imagem.'))), 'image/jpeg', 0.92));
+    await finalizar('foto', { blob, tipo: 'imagem', formato: est.formato, ext: 'jpg' });
+  }));
+  on(raiz, 'click', '[data-finalizar-video]', (b) => ocupado(b, async () => {
+    if (!est.ultimo) throw new Error('Gere o vídeo antes de finalizar.');
+    await finalizar('video', { blob: est.ultimo.blob, tipo: 'video', formato: est.formatoVideo, ext: est.ultimo.ext, duracao: est.ultimo.duracao });
   }));
 
   on(raiz, 'click', '[data-baixar-por-foto]', (b) => ocupado(b, async () => {
@@ -610,10 +657,12 @@ export function abrirEstudio(criativo, cliente, fonte = null) {
         est.urlVideo = URL.createObjectURL(r.blob);
         const nome = `${nomeArquivo(criativo.nome)}-${nomeFormato(est.formatoVideo, 'video')}.${r.ext}`;
         $('[data-resultado]', raiz).innerHTML = `<video src="${esc(est.urlVideo)}" controls playsinline class="mx-auto max-h-[420px] rounded-lg bg-black"></video>
-          <div class="mt-2 flex flex-wrap items-center gap-2"><button class="btn-primary btn-sm" data-baixar-video><i class="fa-solid fa-download"></i> Baixar ${esc(r.ext.toUpperCase())} (${r.duracao.toFixed(0)} s)</button></div>
+          <div class="mt-2 flex flex-wrap items-center gap-2"><button class="btn-primary btn-sm min-h-[44px]" data-finalizar-video><i class="fa-solid fa-circle-check"></i> Finalizar peça (guardar na Galeria)</button>
+            <button class="btn-ghost btn-sm" data-baixar-video><i class="fa-solid fa-download"></i> Baixar ${esc(r.ext.toUpperCase())} (${r.duracao.toFixed(0)} s)</button></div>
+          <div class="mt-2 hidden rounded-lg border p-2 text-sm" role="status" data-status-final="video"></div>
           ${r.ext === 'webm' ? '<p class="mt-2 text-sm text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> Este navegador só gravou em WebM. O Meta Ads e o TikTok pedem MP4: atualize o Chrome/Edge ou converta o arquivo antes de subir.</p>' : ''}`;
-        est.ultimo = { blob: r.blob, nome };
-        mostrarResultado($('[data-resultado]', raiz), 'Vídeo pronto: confira a prévia e baixe. Para o cliente aprovar, anexe como peça final no criativo.');
+        est.ultimo = { blob: r.blob, nome, ext: r.ext, duracao: r.duracao };
+        mostrarResultado($('[data-resultado]', raiz), 'Vídeo pronto: confira a prévia e clique em "Finalizar peça" para guardar na Galeria (ou baixe).');
       } catch (e) {
         if (est.ctrl?.signal.aborted) { toast('Gravação cancelada.', 'info'); return; } // cancelar foi escolha da pessoa, não é erro
         throw e;

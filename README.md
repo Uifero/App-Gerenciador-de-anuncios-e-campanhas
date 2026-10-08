@@ -65,6 +65,18 @@ ativado no console do projeto, o upload falha e a interface mostra um aviso expl
 normalmente sem essas duas telas. Para ativar: Console do Firebase > Storage > "Vamos começar" (isso muda o projeto para o
 plano Blaze) e depois `firebase deploy --only storage` para publicar `storage.rules`.
 
+**CORS do bucket** (não fica no repositório nem no `firebase.json`: é configuração do bucket no Google Cloud). Sem ele, o
+navegador mostra as imagens e vídeos (`<img>`/`<video>` não precisam), mas não consegue LER o arquivo: o Estúdio não traz as
+fotos do produto/Materiais nem o logo, o "Baixar" da Galeria abre o link em vez de salvar direto (o nome do arquivo continua
+certo, porque a peça é enviada com `Content-Disposition`) e a prévia do link de aprovação não é gerada a partir do arquivo.
+Configuração sugerida em `docs/storage-cors.json` (só leitura, só a origem de produção). Aplicar no Cloud Shell:
+`gcloud storage buckets update gs://app-gerenciador-de-anuncios.firebasestorage.app --cors-file=docs/storage-cors.json`
+e conferir com `gcloud storage buckets describe gs://app-gerenciador-de-anuncios.firebasestorage.app --format="default(cors_config)"`.
+
+**Peças da Galeria** ("Finalizar peça" no Estúdio): ficam em `gcc/<cliente>/pecas/<peça>/<criativo>-<formato>.jpg|mp4`,
+registradas em `gcc_pecas`. Configurações > "Armazenamento das peças" mostra o espaço usado (total e por cliente) e a cota
+gratuita do Firebase (5 GB-mês no plano Blaze para buckets em us-central1/us-west1/us-east1; fonte e data na própria tela).
+
 ## Custo de IA: arquivamento mensal
 `gcc_uso_api` guarda um documento por chamada de IA. Para não crescer para sempre, meses **fechados** (qualquer mês que não
 seja o atual) são resumidos automaticamente num único documento em `gcc_uso_api_resumo` (total de tokens/custo, por cliente e

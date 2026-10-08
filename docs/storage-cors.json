@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://34.172.120.162.nip.io"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Disposition"],
+    "maxAgeSeconds": 3600
+  }
+]

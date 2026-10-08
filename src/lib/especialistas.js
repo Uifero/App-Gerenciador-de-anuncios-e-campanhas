@@ -2,8 +2,8 @@
 // clientes), sobre um item real deste cliente. Catálogo, contexto do item e leitura tolerante da resposta: tudo puro e
 // testável. Os critérios (foco) seguem as referências do servidor (server/referencias/trafego.js, copy.js, oferta.js e
 // ganchos.js), que já foram resumidas dos squads do Xquads com as regras do app. A consulta só aconselha: nada é aplicado
-// em criativo, campanha ou perfil. O dado continua morando na fonte (perfil, produtos, resultados); a consulta guarda só
-// o id/nome do item e a resposta.
+// sozinho em criativo, campanha ou perfil. O dado continua morando na fonte (perfil, produtos, resultados); a consulta guarda só
+// o id/nome do item e a resposta. Aplicar o que ele sugere é sempre um clique do operador (lib/aplicar-especialista.js).
 import { comoAnunciaDe } from './anuncio.js';
 
 const txt = (v) => String(v ?? '').trim();
@@ -11,7 +11,7 @@ const lista = (v) => (Array.isArray(v) ? v : []);
 
 /** Tipos de item que um especialista pode analisar. */
 export const ALVOS = {
-  criativo: 'Criativo', campanha: 'Campanha', oferta: 'Oferta e produtos', resultados: 'Resultados recentes', livre: 'Pergunta livre',
+  criativo: 'Criativo', peca: 'Peça finalizada (Galeria)', campanha: 'Campanha', oferta: 'Oferta e produtos', resultados: 'Resultados recentes', livre: 'Pergunta livre',
 };
 /** Área -> tarefa do servidor (TAREFAS em server/index.js). */
 export const TAREFA_DA_AREA = { trafego: 'especialista_trafego', copy: 'especialista_copy', oferta: 'especialista_oferta' };
@@ -64,7 +64,7 @@ export const ESPECIALISTAS = [
   {
     id: 'copy', nome: 'Copy de resposta direta', metodo: 'nível de consciência, gancho, especificidade, benefício, objeção e um CTA', area: 'copy', icone: 'pen-nib',
     quando: 'Você quer uma segunda opinião sobre o texto de um criativo antes de mandar para o cliente.',
-    alvos: ['criativo', 'livre'],
+    alvos: ['criativo', 'peca', 'livre'],
     foco: [
       'O texto fala com o nível de consciência certo do público (não sabe do problema, sabe do problema, conhece soluções, conhece o produto)?',
       'A primeira frase faz ler a próxima (escorregador); nada de saudação ou marca abrindo para público frio.',
@@ -86,7 +86,7 @@ export const ESPECIALISTAS = [
   {
     id: 'ganchos', nome: 'Ganchos e retenção em vídeo', metodo: 'primeiros 3 segundos, roteiro cena a cena e ritmo com uma ideia por vídeo', area: 'copy', icone: 'film',
     quando: 'O vídeo perde as pessoas logo no começo ou você quer revisar o roteiro antes de gravar.',
-    alvos: ['criativo'],
+    alvos: ['criativo', 'peca'],
     foco: [
       'Gancho nos 3 primeiros segundos: para a rolagem e liga com o que vem depois.',
       'Funciona sem som: texto na tela grande, poucas palavras, legenda nas falas.',
@@ -171,7 +171,7 @@ export function linhaResultado(r) {
 const recentes = (rs, n = 10) => [...lista(rs)].sort((a, b) => String(b.data || b.criadoEm || '').localeCompare(String(a.data || a.criadoEm || ''))).slice(0, n);
 
 /** Bloco de texto compacto do item analisado (vai para a IA e para o checklist). */
-export function contextoDoAlvo({ tipo, item = null, cliente = null, produtos = [], resultados = [] } = {}) {
+export function contextoDoAlvo({ tipo, item = null, cliente = null, produtos = [], resultados = [], criativo = null } = {}) {
   if (tipo === 'criativo' && item) {
     const seus = recentes(lista(resultados).filter((r) => r.criativoId === item.id));
     return [
@@ -180,6 +180,15 @@ export function contextoDoAlvo({ tipo, item = null, cliente = null, produtos = [
       `Ângulo: ${txt(item.angulo) || 'n/d'} · Framework: ${txt(item.framework) || 'n/d'} · Formato: ${txt(item.formato) || 'n/d'}`,
       seus.length ? `Resultados deste criativo:\n${seus.map(linhaResultado).join('\n')}` : 'Resultados deste criativo: nenhum registrado.',
     ].join('\n');
+  }
+  if (tipo === 'peca' && item) {
+    const cr = criativo || {};
+    return [
+      `PEÇA FINALIZADA ${txt(item.formatoNome) || txt(item.formato)} (${item.tipo === 'video' ? 'vídeo' : 'imagem'}${item.duracao ? `, ${Math.round(item.duracao)} s` : ''}) do criativo "${txt(cr.nome || item.criativoNome)}"`,
+      `Texto na tela: gancho "${txt(item.texto?.hook)}" · CTA "${txt(item.texto?.cta)}"`,
+      lista(item.config?.cenas).length ? `Cenas do vídeo:\n${item.config.cenas.map((c, i) => `- ${i + 1}. (${c.dur} s) ${txt(c.texto) || '(sem legenda)'}`).join('\n')}` : '',
+      `Copy/roteiro do criativo: ${txt(cr.copy).slice(0, 2000)}`,
+    ].filter(Boolean).join('\n');
   }
   if (tipo === 'campanha' && item) {
     const seus = recentes(lista(resultados).filter((r) => r.campanhaId === item.id));
@@ -225,6 +234,7 @@ export function normalizarConsulta(d = {}) {
   })).filter((p) => p.ponto);
   const acoes = lista(pegar(o, 'acoes', 'acoesPrioritarias', 'recomendacoes', 'proximosPassos')).map((a, i) => (typeof a === 'string' ? { prioridade: i + 1, acao: txt(a), porque: '' } : {
     prioridade: Number(pegar(a, 'prioridade', 'ordem', 'n')) || i + 1, acao: txt(pegar(a, 'acao', 'titulo', 'oque', 'recomendacao')), porque: txt(pegar(a, 'porque', 'motivo', 'justificativa')),
+    ...(txt(pegar(a, 'tipo', 'categoria')) ? { tipo: txt(pegar(a, 'tipo', 'categoria')) } : {}), ...(txt(a.campo) ? { campo: txt(a.campo) } : {}),
   })).filter((a) => a.acao).sort((a, b) => a.prioridade - b.prioridade).map((a, i) => ({ ...a, prioridade: i + 1 }));
   const textos = (v) => lista(v).map((x) => txt(typeof x === 'string' ? x : pegar(x, 'pergunta', 'texto', 'aviso'))).filter(Boolean);
   return { resumo: txt(pegar(o, 'resumo', 'diagnostico', 'summary', 'conclusao')), pontos, acoes, perguntas: textos(pegar(o, 'perguntas', 'duvidas', 'perguntasAoGestor')), avisos: textos(o.avisos) };

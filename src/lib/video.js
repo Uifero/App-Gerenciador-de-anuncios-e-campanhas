@@ -448,6 +448,22 @@ export async function gerarPreviaVideo({ arquivo, aoProgresso }) {
   return rodarUmArquivo({ arquivo, aoProgresso, saida: 'previa.mp4', montarArgs: (entrada, saida) => argsPreviaVideo(entrada, saida, dim) });
 }
 
+// ---------------- Peça finalizada (Galeria): vídeo comprimido para o Instagram ----------------
+
+/**
+ * Argumentos do ffmpeg para guardar a peça: H.264 em MP4, qualidade constante (CRF 23) com teto de ~5 Mbps (bom para
+ * Reels/Stories 1080×1920 no celular), áudio AAC 128 kbps, faststart (começa a tocar antes de baixar tudo).
+ */
+export function argsCompressaoPeca(entrada, saida) {
+  return ['-i', entrada, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-maxrate', '5M', '-bufsize', '10M', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-movflags', '+faststart', saida];
+}
+
+/** Comprime o vídeo da peça (o original da sessão não muda). Devolve um Blob MP4. */
+export async function comprimirVideoPeca({ arquivo, aoProgresso }) {
+  return rodarUmArquivo({ arquivo, aoProgresso, saida: 'peca.mp4', montarArgs: argsCompressaoPeca });
+}
+
 // ---------------- Narração: mistura a voz com o áudio que o vídeo já tem ----------------
 
 /**

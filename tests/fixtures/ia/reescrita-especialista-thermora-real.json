@@ -1,0 +1,14 @@
+{
+  "_origem": "chamada real, 08/10/2026, tarefa refino (assinatura, limite 2000 tokens), Thermora: \"Aplicar\" da ação 2 do especialista de copy (trazer a objeção do medo de acelerar para o gancho) sobre o criativo gerado no fluxo",
+  "texto": "{\"hook\":\"Eu tinha medo de tomar termogênico de manhã. Conto como foi usar o meu na rotina.\",\"copy\":\"CENA 1 (0-3s) | Dona na cozinha, café na mão, falando para a câmera. Texto na tela: \\\"Já tentou tudo?\\\" Fala: \\\"Se acha que já tentou tudo, assiste isso.\\\"\\nCENA 2 (3-7s) | Close do pote Thermora Caps na bancada, ao lado da xícara. Texto na tela: \\\"1 cápsula de manhã\\\" Fala: \\\"A rotina aqui é corrida, então o meu ritual é simples: uma cápsula de manhã, junto com o café da casa.\\\"\\nCENA 3 (7-12s) | Mão pegando a cápsula do pote. Texto na tela: \\\"Cafeína + chá verde\\\" Fala: \\\"É um termogênico com cafeína e chá verde. O pote vem com 60 cápsulas.\\\"\\nCENA 4 (12-17s) | Dona de volta na câmera, tom leve. Texto na tela: \\\"Sem complicar a rotina\\\" Fala: \\\"Se você já tentou outro e desistiu no meio do caminho, às vezes o que pesa é a complicação. Aqui é só uma por dia.\\\"\\nCENA 5 (17-21s) | Dona sorrindo, pote na mão. Texto na tela: \\\"Me chama no WhatsApp\\\" Fala: \\\"Quer saber como funciona? Me chama no WhatsApp que eu mesma te explico.\\\"\",\"cta\":\"Me chama no WhatsApp que eu te explico.\",\"angulo\":\"Rotina simples\",\"gatilho\":\"Tensão de medo: a objeção (medo de acelerar com termogênico) aparece já nos 3s e cria curiosidade sobre como foi a experiência.\",\"explicacao\":\"Só o gancho mudou para trazer a objeção de medo logo no início, sem o número \\\"30 dias\\\" e sem o texto \\\"TESTEI 30 DIAS\\\", porque esse dado não consta no perfil e alteraria o criativo além do gancho. O restante do copy, incluindo o texto na tela da cena 1, ficou palavra por palavra igual.\"}",
+  "uso": {
+    "entrada": 2,
+    "saida": 2492,
+    "cacheEscrita": 13484,
+    "cacheLeitura": 0,
+    "buscasWeb": 0,
+    "custoUsd": 0,
+    "modelo": "claude-haiku-4-5",
+    "provedor": "cli"
+  }
+}
