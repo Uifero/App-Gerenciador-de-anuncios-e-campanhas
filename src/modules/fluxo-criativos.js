@@ -23,7 +23,8 @@ import {
   formatoDaIdeia, briefingDoFluxo, ideiaDe, fluxoEmAndamento,
 } from '../lib/etapas-criativos.js';
 import { comoAnunciaDe } from '../lib/anuncio.js';
-import { motivoSaude, achadosSaude, ehProdutoSaude, AVISO_META_SAUDE } from '../lib/saude.js';
+import { motivoSaude, achadosSaude, ehProdutoSaude, AVISO_META_SAUDE, MOTIVO_ANUNCIO_SITE, textosDoSiteNoAnuncio, trocarPelaSegura } from '../lib/saude.js';
+import { versaoNova } from '../lib/aplicar-especialista.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, rotuloModelo, motivoGancho } from '../lib/ganchos.js';
 import { NARRATIVAS, ETAPAS_FUNIL } from '../lib/narrativas.js';
 import { FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS } from '../lib/constantes.js';
@@ -180,7 +181,9 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
     const t = textoIdeia(i), texto = `${t.hook} ${t.copy} ${t.cta}`;
     const saude = motivoSaude(texto, cliente);
     const gancho = motivoGancho(t, cliente);
-    return [saude && `<p class="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-700" data-bloqueio-ideia="saude"><i class="fa-solid fa-triangle-exclamation"></i> Bloqueado para aprovar (Meta): ${esc(achadosSaude(texto).join(', '))}. Refaça a ideia ou ajuste o texto.</p>`,
+    const doSite = saude ? textosDoSiteNoAnuncio(texto, cliente).filter((l) => l.alegacao.length) : [];
+    const seguras = doSite.filter((l) => l.segura);
+    return [saude && `<div class="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-700" data-bloqueio-ideia="saude"><p><i class="fa-solid fa-triangle-exclamation"></i> ${doSite.length ? `${esc(MOTIVO_ANUNCIO_SITE)} ` : ''}Bloqueado para aprovar (Meta): ${esc(achadosSaude(texto).join(', '))}. ${seguras.length ? `Versão segura: ${seguras.map((l) => `"${esc(l.segura)}"`).join('; ')}.` : 'Refaça a ideia ou ajuste o texto.'}</p>${seguras.length ? `<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-ideia="${esc(i.id)}"><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>` : ''}</div>`,
       gancho && `<p class="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-700" data-bloqueio-ideia="gancho"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(gancho)}.</p>`,
       ...(i.avisosGancho || []).filter((x) => x !== gancho && !String(x).startsWith('sobrou colchete')).map((x) => `<p class="text-xs text-amber-800">${esc(x)}</p>`)].filter(Boolean).join('');
   };
@@ -258,6 +261,15 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
       await salvarFluxo({ ideias: fluxo.ideias.map((i) => (i.id === c.dataset.marcarIdeia ? { ...i, marcada: c.checked } : i)) });
       c.closest('[data-ideia]')?.classList.toggle('ring-2', c.checked); c.closest('[data-ideia]')?.classList.toggle('ring-indigo-500', c.checked);
     });
+    on(alvo, 'click', '[data-usar-segura-ideia]', (b) => ocupado(b, async () => {
+      const i = fluxo.ideias.find((x) => x.id === b.dataset.usarSeguraIdeia); if (!i) return;
+      const t = textoIdeia(i), novo = { hook: trocarPelaSegura(t.hook, cliente), copy: trocarPelaSegura(t.copy, cliente), cta: trocarPelaSegura(t.cta, cliente) };
+      const c = criativoDaIdeia(i);
+      if (c) { const patch = versaoNova(c, novo, 'Texto do site trocado pela versão segura (política do Meta para saúde)'); await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch); }
+      else await salvarFluxo({ ideias: fluxo.ideias.map((x) => (x.id === i.id ? { ...x, ...novo } : x)) });
+      redesenhar();
+      mostrarResultado(lista.querySelector(`[data-ideia="${CSS.escape(i.id)}"]`), 'Versão segura aplicada nesta ideia.');
+    }));
     on(alvo, 'click', '[data-refazer-ideia]', (b) => ocupado(b, async () => {
       const i = fluxo.ideias.find((x) => x.id === b.dataset.refazerIdeia); if (!i) return;
       const [nova] = await pedirIdeias({ quantidade: 1, extra: `Refaça esta ideia com outro gancho e outro ângulo; não repita este gancho: "${textoIdeia(i).hook}".` });

@@ -61,5 +61,32 @@ export function motivoSaude(texto, cliente) {
   const condicao = achados.some((a) => RE_CONDICAO.test(semAcento(a)));
   const efeito = achados.some((a) => !RE_ACHADOS.some((re) => new RegExp(re.source, 'i').test(a)) && !RE_CONDICAO.test(semAcento(a)));
   const proibe = [corpo && 'resultado no corpo (peso, medidas, antes e depois)', efeito && 'promessa de efeito no organismo (metabolismo, energia, disposição, queima de gordura, apetite)', condicao && 'falar da condição de quem assiste ("sem energia", "seu corpo pede")'].filter(Boolean);
-  return `produto de saúde: o Meta proíbe ${proibe.join(', ')}; trecho: ${achados.map((a) => `"${a}"`).join(', ')}. Remova isso e use a composição real (ativos, cápsulas, preço, oferta) ou a rotina de uso, sem prometer efeito`;
+  const base = `produto de saúde: o Meta proíbe ${proibe.join(', ')}; trecho: ${achados.map((a) => `"${a}"`).join(', ')}. Remova isso e use a composição real (ativos, cápsulas, preço, oferta) ou a rotina de uso, sem prometer efeito`;
+  const doSite = textosDoSiteNoAnuncio(texto, cliente).filter((l) => l.alegacao.length);
+  if (!doSite.length) return base;
+  const seguras = doSite.filter((l) => l.segura).map((l) => `"${l.segura}"`);
+  return `${MOTIVO_ANUNCIO_SITE} ${base}${seguras.length ? `. Versão segura para usar no lugar: ${seguras.join('; ')}` : ''}`;
+}
+
+// ---------- textos do site reaproveitados em anúncio ----------
+// No SITE o operador pode manter alegação de efeito (com aviso; lib/textos-site.js). Quando esse mesmo texto aparece num
+// criativo, o bloqueio de sempre vale e o motivo diz de onde veio; a "Versão segura" do texto é a troca oferecida.
+// cliente.alegacoesSite = [{ texto, segura, alegacao: [..], fonte }] (gravado ao aplicar o plano do site).
+export const MOTIVO_ANUNCIO_SITE = 'Permitido no site, mas bloqueado em anúncio: política do Meta para saúde e suplementos.';
+const chaveTexto = (t) => semAcento(String(t || '')).replace(/[^a-z0-9]+/g, ' ').trim();
+/** Textos do site (mantidos pelo operador) que aparecem neste texto de anúncio. */
+export function textosDoSiteNoAnuncio(texto, cliente) {
+  const t = ` ${chaveTexto(texto)} `;
+  return (Array.isArray(cliente?.alegacoesSite) ? cliente.alegacoesSite : [])
+    .filter((l) => { const k = chaveTexto(l?.texto); return k.length >= 12 && t.includes(` ${k} `); })
+    .map((l) => ({ texto: String(l.texto), segura: String(l.segura || ''), alegacao: Array.isArray(l.alegacao) ? l.alegacao : [], fonte: l.fonte || null }));
+}
+/** Troca cada texto do site com alegação pela versão segura dele (sem versão segura, fica como está). */
+export function trocarPelaSegura(texto, cliente) {
+  let out = String(texto || '');
+  for (const l of textosDoSiteNoAnuncio(out, cliente).filter((x) => x.alegacao.length && x.segura)) {
+    const i = semAcento(out).indexOf(semAcento(l.texto));
+    if (i >= 0) out = out.slice(0, i) + l.segura + out.slice(i + l.texto.length);
+  }
+  return out;
 }

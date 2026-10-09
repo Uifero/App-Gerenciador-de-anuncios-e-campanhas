@@ -12,6 +12,7 @@ import { textoSobre, corLegivel } from './contraste.js';
 import { plataformaDoSite, nomeTema } from './etapas-site.js';
 import { depoimentosVivos } from './prova-social.js';
 import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
+import { comDestaques } from './textos-site.js';
 
 const txt = (v) => String(v ?? '').trim();
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -58,6 +59,8 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
     secoesHome: (p.briefingTema?.secoesHome || []).map(txt).filter(Boolean),
     sobre: txt(p.textosPagina?.sobre) || txt(c.storytelling),
     faq: (p.textosPagina?.faq || []).filter((f) => txt(f?.p) && txt(f?.r)),
+    // Textos do operador escolhidos no plano (lib/textos-site.js): seção "Destaques" da home.
+    destaques: (p.destaques || []).map((g) => ({ titulo: txt(g?.titulo) || 'Destaques', linhas: (g?.linhas || []).map((l) => txt(l?.texto)).filter(Boolean) })).filter((g) => g.linhas.length),
     politicas: { trocas: txt(c.politicas?.trocas), envio: txt(c.politicas?.envio), privacidade: txt(c.politicas?.privacidade) },
     // Lidos agora da fonte: provas em texto do perfil de marca, prints (cópia borrada) e escritos à mão (lib/prova-social.js).
     depoimentos: depoimentosVivos({ cliente, materiais, guardados: p.depoimentos?.length ? p.depoimentos : c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => txt(d?.texto)),
@@ -153,6 +156,7 @@ export function gruposPlataforma(d) {
     g('banner', 'Banner', cam.banner, (d.banners.length ? d.banners : [d.banner]).flatMap((b, i) => [
       item(`${b.uso || `Banner ${i + 1}`}: título`, b.titulo), item(`${b.uso || `Banner ${i + 1}`}: subtítulo`, b.subtitulo), item(`${b.uso || `Banner ${i + 1}`}: botão`, b.cta)])),
     g('home', 'Textos da home', cam.cores, [item('Ordem das seções da home', d.secoesHome.join(' > ')), item('Texto "Sobre a marca" (bloco de texto da home)', d.sobre)]),
+    g('destaques', 'Seção de destaques (seus textos escolhidos no plano)', cam.secoes, (d.destaques || []).flatMap((x) => [item('Título da seção', x.titulo), item('Textos, nesta ordem (um por linha; no tema use um bloco de texto ou lista)', x.linhas.join('\n'))])),
     ...d.produtos.map((x, i) => g(`produto-${i}`, `Produto: ${x.nome}`, cam.produtos, [
       item('Título', x.nome), item('Descrição', x.descricao), item('Preço', moeda(x.preco)), item('Preço promocional', moeda(x.precoPromocional)),
       item('Variações', variacoesTexto(x.variacoes)), item('Título para SEO', x.seoTitulo), item('Descrição para SEO', x.seoDescricao),
@@ -220,6 +224,7 @@ export function gerarPreviaLojaHTML(d) {
     banner: () => (slides.length ? `<div class="banner com-carrossel">${carrosselHtml({ slides, medida: med.banner, conteudo: textoBanner, id: 'bn', alt: d.nomeLoja })}</div>`
       : `<div class="banner"><div class="wrap">${textoBanner}</div></div>`),
     provas: () => (d.provas.length ? `<div class="wrap"><h2 id="clientes-reais">Clientes reais</h2><div class="prints">${d.provas.map((p, i) => `<a href="#print-${i}" title="Toque para ampliar"><img src="${esc(p.url)}" alt="${p.foto ? 'Foto de cliente real' : 'Print de cliente real'}" loading="lazy" class="${p.foto ? 'foto-cliente' : 'print'}"${p.foto && p.foco ? ` style="object-position:${posicaoCss(p.foco)}"` : ''}></a>`).join('')}</div><p class="dica">Toque no print para ampliar.</p></div>` : ''),
+    destaques: () => ((d.destaques || []).length ? d.destaques.map((x) => `<div class="wrap" data-destaques><h2>${esc(x.titulo)}</h2><ol class="destaques">${x.linhas.map((l) => `<li>${esc(l)}</li>`).join('')}</ol></div>`).join('') : ''),
     produtos: () => `<div class="wrap"><h2 id="produtos">Produtos</h2><div class="grade">${grade}</div></div>`,
     confianca: () => `<div class="wrap"><div class="confianca"><div><b>Compra segura</b><span>Pagamento pela plataforma</span></div><div><b>Entrega</b><span>${esc(d.politicas.envio ? d.politicas.envio.slice(0, 90) : 'Frete calculado no carrinho')}</span></div><div><b>Trocas</b><span>${esc(d.politicas.trocas ? d.politicas.trocas.slice(0, 90) : 'Política de trocas da loja')}</span></div></div></div>`,
     depoimentos: () => (d.depoimentos.length ? `<div class="wrap"><h2>Quem já comprou</h2><div class="depos">${d.depoimentos.slice(0, 6).map((x) => `<blockquote>“${esc(x.texto)}”<cite>${esc(x.nome || 'Cliente')}</cite></blockquote>`).join('')}</div></div>` : ''),
@@ -227,7 +232,7 @@ export function gerarPreviaLojaHTML(d) {
     sobre: () => (d.sobre ? `<div class="wrap"><h2 id="sobre">Sobre a marca</h2>${(d.sobreImagens || [])[0] ? `<img class="sobre-img" src="${esc(d.sobreImagens[0].url)}" alt="" loading="lazy" style="object-position:${posicaoCss(d.sobreImagens[0].foco)}">` : ''}<p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p></div>` : ''),
     faq: () => (d.faq.length ? `<div class="wrap"><h2 id="faq">Perguntas frequentes</h2>${d.faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div>` : ''),
   };
-  const home = `<section id="inicio" class="home">${V.ordem.filter((k) => !V.ocultas.includes(k)).map((k) => secao[k]()).join('')}</section>`;
+  const home = `<section id="inicio" class="home">${comDestaques(V.ordem.filter((k) => !V.ocultas.includes(k)), 'banner').map((k) => secao[k]()).join('')}</section>`;
   // Página de produto: aparece pelo :target; a home some enquanto um produto está aberto.
   const pr = (m, cel = false) => { const x = cel ? m.mobile || m.desktop : m.desktop; return `${x.l}/${x.a}`; };
   const css = `*{box-sizing:border-box}body{margin:0;font-family:${fonte ? `"${fonte}",` : ''}system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#111827;background:#fff}
@@ -238,7 +243,7 @@ nav{display:flex;gap:16px;flex:1;flex-wrap:wrap}nav a{text-decoration:none;font-
 .menu-toggle,.hamb,.ic-sacola,.qtd-sacola{display:none}
 .banner{background:${cor};color:${sobreCor};padding:56px 0;text-align:center}.banner h1{margin:0 0 8px;font-size:clamp(24px,4vw,40px)}.banner p{margin:0 0 18px;opacity:.92}
 .cta{display:inline-block;background:#fff;color:${corTexto};padding:12px 22px;border-radius:6px;font-weight:700;text-decoration:none}
-h2{margin:36px 0 14px;font-size:22px}.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+h2{margin:36px 0 14px;font-size:22px}.destaques{margin:0;padding-left:1.4em;display:grid;gap:10px;font-size:16px;line-height:1.5;max-width:760px}.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
 .card{text-decoration:none;display:flex;flex-direction:column;gap:6px}
 .barra-frete{background:${cor};color:${sobreCor};text-align:center;font-size:13px;font-weight:600;padding:8px 12px}.frete-pdp{margin:-8px 0 12px;font-size:14px;color:${corTexto};font-weight:600}
 .pags{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}.pags span{border:1px solid #d1d5db;border-radius:4px;padding:3px 8px;font-size:12px;color:#374151;background:#fff}

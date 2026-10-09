@@ -9,6 +9,7 @@ import { carrosselHtml, carrosselCss } from './carrossel.js';
 import { depoimentosVivos } from './prova-social.js';
 import { textoSobre, corLegivel } from './contraste.js';
 import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
+import { comDestaques } from './textos-site.js';
 
 /** Formas de pagamento que o selo "compra segura" pode mostrar (ícones genéricos desenhados aqui, sem logo de bandeira). */
 export const FORMAS_PAGAMENTO = [['cartao', 'Cartão de crédito'], ['pix', 'Pix'], ['boleto', 'Boleto']];
@@ -102,7 +103,10 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
 
   const destinoCta = visivel('vendidos') ? '#vendidos' : '#catalogo';
   const prints = (provas || []).filter((p) => p?.url);
+  const destaques = (c.destaques || []).filter((g) => (g?.linhas || []).some((l) => String(l?.texto || '').trim()));
   const blocoHTML = {
+    // Textos do operador escolhidos no plano ("Seu texto", "Versão melhorada" ou "Versão segura"), sem reescrever nada.
+    destaques: () => (destaques.length ? destaques.map((g, i) => `<section id="destaques${i ? `-${i + 1}` : ''}" class="destaques" data-destaques><div class="wrap"><h2>${esc(g.titulo || 'Destaques')}</h2><ol class="lista-destaques">${g.linhas.filter((l) => String(l?.texto || '').trim()).map((l) => `<li>${esc(l.texto)}</li>`).join('')}</ol></div></section>`).join('\n') : ''),
     // Prints reais de clientes: toque/clique abre a imagem inteira (legível no celular). Nunca editamos o conteúdo do print.
     provas: () => (prints.length ? `<section id="clientes-reais" class="provas"><div class="wrap"><h2>${esc(tituloBloco(L, 'provas'))}</h2><div class="prints">${prints.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener" title="Toque para ampliar"><img src="${esc(p.url)}" alt="${p.foto ? 'Foto de cliente real' : 'Print de cliente real'}${p.legenda ? ` (${esc(p.legenda)})` : ''}" loading="lazy"${p.foto ? ` class="foto-cliente" style="object-position:${posicaoCss(p.foco)}"` : ''}></a>`).join('')}</div><p class="dica-print">Toque no print para ampliar.</p></div></section>` : ''),
     hero: () => { const texto = `<h1>${esc(c.heroTitulo || cliente.nome)}</h1><p>${esc(c.heroSubtitulo || cliente.nicho)}</p><a href="${destinoCta}">${esc(c.heroCta || 'Ver produtos')}</a>`;
@@ -173,6 +177,7 @@ ${R.botaoGrande ? '.btn{padding:16px;font-size:18px;border-radius:12px}' : ''}
 .story-img{width:100%;max-width:720px;aspect-ratio:${med.sobre.desktop.l}/${med.sobre.desktop.a};object-fit:cover;border-radius:14px;margin-bottom:16px}@media(max-width:640px){.story-img{aspect-ratio:${med.sobre.mobile.l}/${med.sobre.mobile.a}}}
 .hero.com-carrossel{padding:0;background:#111}.car-texto h1{font-size:clamp(28px,5vw,48px);margin:0 0 12px}.car-texto p{font-size:18px;opacity:.95;max-width:600px;margin:0 auto 24px}.car-texto a{display:inline-block;background:#fff;color:#111;padding:12px 28px;border-radius:999px;font-weight:700;text-decoration:none}
 ${slides.length ? carrosselCss({ n: slides.length, id: 'bn' }) : ''}
+.lista-destaques{max-width:760px;margin:0;padding-left:1.4em;display:grid;gap:12px;font-size:17px;line-height:1.5}.lista-destaques li::marker{color:var(--cor-texto);font-weight:700}
 .faq{max-width:760px}.faq details{background:#fff;border-radius:12px;padding:14px 18px;margin-bottom:10px;box-shadow:0 1px 4px #0001}.faq summary{cursor:pointer;font-weight:600}.faq p{margin:10px 0 0;line-height:1.6;white-space:pre-line}
 .selo{margin-top:10px;padding:10px;border:1px solid #e5e7eb;border-radius:10px;font-size:12px;color:#374151}.selo svg{width:18px;height:18px;flex:none}
 .selo .l{display:flex;align-items:center;gap:6px}.selo .pags{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;color:#6b7280}
@@ -185,7 +190,7 @@ ${R.freteGratis ? `<div class="barra-frete">Frete grátis acima de ${esc(reais(R
 <nav>${visivel('categorias') ? '<a href="#categorias">Categorias</a>' : ''}${visivel('vendidos') ? '<a href="#vendidos">Mais vendidos</a>' : ''}${promo.length && visivel('sale') ? '<a href="#sale">Sale</a>' : ''}${visivel('marca') ? '<a href="#marca">A marca</a>' : ''}${faq.length && visivel('faq') ? '<a href="#faq">Dúvidas</a>' : ''}</nav>
 <button class="cartbtn" id="abrirCarrinho">Carrinho (<span id="qtd">0</span>)</button></div></header>
 
-${L.ordem.filter(visivel).map((k) => blocoHTML[k]()).filter(Boolean).join('\n')}
+${comDestaques(L.ordem.filter(visivel), 'hero').map((k) => blocoHTML[k]()).filter(Boolean).join('\n')}
 
 ${R.paginaProduto ? produtos.map(paginaProduto).join('') : ''}
 <footer><div class="wrap"><div class="cols">

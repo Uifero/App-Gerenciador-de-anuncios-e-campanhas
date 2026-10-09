@@ -34,7 +34,9 @@ import { abrirProduto, garantirMigracaoFotos } from './produtos.js';
 import { tarefasSiteHtml, ligarTarefasSite } from './tarefas-site.js';
 import { ETAPAS, STATUS_ETAPA, statusEtapas, primeiraEtapaComFalta, plataformaDoSite, patchPlataforma, PLATAFORMAS_SITE, TEMAS_SHOPIFY, nomeTema } from '../lib/etapas-site.js';
 import { itensAceitos, aplicacaoDoPlano, checklistObrigatorio, itensFaltando, recursosDoSite, TIPOS_PEDIDO } from '../lib/plano-site.js';
-import { blocoAnaliseHtml, ligarAnalise, planoAplicado, conferenciaHtml, conferirPlano, abrirPlanoDaVersao, tarefasLojaHtml } from './plano-site.js';
+import { blocoAnaliseHtml, ligarAnalise, planoAplicado, conferenciaHtml, conferirPlano, abrirPlanoDaVersao, tarefasLojaHtml, alegacoesSiteHtml } from './plano-site.js';
+import { aplicarTextosNoEstado, alegacoesMantidas, alegacoesParaCliente } from '../lib/textos-site.js';
+import { ehProdutoSaude } from '../lib/saude.js';
 import { resumoBlocosSite } from './ajuste-site.js';
 
 /** { materialId: usos } (rascunho do "Ajustar este site") -> patches para comUsos. */
@@ -101,6 +103,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const produtos = produtosBase; // nomes, preços, variações: a fonte é a aba Produtos
   const etiquetaAprov = etiquetaSite(aprovacoes, respostasAprov); // "Aprovado v3", "Ajuste pedido v3"... (passo 5)
   let site = sites[0] || null;
+  const saude = ehProdutoSaude(cliente, produtosBase);
   const marcados = criativos.filter((c) => c.provaSocial && ['aprovado', 'em_uso', 'pausado'].includes(c.status));
 
   const salvarSite = async (patch) => {
@@ -172,7 +175,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       const gerado2 = { ...atual, ...r, depoimentos };
       const patch = base ? aplicarBaseNoCustom(gerado2, site.config || {}, base) : { conteudo: gerado2 };
       const vis = aplicarOperacoes({ conteudo: patch.conteudo, config: patch.config || site.config || {}, layout: site.layout }, opsDoVisual(planoVale ? null : visual, 'custom', site, materiais), { modo: 'custom', materiais });
-      await salvarEVersionar({ ...patch, ...(vis.mudancas.length ? { layout: vis.estado.layout } : {}), ...reaproveitou }, 'Textos gerados de novo pela IA');
+      const conteudo = planoVale ? aplicarTextosNoEstado({ conteudo: patch.conteudo }, itensAceitos(plAplic), 'custom', { saude }).conteudo : patch.conteudo;
+      await salvarEVersionar({ ...patch, conteudo, ...(vis.mudancas.length ? { layout: vis.estado.layout } : {}), ...reaproveitou }, 'Textos gerados de novo pela IA');
       toast(base ? 'Site gerado reaproveitando o texto, as cores e a FAQ do pacote que o cliente já viu. A IA só completou o que faltava.'
         : `Textos gerados pela IA${faqValida(r.faq).length ? ` (com ${faqValida(r.faq).length} pergunta(s) frequente(s))` : ''}. ${usouModelos ? 'Sem prova social cadastrada: os depoimentos são MODELOS marcados para substituir.' : `Depoimentos: só as ${depoimentos.length} prova(s) social(is) reais do cliente.`}`);
     } else {
@@ -180,15 +184,26 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       // Descrições presas ao produto pelo id (renomear o produto não perde a descrição).
       const descricoesProdutos = (gerado2.descricoesProdutos || []).map((d) => ({ ...d, produtoId: produtos.find((p) => String(p.nome || '').toLowerCase() === String(d.nome || '').toLowerCase())?.id || null }));
       // As escolhas da prévia (banner, fotos, seções) continuam; as que as preferências pedirem entram por cima.
-      const novo = { ...(base ? aplicarBaseNoPacote({ ...gerado2, descricoesProdutos }, base) : { ...gerado2, descricoesProdutos }), ...(site.pacote?.visual ? { visual: site.pacote.visual } : {}), ...(site.pacote?.recursos ? { recursos: site.pacote.recursos } : {}) };
+      const novo = { ...(base ? aplicarBaseNoPacote({ ...gerado2, descricoesProdutos }, base) : { ...gerado2, descricoesProdutos }), ...(site.pacote?.visual ? { visual: site.pacote.visual } : {}), ...(site.pacote?.recursos ? { recursos: site.pacote.recursos } : {}), ...(site.pacote?.destaques ? { destaques: site.pacote.destaques } : {}) };
       const vis = aplicarOperacoes({ pacote: novo }, opsDoVisual(planoVale ? null : visual, 'pacote', site, materiais), { modo: 'pacote', materiais });
-      await salvarEVersionar({ pacote: vis.estado.pacote, ...reaproveitou }, 'Pacote gerado de novo pela IA');
+      const pacote = planoVale ? aplicarTextosNoEstado({ pacote: vis.estado.pacote }, itensAceitos(plAplic), 'pacote', { saude }).pacote : vis.estado.pacote;
+      await salvarEVersionar({ pacote, ...reaproveitou }, 'Pacote gerado de novo pela IA');
       toast(base ? 'Pacote gerado reaproveitando o texto, as cores e a FAQ do site personalizado.' : 'Banners, briefing do tema e textos gerados.');
     }
+    if (planoVale) await guardarAlegacoesNoCliente();
     if (planoAplicado(site)) await conferirDoSite(); // "Conferência do pedido" logo depois de gerar
     mostrarDepoisDeGerar.add(cliente.id);
     if (!irParaPasso4) return;
     if (passoDaRota() === 4) recarregar(); else irPara(4);
+  }
+
+  // Textos do site com alegação/número mantidos pelo operador: ficam no cliente para os criativos (lib/saude.js
+  // motivoSaude diz "Permitido no site, mas bloqueado em anúncio" e oferece a versão segura).
+  async function guardarAlegacoesNoCliente() {
+    const alegacoesSite = alegacoesParaCliente([...alegacoesMantidas(site, 'custom'), ...alegacoesMantidas(site, 'pacote')]);
+    if (JSON.stringify(alegacoesSite) === JSON.stringify(cliente.alegacoesSite || [])) return;
+    await db.atualizar(COL.clientes, cliente.id, { alegacoesSite }, { silencioso: true });
+    cliente.alegacoesSite = alegacoesSite;
   }
 
   // ---------- plano do pedido ("Analisar meu pedido", modules/plano-site.js) ----------
@@ -250,7 +265,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     if (deTexto.length) {
       const e = estadoDoSite(site, modoV);
       const mensagem = `Corrija SÓ estes pedidos do plano, sem mexer em mais nada: ${deTexto.map((x) => `"${x.pedido || TIPOS_PEDIDO[x.tipo]}" (${x.como}; hoje: ${conf.resultados[x.id]?.motivo || 'não atendido'})`).join('; ')}`;
-      const ia = await ajustarSite({ cliente, modo: modoV, estado: e, mensagem: mensagem.slice(0, 1500), materiais: imagensParaBanner(materiais), produtos, resumoBlocos: custom ? resumoBlocosSite(e) : '' });
+      const ia = await ajustarSite({ cliente, modo: modoV, estado: e, mensagem, materiais: imagensParaBanner(materiais), produtos, resumoBlocos: custom ? resumoBlocosSite(e) : '' });
       const r = ia.tipo === 'proposta' ? aplicarOperacoes({ ...e, usosFotos: {} }, ia.operacoes, { modo: modoV, materiais, produtos }) : null;
       if (r?.aplicadas.length) {
         const { usosFotos, ...estado } = r.estado;
@@ -422,10 +437,10 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         <div class="card mt-4" data-ancora="referencia"><h3 class="font-semibold">Site de referência</h3>
           <input class="input mt-1" data-referencia-site value="${esc(cliente.siteReferencia || '')}" placeholder="https://… (um site que o cliente acha bonito)">
           <p class="hint">O mesmo campo da pergunta 12. A IA usa só a estrutura e o estilo dele, nunca textos, imagens ou marca.</p>${referenciaExtraHtml(cliente)}</div></div>
-      ${blocoAnaliseHtml(cliente, site)}`;
+      ${blocoAnaliseHtml(cliente, site, { saude })}`;
     const caixa = $('[data-como-quero]', alvo);
     ligarPreferencias(caixa, cliente, () => { const x = $('[data-referencia-extra]', caixa); if (x) x.outerHTML = referenciaExtraHtml(cliente); }, { aplicarFotosTexto: site?.modo ? aplicarFotosTexto : null });
-    ligarAnalise($('[data-analise-pedido]', alvo), { cliente, get site() { return site; }, salvarSite, produtos: produtosComF(), materiais, plataforma: plat, tema: String(site?.tema || ''), modo: modoV, aplicar: aplicarPlano });
+    ligarAnalise($('[data-analise-pedido]', alvo), { cliente, get site() { return site; }, salvarSite, produtos: produtosComF(), materiais, plataforma: plat, tema: String(site?.tema || ''), modo: modoV, saude, aplicar: aplicarPlano });
     on(alvo, 'change', '[data-plataforma]', (i) => ocupado(i, async () => {
       const novo = i.value;
       await salvarSite({ ...patchPlataforma(novo), ...(novo === 'shopify' && !TEMAS_SHOPIFY.some(([k]) => k === site?.tema) ? { tema: null } : {}), ...(novo !== 'shopify' && TEMAS_SHOPIFY.some(([k]) => k === site?.tema) ? { tema: null } : {}) });
@@ -484,7 +499,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     }
     on(alvo, 'click', '[data-corrigir-faltou]', (b) => ocupado(b, () => corrigirFaltou()));
     on(alvo, 'click', '[data-conferir-de-novo]', (b) => ocupado(b, async () => { await conferirDoSite(); recarregar(); mostrarResultado('[data-conferencia]', 'Conferência refeita.'); }));
-    on(alvo, 'click', '[data-ver-plano]', (b) => abrirPlanoDaVersao(site, b.dataset.verPlano, site.conferencia?.versao || null));
+    on(alvo, 'click', '[data-ver-plano]', (b) => abrirPlanoDaVersao(site, b.dataset.verPlano, site.conferencia?.versao || null, { saude }));
     on(alvo, 'click', '[data-mostrar-previa-loja]', (b) => { const a = $('[data-area-previa-loja]', alvo); a.classList.toggle('hidden'); b.setAttribute('aria-expanded', String(!a.classList.contains('hidden'))); b.innerHTML = a.classList.contains('hidden') ? '<i class="fa-solid fa-eye"></i> Ver prévia' : '<i class="fa-solid fa-eye-slash"></i> Esconder prévia'; });
     on(alvo, 'click', '[data-preview]', () => abrirNovaAba());
     if (plat) ligarFormularioConteudo(c, cfg);
@@ -511,7 +526,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     if (gerado || (custom && produtos.length)) {
       montarAjusteSite($('[data-ajuste]', alvo), { cliente, produtos, modo: modoV, get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML, previaPacote,
         depoisDeMudar: async () => { if (planoAplicado(site)) await conferirDoSite().catch((e) => toast(`A conferência do pedido não rodou: ${e.message}`, 'erro')); },
-        verPlano: (id, n) => abrirPlanoDaVersao(site, id, n) })
+        verPlano: (id, n) => abrirPlanoDaVersao(site, id, n, { saude }) })
         .catch((e) => { console.warn('[ajuste do site]', e); $('[data-ajuste]', alvo).innerHTML = '<p class="hint text-rose-600">Não consegui abrir "Ajustar este site". Recarregue a página.</p>'; });
     }
   }
@@ -665,6 +680,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <p class="hint">A aba Campanhas sugere este link como destino dos anúncios${custom ? ', e o site baixado de novo já sai com a prévia certa para o WhatsApp' : ''}.</p></div>
           <div><label class="label">Status</label><select class="input" data-status ${site ? '' : 'disabled'}>${opcoes(STATUS_SITE, site?.status)}</select></div></div></div>
       ${tarefasLojaHtml(site, plat, site?.tema)}
+      ${alegacoesSiteHtml(site, modoV)}
       <div class="card mt-4" data-checklist-final><h3 class="font-semibold">Checklist final</h3><ul class="mt-2 space-y-1 text-sm">${lista.map((x) => `<li class="flex flex-wrap items-center gap-2" data-check="${x.id}" data-ok="${x.ok}">
         <i class="fa-solid ${x.ok ? 'fa-circle-check text-emerald-600' : 'fa-circle-xmark text-amber-600'}"></i><span class="flex-1">${esc(x.texto)}</span>${x.ok ? '' : `<span class="text-xs text-amber-800">${esc(x.falta)}</span>`}</li>`).join('')}</ul></div>`;
     const marcarExportado = () => salvarSite({ exportadoEm: new Date().toISOString(), status: site?.status === 'rascunho' ? 'pronto' : site?.status });

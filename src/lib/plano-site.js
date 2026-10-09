@@ -12,6 +12,7 @@ import { printsDoCliente, normalizarVisual, ORDEM_LOJA, nomeSecaoLoja } from './
 import { normalizarLayout, ORDEM_PADRAO, nomeBloco } from './site-blocos.js';
 import { FORMAS_PAGAMENTO } from './sitegen.js';
 import { normalizarRecursos, recursosDoSite, textoSecaoProduto, sugeridoPara, SECOES_PRODUTO, numero } from './recursos-loja.js';
+import { normalizarParte, atualizarItemTexto, ehItemTexto, conferirTextoItem, textosParaAplicar, DESTINOS_TEXTO } from './textos-site.js';
 
 const txt = (v) => String(v ?? '').trim();
 const sem = (s) => txt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -147,14 +148,18 @@ export function limparParams(tipo, p = {}, { materiais = [], produtos = [], modo
     case 'fotos_ajuste': return { params: { ajuste: p.ajuste === 'contain' ? 'contain' : 'cover' }, problema: null };
     case 'cores': { const hex = (c) => (/^#[0-9a-f]{6}$/i.test(txt(c)) ? txt(c).toLowerCase() : null); return { params: { corPrimaria: hex(p.corPrimaria), corFundo: hex(p.corFundo) }, problema: null }; }
     case 'pagina_produto': return { params: { todasFotos: true, descricaoDetalhada: p.descricaoDetalhada !== false }, problema: null };
+    case 'texto': return { params: { destino: DESTINOS_TEXTO[p.destino] ? p.destino : 'secao', titulo: txt(p.titulo).slice(0, 120) }, problema: null };
     default: return { params: {}, problema: null };
   }
 }
 
 const opcaoLimpa = (o) => (typeof o === 'string' ? { texto: txt(o) } : { texto: txt(o?.texto || o?.rotulo), como: txt(o?.como), tipo: TIPOS_PEDIDO[o?.tipo] ? o.tipo : undefined, params: o?.params && typeof o.params === 'object' ? o.params : undefined });
 
+// Pergunta que só pede o texto inteiro ("Você me manda o texto completo?"): vira um campo próprio no item, não opções.
+const RE_PEDE_TEXTO = /texto (?:completo|inteiro|todo)|me mand[ae] o texto|cole (?:aqui )?o texto|texto (?:foi |veio )?cortado/i;
+
 /**
- * Plano da IA -> plano conferido. ctx: { materiais, produtos, modo, plataforma, tema }. Itens que citam foto/produto que
+ * Plano da IA -> plano conferido. ctx: { materiais, produtos, modo, plataforma, tema, saude }. Itens que citam foto/produto que
  * não existe viram "Não dá para fazer" com o motivo; "onde funciona" vem de ondeFunciona (nunca da IA, exceto o tipo
  * "outro", que sempre leva "confira no editor do tema").
  */
@@ -174,6 +179,15 @@ function montarItem(x, id, ctx) {
   if (status === 'pergunta' && opcoes.length < 2) status = 'pronto'; // pergunta sem opções não ajuda: segue com o que a IA entendeu
   let motivo = txt(x.motivo);
   if (problema && status !== 'impossivel') { status = 'impossivel'; motivo = `Não dá: ${problema}.`; }
+  // Textos do operador para o site: uma parte por frase, com "Seu texto", "Versão melhorada" e "Versão segura".
+  // O status sai das partes (número sem fonte ou alegação sem "Entendi" = pendente), nunca de "Não dá para fazer".
+  const pedeTexto = tipo === 'texto' && (x.pedeTexto === true || (x.status === 'pergunta' && RE_PEDE_TEXTO.test(`${txt(x.pergunta?.texto || x.pergunta)} ${opcoes.map((o) => o.texto).join(' ')}`)));
+  const brutos = Array.isArray(x.textos) ? x.textos.filter((t) => txt(typeof t === 'string' ? t : t?.original)).slice(0, 20) : [];
+  if (tipo === 'texto' && (brutos.length || pedeTexto)) {
+    const partes = brutos.map((t, k) => normalizarParte(t, `${id}t${k + 1}`));
+    const onde = ondeFunciona(tipo, params, ctx.plataforma || null, ctx.tema || '');
+    return atualizarItemTexto({ id, tipo, params, status: 'pergunta', onde, pedido: txt(x.pedido).slice(0, 240), como: txt(x.como).slice(0, 400), pergunta: null, motivo: '', alternativa: '', aviso: '', resposta: null, aceito: false, partes, pedeTexto, textoCompleto: '' }, { saude: !!ctx.saude });
+  }
   const onde = tipo === 'outro'
     ? { tipo: ONDE[x.onde] ? x.onde : 'loja', oque: txt(x.oque || x.como).slice(0, 160), caminho: ctx.plataforma === 'custom' ? '' : `${CONFIRA_TEMA}` }
     : ondeFunciona(tipo, params, ctx.plataforma || null, ctx.tema || '');
@@ -222,9 +236,14 @@ export function diferencaPlanos(antigo, novo) {
 /** Lista OBRIGATÓRIA para o prompt de geração (itens aceitos, numerados). Vazio = sem plano aplicado. */
 export function checklistObrigatorio(itens = []) {
   if (!itens.length) return '';
+  const textos = textosParaAplicar(itens);
+  itens = itens.filter((x) => !ehItemTexto(x));
+  const linhaTextos = textos.length ? `
+TEXTOS JÁ ESCOLHIDOS PELO OPERADOR (o app coloca no site exatamente assim, por cima do que você escrever; não repita, não reescreva e não contradiga): ${textos.map((g) => `${DESTINOS_TEXTO[g.destino]}${g.destino === 'secao' && g.titulo ? ` "${g.titulo}"` : ''}: ${g.linhas.map((l) => `"${l.texto}"`).join('; ')}`).join(' | ')}` : '';
+  if (!itens.length) return linhaTextos;
   return `\nPEDIDOS OBRIGATÓRIOS DO OPERADOR (aprovados por ele no plano; cada um TEM de ser atendido no que você escrever; não invente dado, número, preço nem depoimento para atender):
 ${itens.map((x, i) => `${i + 1}. ${x.pedido || TIPOS_PEDIDO[x.tipo]} → ${x.como || TIPOS_PEDIDO[x.tipo]}${x.resposta ? ` (resposta do operador: ${x.resposta})` : ''}`).join('\n')}
-O app já aplica sozinho as partes de estrutura (fotos por código, seções, frete grátis, pagamento, colunas, botão, "Compre junto"); você cuida dos TEXTOS que esses pedidos exigem (ex.: chamada do banner citando o frete grátis, descrição detalhada dos produtos usando só os dados cadastrados).`;
+O app já aplica sozinho as partes de estrutura (fotos por código, seções, frete grátis, pagamento, colunas, botão, "Compre junto"); você cuida dos TEXTOS que esses pedidos exigem (ex.: chamada do banner citando o frete grátis, descrição detalhada dos produtos usando só os dados cadastrados).${linhaTextos}`;
 }
 
 // ---------- aplicar o plano (só o que foi aceito) ----------
@@ -362,6 +381,7 @@ export function conferirPorCodigo(itens = [], { modo = 'pacote', site = {}, mate
       case 'ordem_secoes': { const pos = p.ordem.map((k) => visiveis.indexOf(k)); v = pos.every((n, i) => n >= 0 && (i === 0 || n > pos[i - 1])) ? r('atendido', `ordem: ${p.ordem.map((k) => nomeSecao(k, modo)).join(' > ')}`) : r('parcial', `ordem atual: ${visiveis.map((k) => nomeSecao(k, modo)).join(' > ')}`); break; }
       case 'ocultar_secao': v = ocultas.includes(p.secao) ? r('atendido', `"${nomeSecao(p.secao, modo)}" fora da home`) : r('nao', `"${nomeSecao(p.secao, modo)}" ainda aparece`); break;
       case 'fotos_ajuste': { const a = custom ? L.ajusteFotos : V.ajusteFotos; v = a === p.ajuste ? r('atendido', p.ajuste === 'contain' ? 'fotos inteiras' : 'fotos preenchendo') : r('nao', 'ajuste das fotos diferente do pedido'); break; }
+      case 'texto': v = ehItemTexto(x) ? conferirTextoItem(x, site, modo) : null; break;
       case 'cores': { const c = custom ? txt(site?.config?.corPrimaria).toLowerCase() : txt(site?.pacote?.briefingTema?.paletaSugerida?.[0]).toLowerCase(); v = !p.corPrimaria ? null : c === p.corPrimaria ? r('atendido', `cor principal ${c}`) : r('nao', `cor principal ${c || 'padrão'}`); break; }
       default: v = null;
     }

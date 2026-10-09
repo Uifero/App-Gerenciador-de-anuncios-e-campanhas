@@ -30,6 +30,9 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `reescrita-peca-thermora.json` | Reescrita do gancho/CTA para o teste de "Aplicar" numa peça | escrita à mão |
 | `reescrita-saude-thermora.json` | Reescrita que cria promessa de efeito no corpo (teste do bloqueio de saúde ao aplicar) | escrita à mão |
 | `recomendacao-moda.json` | Recomendação escrita à mão (teste 60/40 e citações inventadas, para testar a conferência) | sem IA |
+| `plano-thermora-motivos-real.json` | "Analisar meu pedido" (tarefa `plano_site`, Sonnet 5, maxTokens 10000) com os "5 motivos" da Thermora: plano + as 3 versões de cada texto no MESMO pedido; a IA devolveu a "melhorada" igual ao original (o app trata como sem versão) e a "segura" vazia nas alegações | chamada real, 09/10/2026 |
+| `plano-thermora-motivos.json` | O mesmo plano com versões melhorada/segura distintas, para os testes a–e (unitários e navegador) | escrita à mão a partir da real |
+| `sugerir-textos-thermora.json` | "Sugerir de novo" de um item de texto (tarefa `plano_site`) | escrita à mão |
 | `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |
 | `api-falsa.mjs` | API da Anthropic falsa (stream SSE) para testar a reserva | sem IA |

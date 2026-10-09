@@ -28,6 +28,7 @@ import { abrirBiblioteca } from './modelos-prompt.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { tipoMaterial } from '../lib/prova-social.js';
 import { produtoDoCriativo, printsParaCriativo } from '../lib/conexoes.js';
+import { motivoSaude, trocarPelaSegura, textosDoSiteNoAnuncio } from '../lib/saude.js';
 import { excluirMateriais } from './excluir-material.js';
 import { salvarPeca } from './pecas.js';
 import { formatarBytes } from '../lib/pecas.js';
@@ -137,6 +138,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     </div>
     <div class="mt-3 flex flex-wrap items-center gap-2"><label class="flex min-h-[44px] items-center gap-2 text-sm"><input type="checkbox" data-guia-zona checked> Mostrar a zona segura do Instagram <span class="hint">(só na tela; não vai para o arquivo)</span></label></div>
     <p class="mt-1 hidden rounded bg-amber-50 p-2 text-sm text-amber-800" role="status" data-aviso-zona></p>
+    <div class="mt-1 hidden rounded border border-rose-300 bg-rose-50 p-2 text-sm text-rose-700" role="status" data-aviso-saude-estudio></div>
     <div class="mt-2 flex justify-center rounded-lg bg-slate-100 p-2"><canvas data-previa style="max-width:100%;max-height:420px" class="rounded"></canvas></div>
     <div class="mt-3 flex flex-wrap gap-2"><button class="btn-primary btn-sm min-h-[44px]" data-finalizar-foto><i class="fa-solid fa-circle-check"></i> Finalizar peça (guardar na Galeria)</button>
       <button class="btn-ghost btn-sm" data-baixar-foto><i class="fa-solid fa-download"></i> Baixar este formato</button>
@@ -211,6 +213,17 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     ].filter(Boolean);
     aviso.classList.toggle('hidden', !msgs.length);
     aviso.innerHTML = msgs.join('<br>');
+    avisarSaude();
+  };
+  // Produto de saúde: o bloqueio dos criativos vale aqui também (texto com promessa de efeito não vira peça). Texto do
+  // site mantido pelo operador ganha o motivo "Permitido no site, mas bloqueado em anúncio" e a versão segura como troca.
+  const textosPeca = () => [$('[data-hook]', raiz).value, $('[data-cta]', raiz).value, ...est.cenas.map((c) => c.texto || '')].join(' \n ');
+  const motivoPeca = () => motivoSaude(textosPeca(), cliente);
+  const avisarSaude = () => {
+    const el = $('[data-aviso-saude-estudio]', raiz); if (!el) return;
+    const m = motivoPeca(), troca = m && textosDoSiteNoAnuncio(textosPeca(), cliente).some((l) => l.alegacao.length && l.segura);
+    el.classList.toggle('hidden', !m);
+    el.innerHTML = m ? `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não dá para finalizar esta peça: ${esc(m)}.${troca ? ' <button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-estudio><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>' : ''}` : '';
   };
   let agendado = 0;
   const agendarPrevia = () => { cancelAnimationFrame(agendado); agendado = requestAnimationFrame(previa); };
@@ -442,6 +455,8 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
   const configPeca = () => ({ template: est.template, cor: est.cor, corTexto: est.corTexto, hook: $('[data-hook]', raiz).value, cta: $('[data-cta]', raiz).value,
     cenas: est.cenas.map((c) => ({ texto: c.texto || '', dur: c.dur, tipo: c.tipo })) });
   const finalizar = async (qual, peca) => {
+    const bloqueio = motivoPeca();
+    if (bloqueio) { statusFinal(qual, `<i class="fa-solid fa-triangle-exclamation"></i> Não guardei a peça: ${esc(bloqueio)}.`, 'border-rose-300 bg-rose-50 text-rose-700'); toast('Peça não guardada: o texto tem alegação proibida em anúncio (veja o motivo).', 'erro'); return null; }
     const andamento = (texto, p) => statusFinal(qual, `<i class="fa-solid fa-spinner fa-spin"></i> ${esc(texto)}${p ? ` ${Math.round(p * 100)}%` : ''}<div class="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200"><div class="h-2 bg-indigo-600" style="width:${Math.round((p || 0) * 100)}%"></div></div>`, 'border-indigo-200 bg-indigo-50 text-indigo-800');
     try {
       const salva = await salvarPeca(cliente, criativo, { ...peca, config: configPeca(), baseadaEm: opts.baseadaEm || null, especialista: opts.especialista || null }, { aoEtapa: andamento });
@@ -455,6 +470,12 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
       return null;
     }
   };
+  on(raiz, 'click', '[data-usar-segura-estudio]', () => {
+    for (const sel of ['[data-hook]', '[data-cta]']) { const c = $(sel, raiz); c.value = trocarPelaSegura(c.value, cliente); }
+    est.cenas.forEach((c, i) => { c.texto = trocarPelaSegura(c.texto || '', cliente); const t = $(`[data-cena-texto="${i}"]`, raiz); if (t) t.value = c.texto; });
+    agendarPrevia(); avisarSaude(); toast('Texto do site trocado pela versão segura.');
+  });
+  on(raiz, 'input', '[data-cena-texto]', () => avisarSaude());
   on(raiz, 'click', '[data-finalizar-foto]', (b) => ocupado(b, async () => {
     // JPG de alta qualidade: a peça sempre tem fundo (foto ou cor), então não há transparência a preservar.
     const [w, h] = dims(est.formato), c = document.createElement('canvas'); c.width = w; c.height = h;

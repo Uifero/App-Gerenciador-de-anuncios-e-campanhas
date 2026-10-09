@@ -16,7 +16,7 @@ import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '..
 import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
 import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../lib/narrativas.js';
 import { abrirMateriais } from './materiais-cliente.js';
-import { AVISO_META_SAUDE, ehProdutoSaude, achadosSaude, motivoSaude } from '../lib/saude.js';
+import { AVISO_META_SAUDE, ehProdutoSaude, achadosSaude, motivoSaude, trocarPelaSegura } from '../lib/saude.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, ganchoPorNumero, rotuloModelo, descricaoModelo, motivoGancho } from '../lib/ganchos.js';
 import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
@@ -375,6 +375,9 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
   const m = modal(c.nome, '<div id="d"></div>', { largo: true });
   const alvo = $('#d', m.el);
 
+  // Texto do site com alegação mantida pelo operador: a versão segura dele troca o trecho (vira versão nova do criativo).
+  const segura = (x) => ({ hook: trocarPelaSegura(x.hook, cliente), copy: trocarPelaSegura(x.copy, cliente), cta: trocarPelaSegura(x.cta, cliente) });
+  const comSegura = (x) => { const s = segura(x); return s.hook !== x.hook || s.copy !== x.copy || s.cta !== x.cta; };
   const desenhar = () => {
     const proibidos = acharTermosDoCliente(`${c.hook} ${c.copy} ${c.cta}`, cliente);
     const saude = motivoSaude(`${c.hook} ${c.copy} ${c.cta}`, cliente);
@@ -389,7 +392,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
       <button class="btn-primary btn-sm mt-2" data-enviar-um><i class="fa-solid fa-paper-plane"></i> Gerar novo link de aprovação com o arquivo atual</button></div>` : ''}
     ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.arquivoNome ? ` · arquivo que ele viu: <b>${esc(c.aprovacaoCliente.arquivoNome)}</b>${c.aprovacaoCliente.arquivoPath !== c.arquivoPath ? ' (não é mais o arquivo atual)' : ''}` : ''}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
     ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
-    ${saude ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-saude><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não dá para aprovar nem enviar ao cliente: ${esc(saude)}.</div>` : ''}
+    ${saude ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-saude><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não dá para aprovar nem enviar ao cliente: ${esc(saude)}.${comSegura(c) ? ' <button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura><i class="fa-solid fa-shield-halved"></i> Usar a versão segura (nova versão)</button>' : ''}</div>` : ''}
     ${motivoGancho(c, cliente) ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-gancho><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${esc(motivoGancho(c, cliente))}. Ajuste antes de aprovar.</div>` : ''}
     ${origemGancho(c)}
     ${produtoHtml()}
@@ -497,6 +500,10 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
     await apagarCriativoEmCascata(c.id, c.arquivoPath, c.previaPath, { manterArquivos: Boolean(c.aprovacaoToken), clienteId: cliente.id }); m.fechar(); recarregar(); toast('Criativo excluído de vez.');
   });
 
+  on(alvo, 'click', '[data-usar-segura]', (b) => ocupado(b, async () => {
+    await novaVersao(segura(c), 'Texto do site trocado pela versão segura (política do Meta para saúde)');
+    desenhar(); recarregar(); mostrarResultado($('[data-bloqueio-saude]', alvo) || alvo.firstElementChild, 'Versão segura aplicada como nova versão do criativo.');
+  }));
   const novaVersao = async (patch, nota) => {
     // Sempre grava o ângulo/framework/gatilho/formato vigentes nesta versão (do patch, senão o que já estava no
     // criativo) — sem isso, um resultado registrado depois de uma edição seria atribuído ao ângulo/framework ERRADO.

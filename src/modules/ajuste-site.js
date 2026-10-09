@@ -12,6 +12,8 @@ import {
 import { temCustom, temPacote, divergencias, aplicarBaseNoPacote, aplicarBaseNoCustom, baseDoCustom, baseDoPacote } from '../lib/site-modos.js';
 import { esc, $, on, toast, ocupado, modal, confirmar, tag, dataBR } from '../core/ui.js';
 import { salvarUsos } from '../lib/materiais.js';
+import { ehProdutoSaude, achadosSaude } from '../lib/saude.js';
+import { AVISO_SITE_SAUDE } from '../lib/textos-site.js';
 
 const LEGENDA = 'Peça uma mudança em linguagem normal. Você vê uma prévia antes de aceitar, e pode voltar para qualquer versão anterior.';
 const LEGENDA_PACOTE = 'Aqui você ajusta o conteúdo que será importado. O visual final depende do tema da plataforma escolhida, então mudanças de layout precisam ser feitas no editor da própria plataforma';
@@ -132,12 +134,19 @@ export async function montarAjusteSite(alvo, ctx) {
     const pac = aba === 'antes' ? estadoAtual().pacote : d.estado.pacote;
     return `<div data-previa-rascunho>${ctx.previaPacote ? `<iframe sandbox="" srcdoc="${esc(ctx.previaPacote(pac, aba === 'antes' ? null : d.usosFotos))}" class="h-[520px] w-full rounded-lg border border-slate-200 bg-white" title="Prévia da loja: ${aba === 'antes' ? 'atual' : 'com a mudança'}" data-previa-loja-ajuste></iframe>` : ''}<details class="mt-2 rounded-lg border border-slate-200 p-2"><summary class="cursor-pointer text-xs text-slate-600">Textos do pacote</summary>${ctx.pacoteHTML(pac)}</details></div>`;
   }
+  // No site, alegação de efeito pode ficar (decisão do operador): só avisa, em amarelo, sem bloquear.
+  const saude = ehProdutoSaude(cliente, produtos);
+  const avisoAlegacao = (d) => {
+    const ach = saude ? achadosSaude(d.mudancas.join(' ')) : [];
+    return ach.length ? `<p class="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-aviso-alegacao-ajuste><i class="fa-solid fa-triangle-exclamation"></i> ${esc(AVISO_SITE_SAUDE)} Trecho: ${ach.map((a) => `"${esc(a)}"`).join(', ')}.</p>` : '';
+  };
   function rascunhoHTML(d) {
     return `<div class="mt-4 rounded-lg border-2 border-emerald-300 bg-emerald-50/40 p-3" data-rascunho>
       <h4 class="text-sm font-semibold"><i class="fa-solid fa-eye mr-1"></i> Mudança proposta: ainda NÃO está no site</h4>
       <p class="hint mb-2">Confira a prévia. "Aceitar mudança" aplica ao site e cria uma versão nova; "Descartar" deixa tudo como estava. Enquanto isso, novos pedidos (IA ou manuais) somam a esta mesma mudança.</p>
       <p class="text-sm font-medium">O que muda (antes → depois):</p>
       <ul class="mb-2 list-disc pl-5 text-sm">${d.mudancas.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
+      ${avisoAlegacao(d)}
       ${d.descartadas?.length ? `<p class="mb-2 text-xs text-amber-800"><b>Recusado pelo app (não entra):</b> ${d.descartadas.map((x) => esc(x.motivo)).join(' · ')}</p>` : ''}
       <div class="mb-2 flex flex-wrap items-center gap-2"><span class="text-sm">Prévia:</span>
         <button type="button" class="${aba === 'antes' ? 'btn-primary' : 'btn-ghost'} btn-sm" data-aba="antes">Atual</button>

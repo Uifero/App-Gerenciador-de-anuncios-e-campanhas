@@ -7,6 +7,7 @@ import { temCodigo, lerReferencias, nomeUso, porCodigo } from '../lib/fotos-site
 import { lerReferenciaPrint } from '../core/ia.js';
 import { prepararImagem } from './diagnostico.js';
 import { esc, $, on, toast, ocupado, campoArquivo, mostrarResultado } from '../core/ui.js';
+import { contadorTexto, LIMITE_TEXTO_SITE } from '../lib/textos-site.js';
 
 const prefs = (cliente) => cliente.preferenciasSite || {};
 /** Tira o print de referência antigo: só apaga se o registro for mesmo um print de referência (nunca outro material). */
@@ -20,6 +21,10 @@ async function salvarPrefs(cliente, patch) {
   cliente.preferenciasSite = preferenciasSite;
 }
 
+// Contador do texto "Como eu quero o site": a partir de 90% avisa; o campo não corta nada sem avisar (maxlength = limite da IA).
+const textoContador = (texto) => { const c = contadorTexto(texto); return { classe: `mt-1 text-xs ${c.perto ? 'font-medium text-amber-800' : 'text-slate-500'}`, texto: `${c.rotulo}${c.passou ? ': passou do limite, encurte o texto' : c.perto ? ': perto do limite, encurte se puder' : ''}` }; };
+const contadorHtml = (texto) => { const c = textoContador(texto); return `<p class="${c.classe}" id="pref-texto-contador" aria-live="polite" data-contador-texto>${esc(c.texto)}</p>`; };
+
 const temDitado = () => typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 const botaoDitado = (alvo) => (temDitado() ? `<button type="button" class="btn-ghost btn-sm" data-ditar="${alvo}" title="Falar em vez de digitar (o navegador transcreve)"><i class="fa-solid fa-microphone"></i> Ditar</button>` : '');
 
@@ -28,7 +33,8 @@ export function preferenciasHtml(cliente, fotosTexto = null) {
   return `<div class="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3" data-preferencias-site>
     <div class="flex flex-wrap items-center justify-between gap-2"><label class="text-sm font-semibold" for="pref-texto"><i class="fa-solid fa-pen-to-square text-indigo-500"></i> Como eu quero o site</label>${botaoDitado('texto')}</div>
     <p class="hint !mt-0">Escreva do seu jeito. Ex: banner com a foto do produto, fotos inteiras sem cortar, poucas seções, tudo em fundo branco.</p>
-    <textarea id="pref-texto" class="input mt-1" rows="3" maxlength="1500" data-pref="texto">${esc(prefs(cliente).texto || '')}</textarea>
+    <textarea id="pref-texto" class="input mt-1" rows="5" maxlength="${LIMITE_TEXTO_SITE}" aria-describedby="pref-texto-contador" data-pref="texto">${esc(prefs(cliente).texto || '')}</textarea>
+    ${contadorHtml(prefs(cliente).texto || '')}
     <p class="hint" data-pref-salvo>Vale para toda geração e todo ajuste do site (nos dois modos). Fica abaixo das regras do app: nada de prova inventada nem promessa que o Meta proíbe.</p>
     <div class="mt-2" data-fotos-codigos><p class="hint"><i class="fa-solid fa-spinner fa-spin"></i> Carregando as fotos…</p></div>
     <div data-leitura-referencias></div>${resultadoFotosTextoHtml(fotosTexto)}</div>`;
@@ -93,14 +99,15 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
     desenharFaixa(await garantirCodigos(cliente, e.detail.lista || []));
   };
   if (typeof document !== 'undefined') document.addEventListener('gcc:materiais', ouvir);
-  on(alvo, 'input', '[data-pref="texto"]', () => lerTexto());
+  const contar = () => { const campo = $('[data-pref="texto"]', alvo), cont = $('[data-contador-texto]', alvo); if (!campo || !cont) return; const c = textoContador(campo.value); cont.className = c.classe; cont.textContent = c.texto; };
+  on(alvo, 'input', '[data-pref="texto"]', () => { lerTexto(); contar(); });
   on(alvo, 'click', '[data-inserir-codigo]', (b) => {
     const campo = $('[data-pref="texto"]', alvo); if (!campo) return;
     const ini = campo.selectionStart ?? campo.value.length, fim = campo.selectionEnd ?? ini;
     const antes = campo.value.slice(0, ini), depois = campo.value.slice(fim);
     const ins = `${antes && !/\s$/.test(antes) ? ' ' : ''}${b.dataset.inserirCodigo} `;
     campo.value = antes + ins + depois; campo.focus(); campo.selectionStart = campo.selectionEnd = (antes + ins).length;
-    campo.dispatchEvent(new Event('change', { bubbles: true })); lerTexto();
+    campo.dispatchEvent(new Event('change', { bubbles: true })); lerTexto(); contar();
   });
   on(alvo, 'click', '[data-aplicar-fotos-texto]', (b) => ocupado(b, async () => {
     const campo = $('[data-pref="texto"]', alvo);
@@ -120,7 +127,12 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
     const campo = $(`[data-pref="${b.dataset.ditar}"]`, alvo); const R = window.SpeechRecognition || window.webkitSpeechRecognition; if (!campo || !R) return;
     if (b._rec) { b._rec.stop(); return; }
     const rec = new R(); rec.lang = 'pt-BR'; rec.interimResults = false; rec.continuous = true; b._rec = rec;
-    rec.onresult = (ev) => { const novo = [...ev.results].slice(ev.resultIndex).map((r) => r[0].transcript).join(' ').trim(); if (novo) campo.value = `${campo.value.trim()} ${novo}`.trim(); };
+    rec.onresult = (ev) => {
+      const novo = [...ev.results].slice(ev.resultIndex).map((r) => r[0].transcript).join(' ').trim(); if (!novo) return;
+      const junto = `${campo.value.trim()} ${novo}`.trim(), max = Number(campo.maxLength) > 0 ? Number(campo.maxLength) : Infinity;
+      if (junto.length > max) { toast(`O texto ditado não coube: o campo tem limite de ${max} caracteres. Encurte o texto e dite de novo.`, 'erro'); return; }
+      campo.value = junto; if (campo.dataset.pref === 'texto') contar();
+    };
     rec.onend = () => { b._rec = null; b.innerHTML = '<i class="fa-solid fa-microphone"></i> Ditar'; campo.dispatchEvent(new Event('change', { bubbles: true })); };
     rec.onerror = (ev) => toast(ev.error === 'not-allowed' ? 'O navegador não liberou o microfone. Permita o microfone para este site e tente de novo.' : `O ditado parou (${ev.error}). Tente de novo ou digite.`, 'erro');
     rec.start(); b.innerHTML = '<i class="fa-solid fa-stop"></i> Parar';

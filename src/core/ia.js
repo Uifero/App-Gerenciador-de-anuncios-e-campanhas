@@ -5,6 +5,7 @@ import { IDIOMA_NOME, MODELO_DESCRICAO, CENAS_UNBOXING } from '../lib/constantes
 import { paisDoCliente, infoPais, descreverMercado, simboloDoCliente } from '../lib/pais.js';
 import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloNarrativa } from '../lib/narrativas.js';
 import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
+import { exigirTamanho } from '../lib/textos-site.js';
 import { textoComoAnuncia } from '../lib/anuncio.js';
 import { REGRA_INSTAGRAM } from '../lib/formatos-instagram.js';
 import { linhaGanchos, conferirGanchos, numeroModelo } from '../lib/ganchos.js';
@@ -22,12 +23,12 @@ import { verificarOrcamento, registrarUso } from '../modules/custo.js';
  *  - estavel: texto que se repete entre chamadas do mesmo cliente (regras + perfil de marca) -> vai para o cache
  *  - system: instrução específica desta tarefa (muda a cada chamada, fica depois do cache)
  */
-export async function chamarClaude({ tarefa, cliente = null, estavel, system, messages, webSearch = null, imagens = undefined, buscasMinimas = 0 }) {
+export async function chamarClaude({ tarefa, cliente = null, estavel, system, messages, webSearch = null, imagens = undefined, buscasMinimas = 0, maxTokens = undefined }) {
   const cfg = await obterConfig();
   await verificarOrcamento(cliente, cfg); // exige confirmação manual se o orçamento do mês já estourou
   const token = await tokenAtual();
   // imagens: [{ media_type, data (base64) }] — só tarefas de leitura de imagem (o servidor recusa nas demais).
-  const corpoPedido = JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || undefined, webSearch, imagens, assincrono: true });
+  const corpoPedido = JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || maxTokens || undefined, webSearch, imagens, assincrono: true });
   const { status, ok, corpo } = await pedirAoServidor(token, corpoPedido);
   // buscasMinimas: tarefa que SEMPRE pesquisa na web conta ao menos essa busca no custo, mesmo se a CLI não informar quantas fez.
   if (corpo.uso) registrarUso({ cliente, tarefa, uso: buscasMinimas && ok ? { ...corpo.uso, buscasWeb: Math.max(corpo.uso.buscasWeb || 0, buscasMinimas) } : corpo.uso }); // até respostas cortadas consumiram tokens (grava em segundo plano)
@@ -652,7 +653,7 @@ const linhaBase = (base) => (base && (base.heroTitulo || base.storytelling)
 export function contextoPreferencias(cliente) {
   const p = cliente?.preferenciasSite || {};
   const linhas = [
-    String(p.texto || '').trim() && `Como o operador quer o site (palavras dele): "${String(p.texto).trim().slice(0, 1500)}"`,
+    String(p.texto || '').trim() && `Como o operador quer o site (palavras dele): "${exigirTamanho(String(p.texto).trim())}"`,
     String(cliente?.siteReferencia || '').trim() && `Site de referência: ${String(cliente.siteReferencia).trim()}`,
     String(p.gostei || '').trim() && `O que ele gostou nesse site: "${String(p.gostei).trim().slice(0, 800)}"`,
     String(p.referenciaLeitura || '').trim() && `Estrutura e estilo lidos do print da referência: ${String(p.referenciaLeitura).trim().slice(0, 1200)}`,
@@ -660,8 +661,16 @@ export function contextoPreferencias(cliente) {
   if (!linhas.length) return '';
   return `\nPREFERÊNCIAS DO OPERADOR PARA O SITE (valem MAIS que os seus padrões; ficam ABAIXO das regras do app: não inventar prova/depoimento/dado, política de anúncios do Meta e perfil de marca):
 ${linhas.join('\n')}
-Da referência use SÓ estrutura e estilo (ordem das seções, estilo do banner, densidade da grade, espaçamento, clima). NUNCA copie textos, imagens, logo ou marca dela.`;
+Da referência use SÓ estrutura e estilo (ordem das seções, estilo do banner, densidade da grade, espaçamento, clima). NUNCA copie textos, imagens, logo ou marca dela.${regraSite(cliente)}`;
 }
+
+/**
+ * Site não é anúncio (decisão do operador): no site, alegação de efeito e número escritos POR ELE podem ficar, com aviso
+ * no app e a fonte do número pedida (lib/textos-site.js). Nos criativos nada muda (REGRA_SAUDE bloqueia).
+ */
+export const regraSite = (cliente) => (ehProdutoSaude(cliente)
+  ? '\nSITE NÃO É ANÚNCIO: a regra de saúde das regras críticas vale para ANÚNCIOS. No site, alegação de efeito e número que o OPERADOR escreveu podem ficar (o app mostra um aviso a ele e pede a fonte do número): não recuse e não marque como impossível por isso. Você NUNCA acrescenta alegação de efeito nem número por conta própria.'
+  : '\nNo site, número que o OPERADOR escreveu pode ficar (o app pede a fonte a ele). Você NUNCA acrescenta número por conta própria.');
 
 /** Imagens dos Materiais do cliente que podem ir no banner (id: nome), para a IA escolher quando as preferências pedirem. */
 const linhaImagens = (materiais = []) => (materiais.length ? `\nImagens nos Materiais do cliente (id: nome): ${materiais.slice(0, 30).map((m) => `${m.id}: ${m.nomeOriginal || m.descricao || m.nome || 'imagem'}`).join(' | ')}` : '');
@@ -694,7 +703,10 @@ export async function sugerirFocoFoto({ cliente, imagem }) {
 }
 
 // ---------- "Analisar meu pedido" (plano antes de aplicar) e "Conferência do pedido" ----------
-const TIPOS_PLANO = `banner_fotos {"codigos":["F3",...]} (fotos do banner/carrossel, na ordem) | clientes_fotos {"codigos":[...]} (depoimentos/clientes reais em foto ou print) | produto_fotos {"produto":NOME,"codigos":[...]} | frete_gratis {"valor":número} | pagamentos {"formas":["cartao","pix","boleto"]} | colunas_produtos {"colunas":2|3|4} | botao_grande {} | pagina_produto {"descricaoDetalhada":true} (página do produto com todas as fotos e descrição longa) | secoes_produto {"secoes":["formula","beneficios","modo_uso"]} | faq {} | depoimentos_home {} | compre_junto {"onde":"produto"|"carrinho","produto":NOME,"sugerido":NOME} (cross-sell/upsell) | ordem_secoes {"ordem":[chaves]} | ocultar_secao {"secao":chave} | fotos_ajuste {"ajuste":"contain"|"cover"} | cores {"corPrimaria":"#rrggbb","corFundo":"#rrggbb"} | texto {} (títulos, chamadas, tom) | outro {}`;
+const TIPOS_PLANO = `banner_fotos {"codigos":["F3",...]} (fotos do banner/carrossel, na ordem) | clientes_fotos {"codigos":[...]} (depoimentos/clientes reais em foto ou print) | produto_fotos {"produto":NOME,"codigos":[...]} | frete_gratis {"valor":número} | pagamentos {"formas":["cartao","pix","boleto"]} | colunas_produtos {"colunas":2|3|4} | botao_grande {} | pagina_produto {"descricaoDetalhada":true} (página do produto com todas as fotos e descrição longa) | secoes_produto {"secoes":["formula","beneficios","modo_uso"]} | faq {} | depoimentos_home {} | compre_junto {"onde":"produto"|"carrinho","produto":NOME,"sugerido":NOME} (cross-sell/upsell) | ordem_secoes {"ordem":[chaves]} | ocultar_secao {"secao":chave} | fotos_ajuste {"ajuste":"contain"|"cover"} | cores {"corPrimaria":"#rrggbb","corFundo":"#rrggbb"} | texto {"destino":"banner_titulo"|"banner_subtitulo"|"secao","titulo":título da seção nas palavras dele} (TEXTO que o operador escreveu para o site: título, motivos, benefícios, alegações, números, texto de seção; também tom e chamadas) | outro {}`;
+
+/** Como pedir as três versões de cada texto do operador (no plano e em "Sugerir de novo"). */
+const VERSAO_CADA = '{"original": as palavras EXATAS dele, sem mudar nada, "melhorada": o MESMO sentido e as MESMAS alegações e números que ele escreveu (nem mais, nem menos), mais claro e persuasivo para a tela do celular (curto, fácil de ler rolando a página), no tom da marca, e DIFERENTE do original (se não der para melhorar sem mudar o sentido, devolva ""), "segura": sem promessa de efeito no corpo (energia, disposição, metabolismo, emagrecer, queima, apetite...) e sem número que não tenha fonte no cadastro, usando só a composição real (ativos e quantidades da fórmula cadastrada), fatos do produto e dados com fonte; serve também para anúncio; se não houver nenhum fato real para escrever, devolva "", "numero": o trecho com número que precisa de fonte (ex.: "mais de 5000 pessoas") ou ""}';
 
 /**
  * Lê "Como eu quero o site" (+ o que gostou na referência e a leitura do print) e devolve um PLANO item a item, sem
@@ -706,7 +718,7 @@ export async function analisarPedidoSite({ cliente, produtos = [], materiais = [
   const system = 'Você é um consultor de lojas online. Você NÃO aplica nada: lê o pedido do operador e devolve um plano item a item, honesto sobre o que dá e o que não dá para fazer. Fala com uma pessoa leiga, em frases curtas, em português do Brasil.';
   const fotos = materiais.filter((m) => m.codigo).slice(0, 60).map((m) => `${m.codigo}: ${m.nomeOriginal || m.nome || 'imagem'}`).join(' | ') || '(nenhuma foto com código)';
   const prods = produtos.slice(0, 15).map((x) => `"${x.nome}"${x.preco ? ` R$ ${x.precoPromocional || x.preco}` : ''} · ${(x.fotos || []).length} foto(s) · descrição ${String(x.descricao || '').length > 120 ? 'longa' : x.descricao ? 'curta' : 'vazia'}${x.formula ? ' · tem fórmula' : ''}${x.beneficios ? ' · tem benefícios' : ''}`).join('\n') || '(nenhum produto)';
-  const pedido = `PEDIDO DO OPERADOR ("Como eu quero o site"): "${String(p.texto || '').trim().slice(0, 1500) || '(vazio)'}"
+  const pedido = `PEDIDO DO OPERADOR ("Como eu quero o site"): "${exigirTamanho(String(p.texto || '').trim()) || '(vazio)'}"
 ${String(p.gostei || '').trim() ? `O que ele gostou no site de referência: "${String(p.gostei).trim().slice(0, 800)}"` : ''}
 ${String(cliente?.siteReferencia || '').trim() ? `Site de referência: ${String(cliente.siteReferencia).trim()}` : ''}
 ${String(p.referenciaLeitura || '').trim() ? `Estrutura e estilo lidos do print da referência: ${String(p.referenciaLeitura).trim().slice(0, 1200)}` : ''}
@@ -722,12 +734,33 @@ Separe o pedido em itens (um por coisa pedida, na ordem do texto). Para cada ite
 - "tipo" e "params": um destes tipos: ${TIPOS_PLANO}
 - "como": como vai ficar no site, em 1 frase (seção, layout, fotos pelo código)
 - "status": "pronto" | "pergunta" (o pedido é ambíguo: faça UMA pergunta com 2 a 4 opções; cada opção pode trazer "como" e "params") | "impossivel" (diga o motivo em "motivo" e a alternativa mais próxima em "alternativa")
+- Só no tipo "texto" com frases escritas pelo operador (títulos, "5 motivos", benefícios, alegações, números, texto de uma seção): "textos", um elemento por frase/motivo/benefício, na ordem dele, cada um ${VERSAO_CADA}. Esse item é "pronto" (o app pede a fonte do número e mostra o aviso da alegação ao operador). Se o texto dele parecer cortado ou incompleto (ex.: pediu 5 motivos e só tem 3), "status": "pergunta" com "pedeTexto": true e a pergunta "Você me manda o texto completo?".${regraSite(cliente)}
 Use só fotos, produtos e dados que existem acima. Fórmula, ingredientes, benefícios, preço, prazo e depoimento NUNCA são inventados: se faltar o dado, diga no "como" que ele precisa ser preenchido na aba Produtos.
 Depois, "sugestoes": até 5 ideias para a loja ficar mais profissional, pelo nicho do cliente e pela referência, que o operador NÃO pediu, cada uma com "texto", "motivo" (1 linha), "tipo" e "params" (mesmos tipos).
-Saída JSON: {"resumo": string (1 frase), "itens": [{"pedido","tipo","params","como","status","pergunta": {"texto","opcoes":[{"texto","como","params"}]} | null,"motivo","alternativa"}], "sugestoes": [{"texto","motivo","tipo","params"}]}
+Saída JSON: {"resumo": string (1 frase), "itens": [{"pedido","tipo","params","como","status","pergunta": {"texto","opcoes":[{"texto","como","params"}]} | null,"motivo","alternativa","pedeTexto": true | ausente,"textos": [{"original","melhorada","segura","numero"}] | ausente}], "sugestoes": [{"texto","motivo","tipo","params"}]}
 ${SO_JSON}`;
-  const { dados } = await gerarJSON({ tarefa: 'plano_site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
+  // As versões dos textos vêm na MESMA chamada (sem chamada extra por item): limite de saída maior que o padrão.
+  const { dados } = await gerarJSON({ tarefa: 'plano_site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }], maxTokens: 10000 });
   return dados || {};
+}
+
+/**
+ * "Sugerir de novo" de UM item de texto do plano: só a versão melhorada e a segura das frases dele (o original nunca
+ * muda). Devolve [{ melhorada, segura }] na mesma ordem; o app confere (lib/textos-site.js normalizarParte).
+ */
+export async function sugerirVersoesTexto({ cliente, item, produtos = [] }) {
+  const originais = (item?.partes || []).map((p) => p.original);
+  if (!originais.length) return [];
+  const prods = produtos.slice(0, 15).map((x) => `"${x.nome}"${x.formula ? ` · fórmula: ${String(x.formula).slice(0, 300)}` : ''}${x.beneficios ? ` · benefícios cadastrados: ${String(x.beneficios).slice(0, 300)}` : ''}`).join('\n') || '(nenhum produto)';
+  const system = 'Você reescreve textos de loja online para a tela do celular, sem inventar nada. Fala em português do Brasil.';
+  const pedido = `TEXTOS DO OPERADOR PARA O SITE (${item.params?.titulo || item.pedido || 'seção'}), na ordem:
+${originais.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
+PRODUTOS CADASTRADOS:
+${prods}
+Para cada texto, na mesma ordem, devolva ${VERSAO_CADA}.${regraSite(cliente)}
+Saída JSON: {"textos": [{"original","melhorada","segura","numero"}]} ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'plano_site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }], maxTokens: 3000 });
+  return (Array.isArray(dados?.textos) ? dados.textos : []).map((t) => ({ melhorada: String(t?.melhorada || ''), segura: String(t?.segura || '') }));
 }
 
 /**
@@ -860,7 +893,7 @@ ${contextoPreferencias(cliente)}
 
 ${custom ? OPS_CUSTOM : OPS_PACOTE}
 
-${NUNCA}
+${NUNCA}${regraSite(cliente)}
 
 Pedido fora do modelo (ex.: carrossel de vídeos, outra fonte, animação, página nova, formulário novo${custom ? '' : ', altura do banner, número de colunas'}): NUNCA responda só "não pode". Em UMA frase diga por quê, ofereça a opção MAIS PRÓXIMA que existe aqui (e proponha essa operação, se fizer sentido) e diga se dá para fazer ${custom ? 'de outro jeito' : 'no tema da plataforma (Nuvemshop: Design > Personalizar; Shopify: Loja virtual > Temas > Personalizar)'} e sugira a alternativa mais próxima que É possível (sem aplicar sozinho, a não ser que ela seja claramente o que a pessoa quer).
 Se só uma PARTE do pedido for possível: faça essa parte e liste em "naoFeito" o que não foi feito e por quê. Nunca apresente uma mudança parcial como se fosse completa.

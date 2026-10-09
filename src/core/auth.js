@@ -37,6 +37,12 @@ export async function sair() {
   await signOut(auth());
 }
 
+/** E-mail de quem está usando o painel (para registrar "quem" numa escolha). */
+export function emailAtual() {
+  if (DEMO) return demoUser?.email || 'demo@local';
+  return auth().currentUser?.email || '';
+}
+
 export async function tokenAtual() {
   if (DEMO) return 'demo';
   const u = auth().currentUser;
