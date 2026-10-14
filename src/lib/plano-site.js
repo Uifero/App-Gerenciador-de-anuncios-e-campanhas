@@ -7,7 +7,7 @@
 //  3. Os itens aceitos viram uma lista OBRIGATÓRIA na geração (checklistObrigatorio) e são conferidos depois de cada
 //     geração/ajuste (conferirPorCodigo); só o que o código não consegue conferir vai para a IA barata.
 import { caminhosDe, CONFIRA_TEMA } from './pacote-loja.js';
-import { slidesDoBanner, fotosDoProduto, temCodigo, usosDe } from './fotos-site.js';
+import { slidesDoBanner, fotosDoProduto, temCodigo, usosDe, fotosDoUso, imagensDoUso, codigosDoTexto, lerReferencias, LUGARES_SEM_FOTO } from './fotos-site.js';
 import { printsDoCliente, normalizarVisual, ORDEM_LOJA, nomeSecaoLoja } from './visual-site.js';
 import { normalizarLayout, ORDEM_PADRAO, nomeBloco } from './site-blocos.js';
 import { FORMAS_PAGAMENTO } from './sitegen.js';
@@ -23,6 +23,9 @@ export const TIPOS_PEDIDO = {
   banner_fotos: 'Fotos do banner (carrossel)',
   clientes_fotos: 'Depoimentos/clientes reais com fotos',
   produto_fotos: 'Fotos de um produto',
+  galeria_fotos: 'Fotos da galeria da loja',
+  sobre_fotos: 'Fotos de Sobre a loja',
+  nao_fotos: 'Fotos fora do site',
   frete_gratis: 'Frete grátis a partir de um valor',
   pagamentos: 'Formas de pagamento (ícones)',
   colunas_produtos: 'Produtos lado a lado (colunas)',
@@ -102,6 +105,9 @@ export function ondeFunciona(tipo, params = {}, plataforma = null, tema = '') {
   const rota = (k) => (plataforma === 'shopify' ? caminhoShopify(k, t, null) : caminhoNuvemshop(k, null));
   switch (tipo) {
     case 'produto_fotos': return { tipo: 'ambos', oque: 'As fotos vão no CSV de produtos, na ordem escolhida', caminho: cam.produtos };
+    case 'galeria_fotos': return { tipo: 'loja', oque: 'Fotos da galeria, na ordem do plano (pasta galeria/ do .zip)', caminho: cam.secoes };
+    case 'sobre_fotos': return { tipo: 'loja', oque: 'Fotos da seção Sobre (pasta sobre/ do .zip)', caminho: cam.secoes };
+    case 'nao_fotos': return { tipo: 'ambos', oque: 'Estas fotos ficam fora do site', caminho: '' };
     case 'texto': return { tipo: 'ambos', oque: 'Vai nos textos do pacote (copiar no passo 6)', caminho: 'Passo 6, "O que colocar na plataforma"' };
     case 'banner_fotos': return { tipo: 'loja', oque: 'Um slide por foto, na ordem do plano', caminho: cam.banner };
     case 'clientes_fotos': case 'depoimentos_home': return { tipo: 'loja', oque: 'Seção de depoimentos/imagens na home', caminho: cam.provas };
@@ -130,10 +136,12 @@ export function limparParams(tipo, p = {}, { materiais = [], produtos = [], modo
   // Código que não existe sai do pedido com um aviso; se nenhum existir, o pedido não dá para fazer.
   const separar = (lista) => { const ok = lista.filter((c) => existentes.has(c)), faltam = lista.filter((c) => !existentes.has(c)); const msg = faltam.length ? `${faltam.join(', ')} não existe${faltam.length > 1 ? 'm' : ''} nos Materiais do cliente (passo 2)` : null; return { ok, problema: lista.length && !ok.length ? msg : null, aviso: ok.length && msg ? `${msg}: fica de fora` : null }; };
   switch (tipo) {
-    case 'banner_fotos': case 'clientes_fotos': { const c = separar(codigos(p.codigos)); return { params: { codigos: c.ok }, problema: c.problema || (!c.ok.length ? 'nenhuma foto foi indicada pelo código (ex.: F3)' : null), aviso: c.aviso }; }
+    case 'banner_fotos': case 'clientes_fotos': case 'galeria_fotos': case 'sobre_fotos': case 'nao_fotos': { const c = separar(codigos(p.codigos)); return { params: { codigos: c.ok }, problema: c.problema || (!c.ok.length ? 'nenhuma foto foi indicada pelo código (ex.: F3)' : null), aviso: c.aviso }; }
     case 'produto_fotos': {
       const c = separar(codigos(p.codigos)), prod = acharProduto(p.produto, produtos);
-      return { params: { codigos: c.ok, produto: prod?.nome || txt(p.produto), produtoId: prod?.id || null }, problema: !prod ? `o produto "${txt(p.produto) || '?'}" não está cadastrado (passo 2)` : c.problema, aviso: c.aviso };
+      // principal: código da foto principal ('' = nenhuma; ausente = a 1ª da lista, como nos planos antigos).
+      const principal = p.principal == null ? undefined : c.ok.includes(txt(p.principal).toUpperCase()) ? txt(p.principal).toUpperCase() : '';
+      return { params: { codigos: c.ok, produto: prod?.nome || txt(p.produto), produtoId: prod?.id || null, ...(principal !== undefined ? { principal } : {}) }, problema: !prod ? `o produto "${txt(p.produto) || '?'}" não está cadastrado (passo 2)` : c.problema, aviso: c.aviso };
     }
     case 'frete_gratis': { const v = numero(p.valor); return { params: { valor: v }, problema: v ? null : 'falta o valor mínimo do frete grátis' }; }
     case 'pagamentos': { const f = (Array.isArray(p.formas) ? p.formas : []).map(sem).map((x) => (/pix/.test(x) ? 'pix' : /bolet/.test(x) ? 'boleto' : /cart|credit|debit/.test(x) ? 'cartao' : null)).filter(Boolean); return { params: { formas: [...new Set(f.length ? f : ['cartao', 'pix'])] }, problema: null }; }
@@ -247,6 +255,7 @@ O app já aplica sozinho as partes de estrutura (fotos por código, seções, fr
 }
 
 // ---------- aplicar o plano (só o que foi aceito) ----------
+const USO_DO_TIPO = { banner_fotos: 'banner', clientes_fotos: 'clientes', galeria_fotos: 'galeria', sobre_fotos: 'sobre', nao_fotos: 'nao' };
 /**
  * O que os itens aceitos mudam, sem gravar nada: { refs (fotos por código, como o texto "F3 no banner"), ops (operações
  * de lib/site-blocos.js), recursos (patch de recursos de loja), pagamentosConfig (site personalizado) }.
@@ -261,12 +270,12 @@ export function aplicacaoDoPlano(itens = [], { modo = 'pacote', materiais = [], 
   for (const x of itens) {
     const p = x.params || {};
     switch (x.tipo) {
-      case 'banner_fotos': case 'clientes_fotos':
-        p.codigos.forEach((c) => { const m = porCodigo.get(c); if (m) refs.push({ codigo: c, materialId: m.id, uso: x.tipo === 'banner_fotos' ? 'banner' : 'clientes', principal: false, ordem: 0 }); });
+      case 'banner_fotos': case 'clientes_fotos': case 'galeria_fotos': case 'sobre_fotos': case 'nao_fotos':
+        p.codigos.forEach((c) => { const m = porCodigo.get(c); if (m) refs.push({ codigo: c, materialId: m.id, uso: USO_DO_TIPO[x.tipo], principal: false, ordem: 0 }); });
         if (x.tipo === 'clientes_fotos') mostrar('provas');
         break;
       case 'produto_fotos':
-        p.codigos.forEach((c, i) => { const m = porCodigo.get(c); if (m && p.produtoId) refs.push({ codigo: c, materialId: m.id, uso: 'produto', produtoId: p.produtoId, produtoNome: p.produto, principal: i === 0, ordem: i + 1 }); });
+        p.codigos.forEach((c, i) => { const m = porCodigo.get(c); if (m && p.produtoId) refs.push({ codigo: c, materialId: m.id, uso: 'produto', produtoId: p.produtoId, produtoNome: p.produto, principal: p.principal != null ? c === p.principal : i === 0, ordem: i + 1 }); });
         break;
       case 'frete_gratis': rec.freteGratis = { valor: p.valor }; break;
       case 'pagamentos': rec.pagamentos = p.formas; if (custom) pagamentosConfig = p.formas; break;
@@ -305,6 +314,9 @@ const r = (status, motivo) => ({ status, motivo });
 const lista = (cs) => cs.join(', ');
 /** Fotos pedidas x fotos no lugar, com a ordem. */
 function conferirCodigos(pedidos, tem, lugar) {
+  return { ...conferirLista(pedidos, tem, lugar), codigos: pedidos.map((c) => ({ codigo: c, ok: tem.includes(c) })) };
+}
+function conferirLista(pedidos, tem, lugar) {
   const presentes = pedidos.filter((c) => tem.includes(c));
   if (!presentes.length) return r('nao', `${lugar}: nenhuma das fotos pedidas (${lista(pedidos)}) está lá${tem.length ? ` (está: ${lista(tem)})` : ''}`);
   const faltam = pedidos.filter((c) => !tem.includes(c));
@@ -334,9 +346,12 @@ export function conferirPorCodigo(itens = [], { modo = 'pacote', site = {}, mate
     let v = null;
     switch (x.tipo) {
       case 'banner_fotos': v = conferirCodigos(p.codigos, slidesDoBanner(materiais, direta).flatMap((s) => s.fotos.map((f) => txt(f.codigo).toUpperCase())).filter(Boolean), 'Banner'); break;
+      case 'galeria_fotos': v = conferirCodigos(p.codigos, fotosDoUso(materiais, 'galeria').map((f) => txt(f.codigo).toUpperCase()).filter(Boolean), 'Galeria'); break;
+      case 'sobre_fotos': v = conferirCodigos(p.codigos, imagensDoUso(materiais, 'sobre', custom ? L.imagens.marca : null).map((f) => txt(f.codigo).toUpperCase()).filter(Boolean), 'Sobre a loja'); break;
+      case 'nao_fotos': { const fora = materiais.filter((m) => temCodigo(m) && usosDe(m).nao).map((m) => txt(m.codigo).toUpperCase()); const faltam = p.codigos.filter((c) => !fora.includes(c)); v = { ...(faltam.length ? r('nao', `ainda no site: ${lista(faltam)}`) : r('atendido', `fora do site: ${lista(p.codigos)}`)), codigos: p.codigos.map((c) => ({ codigo: c, ok: fora.includes(c) })) }; break; }
       case 'clientes_fotos': {
         v = conferirCodigos(p.codigos, printsDoCliente(materiais).map((m) => txt(m.codigo).toUpperCase()).filter(Boolean), 'Clientes reais');
-        if (v.status !== 'nao' && !visiveis.includes('provas')) v = r('parcial', `${v.motivo}, mas a seção "Clientes reais" está oculta`);
+        if (v.status !== 'nao' && !visiveis.includes('provas')) v = { ...v, ...r('parcial', `${v.motivo}, mas a seção "Clientes reais" está oculta`) };
         break;
       }
       case 'produto_fotos': {
@@ -396,3 +411,271 @@ export const contagemConferencia = (resultados = {}) => Object.values(resultados
 export const itensFaltando = (itens = [], resultados = {}) => itens.filter((x) => ['parcial', 'nao'].includes(resultados[x.id]?.status));
 /** Os usos de foto atuais batem com o que a conferência viu (para saber se precisa reconferir). */
 export const assinaturaUsos = (materiais = []) => materiais.filter(temCodigo).map((m) => `${m.codigo}:${JSON.stringify(usosDe(m))}`).join('|');
+
+// ---------- "Entendi assim": o plano por seção do texto do operador ----------
+// O app divide o texto nas seções do operador (lib/fotos-site.js dividirSecoes) e a IA devolve uma seção para cada uma:
+// o que entendeu, os itens, as fotos com lugar e ordem e as perguntas (só dúvida real). Aqui o app confere por cima da
+// IA, sem confiar nela: seção que faltou, código citado que a IA não pôs em lugar nenhum, código que não existe, ordem
+// das fotos (= a ordem em que o operador escreveu) e conflito do texto com o seletor "Usar em" (vira pergunta com botão).
+// Nada é aplicado antes de "Aplicar esta seção"/"Aplicar tudo": os itens nascem desmarcados.
+export const STATUS_SECAO = { entendido: 'Entendido', decidir: 'Precisa decidir', impossivel: 'Não dá para fazer' };
+const DESTINOS_FOTO = { banner: 'banner', topo: 'banner', capa: 'banner', produto: 'produto', galeria: 'galeria', clientes: 'clientes', depoimentos: 'clientes', prova_social: 'clientes', sobre: 'sobre', nao: 'nao', outro: 'outro' };
+const TIPO_DO_DESTINO = { banner: 'banner_fotos', clientes: 'clientes_fotos', galeria: 'galeria_fotos', sobre: 'sobre_fotos', nao: 'nao_fotos', produto: 'produto_fotos' };
+const NOME_DESTINO = { banner: 'no banner', clientes: 'nos depoimentos (Clientes reais)', galeria: 'na galeria da loja', sobre: 'em Sobre a loja', nao: 'fora do site' };
+const TIPOS_FOTO = new Set(['banner_fotos', 'clientes_fotos', 'produto_fotos', 'galeria_fotos', 'sobre_fotos', 'nao_fotos']);
+const DESTINO_DO_TIPO = { banner_fotos: 'banner', clientes_fotos: 'clientes', galeria_fotos: 'galeria', sobre_fotos: 'sobre', nao_fotos: 'nao', produto_fotos: 'produto' };
+
+/** Uma foto da IA, conferida: { codigo, secao, destino, produtoId, produto, principal, lugar, alternativa, existe }. null = sem código válido. */
+function normalizarFoto(f, ctx, secaoPadrao = '') {
+  const codigo = txt(f?.codigo).toUpperCase().replace(/^F\s*-?\s*/, 'F');
+  if (!codigoOk(codigo)) return null;
+  const existentes = new Set((ctx.materiais || []).filter(temCodigo).map((m) => txt(m.codigo).toUpperCase()));
+  const destino = DESTINOS_FOTO[sem(f?.destino).replace(/\s+/g, '_')] || 'outro';
+  let prod = null;
+  if (destino === 'produto') prod = acharProduto(f?.produto, ctx.produtos || []) || (ctx.produtos || []).find((p) => p.id === f?.produtoId) || ((ctx.produtos || []).length === 1 ? ctx.produtos[0] : null);
+  return {
+    codigo, secao: txt(f?.secao) || secaoPadrao, destino, produtoId: prod?.id || null, produto: prod?.nome || txt(f?.produto), principal: destino === 'produto' && f?.principal === true,
+    lugar: destino === 'outro' ? txt(f?.lugar).slice(0, 60) : '', alternativa: txt(f?.alternativa).slice(0, 200), existe: existentes.has(codigo), ...(f?.origem ? { origem: f.origem } : {}),
+  };
+}
+const chaveFoto = (f) => `${f.secao}|${f.codigo}|${f.destino}|${f.produtoId || f.lugar || ''}`;
+function normalizarPergunta(q, i, ctx) {
+  const opcoes = (Array.isArray(q?.opcoes) ? q.opcoes : []).map((o) => ({
+    texto: txt(typeof o === 'string' ? o : o?.texto).slice(0, 80), fotos: (Array.isArray(o?.fotos) ? o.fotos : []).map((f) => normalizarFoto(f, ctx, txt(q?.secao))).filter(Boolean),
+    // o que a opção TIRA de um lugar (ex.: "Só na galeria do produto" tira a foto dos depoimentos)
+    remover: (Array.isArray(o?.remover) ? o.remover : []).map((r) => ({ codigo: txt(r?.codigo).toUpperCase(), destino: DESTINOS_FOTO[sem(r?.destino).replace(/\s+/g, '_')] || '' })).filter((r) => codigoOk(r.codigo) && r.destino),
+  })).filter((o) => o.texto).slice(0, 3);
+  return { id: txt(q?.id) || `q${i + 1}`, secao: txt(q?.secao), texto: txt(q?.texto).slice(0, 240), opcoes, resposta: q?.resposta ?? null, ...(q?.auto ? { auto: true } : {}) };
+}
+// Itens de foto que a IA pôs como item (deveriam vir em "fotos"): viram fotos, nada se perde.
+function fotosDeItem(x, secao) {
+  const p = x?.params || {};
+  const lista = Array.isArray(p.codigos) ? p.codigos : String(p.codigos || '').split(/[\s,;/]+/);
+  return lista.map((c, k) => ({ codigo: c, secao, destino: DESTINO_DO_TIPO[x.tipo], produto: p.produto, principal: x.tipo === 'produto_fotos' && k === 0 && p.principal !== false }));
+}
+
+/** Posição de cada código no texto da seção (para a ordem = a ordem em que o operador escreveu). */
+const posicoes = (texto) => new Map(codigosDoTexto(texto).map((c, i) => [c.codigo, i]));
+
+/**
+ * Plano da IA no formato por seção -> plano conferido. ctx: { secoesTexto (dividirSecoes), texto, materiais, produtos,
+ * modo, plataforma, tema, saude }. Devolve { resumo, secoes, itens, fotos, perguntas, ignorado, ignoradoIa, inexistentes, sugestoes }.
+ */
+export function normalizarPlanoSecoes(d = {}, ctx = {}) {
+  const locais = Array.isArray(ctx.secoesTexto) ? ctx.secoesTexto : [];
+  const brutas = (Array.isArray(d.secoes) ? d.secoes : []).filter((x) => x && typeof x === 'object');
+  const porId = new Map(brutas.map((x, i) => [txt(x.id) || `S${i + 1}`, x]));
+  const fotosIa = [], itens = [];
+  const secoes = locais.map((S) => {
+    const ia = porId.get(S.id);
+    (Array.isArray(ia?.itens) ? ia.itens : []).filter((x) => x && typeof x === 'object').slice(0, 20).forEach((x) => {
+      if (TIPOS_FOTO.has(x.tipo)) { fotosIa.push(...fotosDeItem(x, S.id)); return; }
+      const it = montarItem(x, `${S.id}-i${itens.filter((y) => y.secao === S.id).length + 1}`, ctx);
+      if (it.pedido || it.como || ehItemTexto(it)) itens.push({ ...it, secao: S.id, aceito: false });
+    });
+    return {
+      id: S.id, titulo: txt(ia?.titulo) || S.titulo, trecho: S.texto, entendi: txt(ia?.entendi).slice(0, 600),
+      statusIa: ['entendido', 'decidir', 'impossivel'].includes(ia?.status) ? ia.status : 'entendido', motivo: txt(ia?.motivo).slice(0, 300), alternativa: txt(ia?.alternativa).slice(0, 300),
+      aplicada: false, faltou: !ia,
+    };
+  });
+  // Seção que a IA inventou (id que não existe no texto) não entra: o texto do operador é a referência.
+  const fotos = [...(Array.isArray(d.fotos) ? d.fotos : []), ...fotosIa].map((f) => normalizarFoto(f, ctx)).filter(Boolean).filter((f) => secoes.some((s) => s.id === f.secao));
+  const perguntas = (Array.isArray(d.perguntas) ? d.perguntas : []).map((q, i) => normalizarPergunta(q, i, ctx)).filter((q) => q.texto && q.opcoes.length >= 2 && secoes.some((s) => s.id === q.secao));
+  const ignoradoIa = (Array.isArray(d.ignorado) ? d.ignorado : []).map((x) => ({ trecho: txt(typeof x === 'string' ? x : x?.trecho).slice(0, 200), motivo: txt(x?.motivo).slice(0, 200), secao: txt(x?.secao) })).filter((x) => x.trecho || x.motivo);
+  const sugestoes = normalizarPlano({ sugestoes: d.sugestoes }, ctx).sugestoes;
+  return recomporPlano({ resumo: txt(d.resumo).slice(0, 400), secoes, itens, fotos, perguntas, ignoradoIa, sugestoes }, ctx);
+}
+
+/**
+ * Refaz o que sai das fotos e das conferências do app (depois da análise, de uma resposta ou de um "Corrigir"):
+ * dedup e ordem das fotos, código citado que a IA esqueceu (usa a leitura sem IA; sem ela, vai para "ignorado"),
+ * conflito com o seletor (pergunta automática), itens de foto por seção e o status de cada seção.
+ */
+export function recomporPlano(plano, ctx = {}) {
+  const materiais = ctx.materiais || [], produtos = ctx.produtos || [];
+  const secoes = plano.secoes || [];
+  // 1. Dedup (mesmo código no mesmo lugar da mesma seção = uma vez) e ordem do texto dentro de cada seção.
+  const vistos = new Set();
+  let fotos = (plano.fotos || []).filter((f) => { const k = chaveFoto(f); if (vistos.has(k)) return false; vistos.add(k); return true; });
+  const pos = new Map(secoes.map((s) => [s.id, posicoes(s.trecho)]));
+  const ordemSecao = new Map(secoes.map((s, i) => [s.id, i]));
+  const ordenar = (lista) => lista.map((f, i) => ({ f, i })).sort((a, b) => (ordemSecao.get(a.f.secao) - ordemSecao.get(b.f.secao)) || ((pos.get(a.f.secao)?.get(a.f.codigo) ?? 1e6 + a.i) - (pos.get(b.f.secao)?.get(b.f.codigo) ?? 1e6 + b.i))).map((x) => x.f);
+  // 2. Código citado no texto que a IA não pôs em lugar nenhum: a leitura sem IA resolve; se nem ela, fica em "ignorado".
+  const perguntas = [...(plano.perguntas || [])];
+  const citadosIa = new Set([...fotos.map((f) => `${f.secao}|${f.codigo}`), ...perguntas.flatMap((q) => q.opcoes.flatMap((o) => o.fotos.map((f) => `${q.secao}|${f.codigo}`)))]);
+  const ignoradoAuto = [];
+  for (const s of secoes) {
+    const faltam = codigosDoTexto(s.trecho).map((c) => c.codigo).filter((c) => !citadosIa.has(`${s.id}|${c}`) && !fotos.some((f) => f.codigo === c && f.origem === 'leitura'));
+    if (!faltam.length) continue;
+    const local = lerReferencias(s.trecho, { materiais, produtos });
+    for (const c of faltam) {
+      const refs = local.refs.filter((r) => r.codigo === c);
+      if (refs.length) refs.forEach((r) => fotos.push({ codigo: c, secao: s.id, destino: r.uso, produtoId: r.produtoId || null, produto: r.produtoNome || '', principal: Boolean(r.principal), lugar: '', alternativa: '', existe: true, origem: 'leitura' }));
+      else if (local.inexistentes.includes(c)) fotos.push({ codigo: c, secao: s.id, destino: 'outro', produtoId: null, produto: '', principal: false, lugar: '', alternativa: '', existe: false, origem: 'leitura' });
+      else ignoradoAuto.push({ secao: s.id, trecho: c, motivo: `${c} está no texto, mas não ficou claro onde usar. Responda em "Corrigir" (ex.: "${c} na galeria do produto").` });
+    }
+  }
+  fotos = ordenar(fotos);
+  // A leitura sem IA viu "foto principal" no texto e a IA não marcou nem perguntou: vale o texto.
+  const perguntado = (c) => perguntas.some((q) => q.opcoes.some((o) => o.fotos.some((g) => g.codigo === c)));
+  for (const s of secoes) {
+    const principais = new Set(lerReferencias(s.trecho, { materiais, produtos }).refs.filter((r) => r.principal).map((r) => r.codigo));
+    if (!principais.size) continue;
+    fotos = fotos.map((f) => (f.secao === s.id && f.destino === 'produto' && principais.has(f.codigo) && !f.principal && !perguntado(f.codigo) && !fotos.some((g) => g.secao === s.id && g.produtoId === f.produtoId && g.principal) ? { ...f, principal: true } : f));
+  }
+  // 3. Texto x seletor: foto principal pedida no texto, mas outra marcada à mão como principal = pergunta com botão.
+  for (const f of fotos) {
+    if (!(f.destino === 'produto' && f.principal && f.existe && f.produtoId)) continue;
+    if (perguntas.some((q) => q.opcoes.some((o) => o.fotos.some((g) => g.codigo === f.codigo)))) continue;
+    const outra = materiais.find((m) => temCodigo(m) && txt(m.codigo).toUpperCase() !== f.codigo && usosDe(m).produtos.some((p) => p.id === f.produtoId && p.principal && p.por === 'manual'));
+    if (!outra) continue;
+    perguntas.push({ id: `auto-${f.codigo}-${f.produtoId}`, secao: f.secao, auto: true, resposta: null,
+      texto: `O texto pede ${f.codigo} como foto principal do ${f.produto || 'produto'}, mas no seletor está ${outra.codigo}.`,
+      opcoes: [{ texto: `Usar ${f.codigo}`, fotos: [{ ...f, principal: true }] }, { texto: `Manter ${outra.codigo}`, fotos: [] }] });
+  }
+  // Enquanto a pergunta não tem resposta, a foto entra sem ser a principal (o seletor vence até o operador escolher).
+  const emAberto = new Set(perguntas.filter((q) => !q.resposta).flatMap((q) => q.opcoes.flatMap((o) => o.fotos.filter((g) => g.principal).map((g) => g.codigo))));
+  fotos = fotos.map((f) => (emAberto.has(f.codigo) && f.principal ? { ...f, principal: false } : f));
+  // 4. Itens de foto por seção e lugar (a ordem é a das fotos), mais "não existe esse código" e lugar sem foto.
+  const antigos = new Map((plano.itens || []).map((x) => [x.id, x]));
+  const itensFoto = [];
+  for (const s of secoes) {
+    const daSecao = fotos.filter((f) => f.secao === s.id);
+    const grupos = new Map();
+    for (const f of daSecao.filter((x) => x.existe && x.destino !== 'outro' && !(x.destino === 'produto' && !x.produtoId))) {
+      const k = `${f.destino}|${f.produtoId || ''}`;
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(f);
+    }
+    let n = 0;
+    for (const [, lista] of grupos) {
+      const f0 = lista[0], cods = lista.map((f) => f.codigo);
+      const principal = f0.destino === 'produto' ? (lista.find((f) => f.principal)?.codigo || '') : undefined;
+      const onde = f0.destino === 'produto' ? `no ${f0.produto}${principal ? ` (${principal} é a foto principal)` : ''}` : NOME_DESTINO[f0.destino];
+      const it = montarItem({ tipo: TIPO_DO_DESTINO[f0.destino], params: { codigos: cods, ...(f0.destino === 'produto' ? { produto: f0.produto, principal } : {}) }, pedido: `Fotos ${cods.join(', ')}`, como: `${cods.join(', ')} ${onde}${cods.length > 1 ? ', nessa ordem' : ''}.`, status: 'pronto' }, `${s.id}-f${++n}`, ctx);
+      itensFoto.push(it);
+    }
+    for (const f of daSecao.filter((x) => !x.existe)) itensFoto.push(itemImpossivel(`${s.id}-f${++n}`, f.codigo, `Não dá: ${f.codigo} não existe nos Materiais do cliente (passo 2).`, 'Envie a foto em Materiais (ela ganha um código) e analise de novo.'));
+    for (const f of daSecao.filter((x) => x.existe && x.destino === 'outro')) itensFoto.push(itemImpossivel(`${s.id}-f${++n}`, `${f.codigo}${f.lugar ? ` em ${f.lugar}` : ''}`, `Não dá: o site não tem lugar de foto${f.lugar ? ` em "${f.lugar}"` : ' nesse ponto'}.`, f.alternativa || 'Usar a foto na galeria da loja ou na página do produto.'));
+    for (const f of daSecao.filter((x) => x.existe && x.destino === 'produto' && !x.produtoId)) itensFoto.push(itemImpossivel(`${s.id}-f${++n}`, f.codigo, `Não dá: o produto "${f.produto || '?'}" não está cadastrado (passo 2).`, 'Cadastre o produto ou diga em "Corrigir" de qual produto é a foto.'));
+  }
+  const itens = [];
+  for (const s of secoes) {
+    for (const x of [...(plano.itens || []).filter((y) => y.secao === s.id && !y.deFoto), ...itensFoto.filter((y) => y.id.startsWith(`${s.id}-`)).map((y) => ({ ...y, secao: s.id, deFoto: true }))]) {
+      const ant = antigos.get(x.id);
+      // Item de foto refeito: continua aceito se a seção já foi aplicada (e ele está pronto).
+      itens.push(x.deFoto ? { ...x, aceito: x.status === 'pronto' && Boolean(s.aplicada || ant?.aceito) } : x);
+    }
+  }
+  const inexistentes = [...new Set(fotos.filter((f) => !f.existe).map((f) => f.codigo))].map((codigo) => ({ codigo, secoes: [...new Set(fotos.filter((f) => f.codigo === codigo).map((f) => f.secao))] }));
+  const ignorado = [...(plano.ignoradoIa || []), ...secoes.filter((s) => s.faltou).map((s) => ({ secao: s.id, trecho: s.titulo, motivo: 'A IA não devolveu esta parte do texto. Use "Corrigir" nela para ler de novo.' })), ...ignoradoAuto];
+  const out = { ...plano, fotos, perguntas, itens, inexistentes, ignorado };
+  out.secoes = secoes.map((s) => ({ ...s, status: statusSecao(out, s, ctx) }));
+  return out;
+}
+function itemImpossivel(id, pedido, motivo, alternativa) {
+  return { id, tipo: 'outro', params: {}, status: 'impossivel', onde: { tipo: 'loja', oque: '', caminho: '' }, pedido: `Foto ${pedido}`, como: '', pergunta: null, motivo, alternativa, aviso: '', resposta: null, aceito: false };
+}
+
+/** entendido | decidir (pergunta aberta, item pendente, algo ignorado) | impossivel (a seção inteira não dá). */
+export function statusSecao(plano, s, ctx = {}) {
+  const itens = (plano.itens || []).filter((x) => x.secao === s.id);
+  const aberta = (plano.perguntas || []).some((q) => q.secao === s.id && !q.resposta);
+  const ignorada = (plano.ignorado || []).some((x) => x.secao === s.id);
+  if (s.faltou || aberta || ignorada || itens.some((x) => x.status === 'pergunta') || (s.statusIa === 'decidir' && !itens.length)) return 'decidir';
+  if (s.statusIa === 'impossivel' && !itens.some((x) => x.status === 'pronto')) return 'impossivel';
+  if (itens.length && itens.every((x) => x.status === 'impossivel')) return 'impossivel';
+  void ctx;
+  return 'entendido';
+}
+export const ehPlanoPorSecao = (plano) => Array.isArray(plano?.secoes) && plano.secoes.length > 0;
+const comStatus = (plano, ctx) => ({ ...plano, secoes: plano.secoes.map((s) => ({ ...s, status: statusSecao(plano, s, ctx) })) });
+
+/** "Aplicar esta seção": os itens prontos dela ficam marcados (entram na aplicação) e a seção fica "aplicada". */
+export function aplicarSecao(plano, secaoId, ctx = {}) {
+  const itens = plano.itens.map((x) => (x.secao === secaoId && x.status === 'pronto' ? { ...x, aceito: true } : x));
+  return comStatus({ ...plano, itens, secoes: plano.secoes.map((s) => (s.id === secaoId ? { ...s, aplicada: true } : s)) }, ctx);
+}
+/** "Aplicar tudo": todas as seções. */
+export const aplicarTodasSecoes = (plano, ctx = {}) => plano.secoes.reduce((p, s) => aplicarSecao(p, s.id, ctx), plano);
+/** Seções que têm alguma coisa pronta para aplicar. */
+export const secoesAplicaveis = (plano) => (plano?.secoes || []).filter((s) => (plano.itens || []).some((x) => x.secao === s.id && x.status === 'pronto'));
+
+/**
+ * Resposta de uma pergunta: a opção vale para o plano (as fotos dela entram no lugar das da mesma seção) e o que ela
+ * pede ao seletor vem em `usar` (o app marca à mão em "Usar em": foi o operador quem decidiu). Devolve { plano, usar }.
+ */
+// "Só na galeria do produto" / "Só nos depoimentos" sem "remover": o lugar escrito fica, os outros lugares dos códigos da pergunta saem.
+const LUGAR_NA_OPCAO = [['produto', /produto/], ['clientes', /depoimento|prova|avalia|clientes/], ['banner', /banner|topo|capa/], ['sobre', /sobre|historia|quem somos/], ['galeria', /galeria|carrossel/]];
+function removerPeloTexto(q, o, fotos) {
+  const t = sem(o.texto);
+  if (!/^(so|somente|apenas)\b/.test(t)) return [];
+  const fica = LUGAR_NA_OPCAO.find(([, re]) => re.test(t))?.[0];
+  if (!fica) return [];
+  const cods = new Set(codigosDoTexto(`${q.texto} ${o.texto}`).map((c) => c.codigo));
+  return fotos.filter((f) => cods.has(f.codigo) && f.destino !== fica && f.destino !== 'outro').map((f) => ({ codigo: f.codigo, destino: f.destino }));
+}
+export function responderPerguntaSecao(plano, perguntaId, indice, ctx = {}) {
+  const q = (plano.perguntas || []).find((x) => x.id === perguntaId);
+  const o = q?.opcoes?.[indice];
+  if (!q || !o) return { plano, usar: [] };
+  const trocar = new Set(o.fotos.map((f) => `${f.secao || q.secao}|${f.codigo}`));
+  const remover = o.remover?.length ? o.remover : removerPeloTexto(q, o, plano.fotos);
+  const fotos = [...plano.fotos.filter((f) => !(trocar.has(`${f.secao}|${f.codigo}`) && o.fotos.some((g) => g.codigo === f.codigo && g.destino === f.destino)) && !remover.some((r) => r.codigo === f.codigo && r.destino === f.destino)), ...o.fotos.map((f) => ({ ...f, secao: f.secao || q.secao }))];
+  const perguntas = plano.perguntas.map((x) => (x.id === perguntaId ? { ...x, resposta: o.texto } : x));
+  const porCod = new Map((ctx.materiais || []).filter(temCodigo).map((m) => [txt(m.codigo).toUpperCase(), m]));
+  const usar = o.fotos.filter((f) => f.existe && porCod.has(f.codigo) && f.destino !== 'outro' && !(f.destino === 'produto' && !f.produtoId))
+    .map((f) => ({ materialId: porCod.get(f.codigo).id, uso: f.destino, ...(f.destino === 'produto' ? { produtoId: f.produtoId, principal: f.principal } : {}) }));
+  return { plano: recomporPlano({ ...plano, fotos, perguntas }, ctx), usar };
+}
+
+/**
+ * "Corrigir" de uma seção: a releitura (IA barata) troca só ela (o que entendeu, itens, fotos e perguntas). A seção
+ * volta a "não aplicada" (o operador confere de novo). d: { secao: { entendi, status, motivo, alternativa, itens }, fotos, perguntas }.
+ */
+export function substituirSecao(plano, secaoId, d = {}, ctx = {}, correcao = '') {
+  const s = plano.secoes.find((x) => x.id === secaoId); if (!s) return plano;
+  const ia = d.secao && typeof d.secao === 'object' ? d.secao : d;
+  const novosItens = [];
+  const fotosIa = [];
+  (Array.isArray(ia.itens) ? ia.itens : []).filter((x) => x && typeof x === 'object').slice(0, 20).forEach((x) => {
+    if (TIPOS_FOTO.has(x.tipo)) { fotosIa.push(...fotosDeItem(x, secaoId)); return; }
+    const it = montarItem(x, `${secaoId}-c${Date.now().toString(36)}${novosItens.length + 1}`, ctx);
+    if (it.pedido || it.como || ehItemTexto(it)) novosItens.push({ ...it, secao: secaoId, aceito: false });
+  });
+  const fotos = [...plano.fotos.filter((f) => f.secao !== secaoId), ...[...(Array.isArray(d.fotos) ? d.fotos : []), ...fotosIa].map((f) => normalizarFoto({ ...f, secao: secaoId }, ctx, secaoId)).filter(Boolean)];
+  const perguntas = [...plano.perguntas.filter((q) => q.secao !== secaoId), ...(Array.isArray(d.perguntas) ? d.perguntas : []).map((q, i) => normalizarPergunta({ ...q, secao: secaoId, id: `${secaoId}-q${Date.now().toString(36)}${i + 1}` }, i, ctx)).filter((q) => q.texto && q.opcoes.length >= 2)];
+  const secoes = plano.secoes.map((x) => (x.id === secaoId ? { ...x, entendi: txt(ia.entendi).slice(0, 600) || x.entendi, statusIa: ['entendido', 'decidir', 'impossivel'].includes(ia.status) ? ia.status : 'entendido', motivo: txt(ia.motivo).slice(0, 300), alternativa: txt(ia.alternativa).slice(0, 300), aplicada: false, faltou: false, corrigida: { texto: txt(correcao).slice(0, 600), em: new Date().toISOString() } } : x));
+  const itens = [...plano.itens.filter((x) => x.secao !== secaoId), ...novosItens];
+  const ignoradoIa = (plano.ignoradoIa || []).filter((x) => x.secao !== secaoId);
+  return recomporPlano({ ...plano, secoes, itens, fotos, perguntas, ignoradoIa }, ctx);
+}
+
+/**
+ * Plano cujas fotos valem na geração (lib: sites.js aplicarFotosTexto): o aplicado, ou o atual com alguma seção aplicada,
+ * desde que tenha sido analisado sobre o MESMO texto de agora. null = vale a leitura sem IA do texto.
+ */
+export function planoDasFotos(planoAplicadoAtual, planoAtualDoSite, texto) {
+  const t = txt(texto);
+  if (planoAplicadoAtual && planoAplicadoAtual.base?.texto === t) return planoAplicadoAtual;
+  if (ehPlanoPorSecao(planoAtualDoSite) && planoAtualDoSite.base?.texto === t && planoAtualDoSite.secoes.some((s) => s.aplicada)) return planoAtualDoSite;
+  return null;
+}
+
+/**
+ * Conferência por seção (passo 4): para cada seção do texto, cada item com "feito no site" / "não feito (motivo)" e
+ * cada código de foto no lugar pedido. resultados = conferirPorCodigo + IA. Devolve [{ secao, linhas: [{ item, status, motivo, codigos }] }].
+ */
+export function conferenciaPorSecao(plano, resultados = {}) {
+  if (!ehPlanoPorSecao(plano)) return [];
+  return plano.secoes.map((s) => ({
+    secao: s,
+    linhas: plano.itens.filter((x) => x.secao === s.id).map((x) => {
+      const r = resultados[x.id];
+      if (r) return { item: x, status: r.status, motivo: r.motivo, codigos: r.codigos || null, por: r.por };
+      if (x.status === 'impossivel') return { item: x, status: 'nao', motivo: `${x.motivo.replace(/^Não dá:\s*/, '')}${x.alternativa ? ` Mais próximo: ${x.alternativa}` : ''}`, codigos: null };
+      return { item: x, status: 'nao', motivo: s.aplicada ? 'você desmarcou este item' : 'esta seção não foi aplicada', codigos: null };
+    }),
+  }));
+}

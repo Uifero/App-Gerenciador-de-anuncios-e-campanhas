@@ -5,7 +5,7 @@
 const FIXTURES = {
   extracao_anuncio: 'extracao-anuncio-real', palavras_nicho: 'palavras-nicho-real', pesquisa_nicho: 'pesquisa-nicho-real',
   resumo_documento: 'resumo-documento-real', recomendacao_anuncio: 'recomendacao-anuncio-real', leitura_resultados: 'leitura-prints-real',
-  otimizacao_anuncio: 'otimizacao-anuncio-real', plano_site: 'plano-thermora-motivos',
+  otimizacao_anuncio: 'otimizacao-anuncio-real', plano_site: 'plano-thermora-secoes', plano_secao: 'plano-secao-thermora',
 };
 window.__fx = window.__fx || {};
 for (const [t, f] of Object.entries(FIXTURES)) {

@@ -2,8 +2,8 @@
 // Fica em cliente.preferenciasSite e entra em TODA geração e ajuste do site, nos dois modos (core/ia.js
 // contextoPreferencias), acima dos padrões da IA e abaixo das regras do app. Da referência: só estrutura e estilo.
 import { db, COL } from '../core/storage.js';
-import { salvarMaterial, removerMaterial, garantirCodigos } from '../lib/materiais.js';
-import { temCodigo, lerReferencias, nomeUso, porCodigo } from '../lib/fotos-site.js';
+import { salvarMaterial, removerMaterial, garantirCodigos, salvarUsos } from '../lib/materiais.js';
+import { temCodigo, lerReferencias, nomeUso, porCodigo, aplicarReferencias, resolverEscolha, comUsos } from '../lib/fotos-site.js';
 import { lerReferenciaPrint } from '../core/ia.js';
 import { prepararImagem } from './diagnostico.js';
 import { esc, $, on, toast, ocupado, campoArquivo, mostrarResultado } from '../core/ui.js';
@@ -33,21 +33,79 @@ export function preferenciasHtml(cliente, fotosTexto = null) {
   return `<div class="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3" data-preferencias-site>
     <div class="flex flex-wrap items-center justify-between gap-2"><label class="text-sm font-semibold" for="pref-texto"><i class="fa-solid fa-pen-to-square text-indigo-500"></i> Como eu quero o site</label>${botaoDitado('texto')}</div>
     <p class="hint !mt-0">Escreva do seu jeito. Ex: banner com a foto do produto, fotos inteiras sem cortar, poucas seções, tudo em fundo branco.</p>
+    ${DICA_ESCREVER}
     <textarea id="pref-texto" class="input mt-1" rows="5" maxlength="${LIMITE_TEXTO_SITE}" aria-describedby="pref-texto-contador" data-pref="texto">${esc(prefs(cliente).texto || '')}</textarea>
     ${contadorHtml(prefs(cliente).texto || '')}
     <p class="hint" data-pref-salvo>Vale para toda geração e todo ajuste do site (nos dois modos). Fica abaixo das regras do app: nada de prova inventada nem promessa que o Meta proíbe.</p>
     <div class="mt-2" data-fotos-codigos><p class="hint"><i class="fa-solid fa-spinner fa-spin"></i> Carregando as fotos…</p></div>
-    <div data-leitura-referencias></div>${resultadoFotosTextoHtml(fotosTexto)}</div>`;
+    <div data-leitura-referencias></div>${resultadoFotosTextoHtml(fotosTexto, { soAplicadas: true })}</div>`;
 }
 
-/** Resultado da última aplicação das referências do texto (fica no site até a próxima: o aviso não some). */
-export function resultadoFotosTextoHtml(r) {
-  if (!r || !(r.aplicadas?.length || r.avisos?.length || r.conflitos?.length)) return '<div data-fotos-texto-resultado></div>';
+// Dica opcional (nunca obrigatória) para o texto ser entendido melhor, com e sem IA.
+const DICA_ESCREVER = `<details class="mt-1 text-xs" data-dica-escrever><summary class="flex min-h-[44px] cursor-pointer items-center font-medium text-indigo-700">Como escrever para a IA entender melhor</summary>
+  <ul class="list-disc space-y-1 pb-2 pl-5 text-slate-700"><li>Um título por seção: "Página do produto:", "Depoimentos:", "Carrinho:".</li><li>Fotos com o lugar junto: "F27, F28, F29 na galeria do produto".</li><li>Um desejo por linha.</li><li>É só uma ajuda: pode escrever do seu jeito.</li></ul></details>`;
+
+/** Linha única do que a leitura sem IA não entendeu (com "ver quais") e dos códigos que não existem. Amarelo: não é erro. */
+export function naoEntendidasHtml(r) {
+  if (!r) return '';
+  const ine = (r.avisos || []).find((a) => /^Não existe esse código/.test(a));
+  return `${r.resumo && r.naoEntendidas?.length ? `<div class="mt-1 rounded border border-amber-200 bg-amber-50 px-2 text-xs text-amber-800" data-resumo-nao-entendidas><p class="pt-2"><i class="fa-solid fa-circle-info"></i> ${esc(r.resumo)}</p>
+    <details><summary class="flex min-h-[44px] cursor-pointer items-center font-medium">ver quais</summary><ul class="list-disc space-y-0.5 pb-2 pl-5" data-lista-nao-entendidas>${r.naoEntendidas.map((x) => `<li><b>${esc(x.codigos.join(', '))}</b>: ${esc(x.motivo)} <span class="text-slate-600">("${esc(x.trecho)}")</span></li>`).join('')}</ul></details></div>` : ''}
+    ${ine ? `<p class="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800" data-codigos-inexistentes><i class="fa-solid fa-triangle-exclamation"></i> ${esc(ine)}</p>` : ''}`;
+}
+
+/** Conflitos do texto com o seletor, cada um com a escolha em um clique ("Usar F27" muda o seletor; "Manter F41" esconde). */
+export function escolhasHtml(escolhas = [], mantidos = []) {
+  const lista = escolhas.filter((e) => !mantidos.includes(e.chave));
+  if (!lista.length) return '';
+  return `<div class="mt-2 space-y-2" data-conflitos-escolha>${lista.map((e) => `<div class="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-700" data-conflito-foto="${esc(e.chave)}" role="group" aria-label="Conflito entre o texto e o seletor Usar em">
+    <p class="font-medium"><i class="fa-solid fa-scale-balanced"></i> ${esc(e.texto)}</p>
+    <div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-primary btn-sm min-h-[44px]" data-usar-escolha="${esc(JSON.stringify(e.usar))}" data-chave="${esc(e.chave)}">${esc(e.usar.rotulo)}</button>
+      <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-manter-escolha="${esc(e.chave)}">${esc(e.manter.rotulo)}</button></div></div>`).join('')}</div>`;
+}
+
+/**
+ * Resultado da última aplicação das referências do texto (fica no site até a próxima: o aviso não some). Conflito vem
+ * com os botões de escolha; o que não foi entendido sem IA vira uma linha só. `soAplicadas`: no passo 3 a leitura ao
+ * vivo já mostra conflitos e resumo, então aqui só o que foi aplicado.
+ */
+export function resultadoFotosTextoHtml(r, { soAplicadas = false, mantidos = [] } = {}) {
+  const temEscolha = (r?.escolhas || []).some((e) => !mantidos.includes(e.chave));
+  if (!r || !(r.aplicadas?.length || (!soAplicadas && (r.avisos?.length || r.conflitos?.length || temEscolha)))) return '<div data-fotos-texto-resultado></div>';
+  const conflitos = soAplicadas ? '' : r.escolhas ? escolhasHtml(r.escolhas, mantidos)
+    : (r.conflitos || []).map((c) => `<p class="mt-1 text-amber-800" data-conflito-foto><i class="fa-solid fa-scale-balanced"></i> ${esc(c)}</p>`).join('');
+  const avisos = soAplicadas ? '' : r.naoEntendidas ? naoEntendidasHtml(r)
+    : (r.avisos || []).map((a) => `<p class="mt-1 text-amber-800" data-aviso-codigo><i class="fa-solid fa-triangle-exclamation"></i> ${esc(a)}</p>`).join('');
   return `<div class="mt-2 rounded border border-slate-200 bg-white p-2 text-xs" data-fotos-texto-resultado>
-    <p class="font-semibold">Fotos pelo texto (última geração)</p>
+    <p class="font-semibold">Fotos pelo texto (última aplicação)</p>
     ${r.aplicadas?.length ? `<p class="text-emerald-800" data-fotos-aplicadas><i class="fa-solid fa-check"></i> Aplicado: ${esc(r.aplicadas.join(' · '))} (aparece em "Usar em" como "definido pelo texto")</p>` : ''}
-    ${(r.conflitos || []).map((c) => `<p class="mt-1 text-amber-800" data-conflito-foto><i class="fa-solid fa-scale-balanced"></i> ${esc(c)}</p>`).join('')}
-    ${(r.avisos || []).map((a) => `<p class="mt-1 font-medium text-rose-700" data-aviso-codigo><i class="fa-solid fa-triangle-exclamation"></i> ${esc(a)}</p>`).join('')}</div>`;
+    ${conflitos}${avisos}</div>`;
+}
+
+/**
+ * Botões dos conflitos (passo 3 e passo 4). "Usar F27": a escolha vira do seletor (manual) e os painéis de fotos são
+ * avisados (gcc:materiais). "Manter F41": fica guardado nas preferências e o conflito some. `depois({ chave, acao })`.
+ */
+export function ligarEscolhas(alvo, cliente, { depois = async () => {} } = {}) {
+  on(alvo, 'click', '[data-usar-escolha]', (b) => ocupado(b, async () => {
+    const usar = JSON.parse(b.dataset.usarEscolha), chave = b.dataset.chave;
+    const lista = await db.listar(COL.materiais, { clienteId: cliente.id });
+    const patches = resolverEscolha(lista, usar);
+    await salvarUsos(patches);
+    const antes = prefs(cliente).conflitosMantidos || [];
+    if (antes.includes(chave)) await salvarPrefs(cliente, { conflitosMantidos: antes.filter((k) => k !== chave) });
+    const nova = comUsos(lista, patches);
+    document.dispatchEvent(new CustomEvent('gcc:materiais', { detail: { clienteId: cliente.id, lista: nova } }));
+    await depois({ chave, acao: 'usar', lista: nova });
+    toast(`Feito: ${usar.rotulo}. O seletor "Usar em" já mostra essa escolha.`);
+  }));
+  on(alvo, 'click', '[data-manter-escolha]', (b) => ocupado(b, async () => {
+    const chave = b.dataset.manterEscolha;
+    await salvarPrefs(cliente, { conflitosMantidos: [...new Set([...(prefs(cliente).conflitosMantidos || []), chave])] });
+    b.closest('[data-conflito-foto]')?.remove();
+    await depois({ chave, acao: 'manter' });
+    toast('Mantido como está no seletor.');
+  }));
 }
 
 /** Complemento da linha "Site de referência": o que gostou + print (sites costumam bloquear a leitura). */
@@ -69,14 +127,21 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
   // Faixa de miniaturas com os códigos (F1, F2...): para escrever ou ditar "F3 no banner, F5 no Thermora".
   let fotos = [], produtos = [];
   const faixa = $('[data-fotos-codigos]', alvo), leitura = $('[data-leitura-referencias]', alvo);
+  // Leitura sem IA, ao vivo: o que entendeu (por lugar), UMA linha do que não entendeu e os conflitos com botão.
   const lerTexto = () => {
     if (!leitura) return;
-    const { refs, avisos } = lerReferencias($('[data-pref="texto"]', alvo)?.value || '', { materiais: fotos, produtos });
-    leitura.innerHTML = refs.length || avisos.length ? `<div class="mt-1 text-xs" data-referencias-lidas>
-      ${refs.length ? `<p class="text-slate-700"><b>Entendi:</b> ${esc(refs.map((r) => `${r.codigo} → ${r.uso === 'produto' ? `${r.produtoNome}${r.principal ? ' (principal)' : ''}` : nomeUso(r.uso)}`).join(' · '))}. Vale ao gerar o site${aplicarFotosTexto ? ' ou em "Aplicar agora"' : ''}; a escolha feita em "Usar em" vence.</p>` : ''}
-      ${avisos.map((a) => `<p class="mt-0.5 font-medium text-rose-700" data-aviso-codigo-vivo><i class="fa-solid fa-triangle-exclamation"></i> ${esc(a)}</p>`).join('')}
-      ${refs.length && aplicarFotosTexto ? '<button type="button" class="btn-ghost btn-sm mt-1" data-aplicar-fotos-texto><i class="fa-solid fa-images"></i> Aplicar agora (sem IA)</button>' : ''}</div>` : '';
+    const r = lerReferencias($('[data-pref="texto"]', alvo)?.value || '', { materiais: fotos, produtos });
+    const { escolhas } = r.refs.length ? aplicarReferencias(fotos, r.refs, { produtos }) : { escolhas: [] };
+    const lugares = new Map();
+    for (const x of r.refs) { const k = x.uso === 'produto' ? x.produtoNome : nomeUso(x.uso); lugares.set(k, [...(lugares.get(k) || []), `${x.codigo}${x.principal ? ' (principal)' : ''}`]); }
+    leitura.innerHTML = r.refs.length || r.avisos.length || escolhas.length ? `<div class="mt-1 text-xs" data-referencias-lidas>
+      ${r.refs.length ? `<p class="text-slate-700"><b>Entendi sem IA:</b> ${esc([...lugares].map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · '))}. Vale ao gerar o site${aplicarFotosTexto ? ' ou em "Aplicar agora"' : ''}; a escolha feita em "Usar em" vence.</p>` : ''}
+      ${naoEntendidasHtml(r)}${escolhasHtml(escolhas, prefs(cliente).conflitosMantidos || [])}
+      ${r.refs.length && aplicarFotosTexto ? '<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-aplicar-fotos-texto><i class="fa-solid fa-images"></i> Aplicar agora (sem IA)</button>' : ''}</div>` : '';
   };
+  let espera = null;
+  const lerTextoDepois = () => { clearTimeout(espera); espera = setTimeout(lerTexto, 250); };
+  ligarEscolhas(alvo, cliente, { depois: async ({ acao }) => { if (acao === 'manter') lerTexto(); } });
   const desenharFaixa = (lista) => {
     fotos = lista.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo);
     if (!faixa) return;
@@ -100,7 +165,7 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
   };
   if (typeof document !== 'undefined') document.addEventListener('gcc:materiais', ouvir);
   const contar = () => { const campo = $('[data-pref="texto"]', alvo), cont = $('[data-contador-texto]', alvo); if (!campo || !cont) return; const c = textoContador(campo.value); cont.className = c.classe; cont.textContent = c.texto; };
-  on(alvo, 'input', '[data-pref="texto"]', () => { lerTexto(); contar(); });
+  on(alvo, 'input', '[data-pref="texto"]', () => { lerTextoDepois(); contar(); });
   on(alvo, 'click', '[data-inserir-codigo]', (b) => {
     const campo = $('[data-pref="texto"]', alvo); if (!campo) return;
     const ini = campo.selectionStart ?? campo.value.length, fim = campo.selectionEnd ?? ini;
@@ -113,9 +178,12 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
     const campo = $('[data-pref="texto"]', alvo);
     if (campo && campo.value.trim() !== String(prefs(cliente).texto || '')) await salvarPrefs(cliente, { texto: campo.value.trim() });
     const r = await aplicarFotosTexto();
-    const caixa = $('[data-fotos-texto-resultado]', alvo); if (caixa) caixa.outerHTML = resultadoFotosTextoHtml(r);
+    const caixa = $('[data-fotos-texto-resultado]', alvo); if (caixa) caixa.outerHTML = resultadoFotosTextoHtml(r, { soAplicadas: true });
     const nova = $('[data-fotos-texto-resultado]', alvo);
-    if (nova) mostrarResultado(nova, r.conflitos?.length || r.avisos?.length ? 'Aplicado, com pontos de atenção abaixo.' : 'Pronto: fotos aplicadas pelo texto.');
+    lerTexto();
+    const atencao = r.conflitos?.length || r.avisos?.length;
+    const alvoMsg = (atencao && $('[data-referencias-lidas]', alvo)) || nova;
+    if (alvoMsg) mostrarResultado(alvoMsg, atencao ? 'Aplicado. Veja os pontos de atenção aqui.' : 'Pronto: fotos aplicadas pelo texto.');
   }));
   on(alvo, 'change', '[data-pref]', async (t) => {
     await salvarPrefs(cliente, { [t.dataset.pref]: t.value.trim() });

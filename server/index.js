@@ -109,7 +109,8 @@ export const TAREFAS = {
   modelo_prompt: { modelo: MODELO_LEVE,     max: 1500, semRaciocinio: true }, // "Modelos de Prompt": preenche os marcadores com os dados do cliente
   ajuste_site: { modelo: MODELO_LEVE,     max: 3000, semRaciocinio: true },  // "Ajustar este site": pedido pontual (texto, ordem, cor); 8 s -> 6 s, mesmas operações
   ajuste_site_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', siteProfissional: true }, // "Ajustar este site": pedido amplo (várias seções / reescrever)
-  plano_site:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low', siteProfissional: true, paginaProduto: true },       // "Analisar meu pedido": plano item a item ANTES de aplicar (sem imagem: o print da referência já vem lido em texto)
+  plano_site:  { modelo: MODELO_COMPLEXO, max: 16000, effort: 'low', siteProfissional: true, paginaProduto: true },      // "Analisar meu pedido": texto de até 12.000 caracteres lido seção por seção, plano ANTES de aplicar (sem imagem: o print da referência já vem lido em texto)
+  plano_secao: { modelo: MODELO_LEVE, max: 4000 },                         // "Corrigir" de UMA seção do plano: a correção curta do operador relida só nessa seção
   conferencia_site: { modelo: MODELO_LEVE, max: 1500 },                     // "Conferência do pedido": só os itens que o código não consegue conferir (texto, estilo)
   leitura_respostas: { modelo: MODELO_LEVE, max: 6000 },                   // associa a resposta colada do cliente às 18 perguntas
   leitura_produtos:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low' }, // lista de produtos da resposta do cliente

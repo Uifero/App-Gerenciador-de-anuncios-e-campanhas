@@ -1,0 +1,5 @@
+{
+ "escritaAMao": true,
+ "tarefa": "plano_secao",
+ "texto": "{\"secao\":{\"entendi\":\"Na página do produto, a F27 é a foto principal e as outras seguem a ordem escrita; a F31 fica só na galeria do produto.\",\"status\":\"entendido\",\"itens\":[{\"pedido\":\"Página do produto completa\",\"tipo\":\"pagina_produto\",\"params\":{\"descricaoDetalhada\":true},\"como\":\"Galeria com todas as fotos e descrição em blocos.\",\"status\":\"pronto\"}]},\"fotos\":[{\"codigo\":\"F27\",\"destino\":\"produto\",\"produto\":\"Thermora\",\"principal\":true},{\"codigo\":\"F28\",\"destino\":\"produto\",\"produto\":\"Thermora\"},{\"codigo\":\"F29\",\"destino\":\"produto\",\"produto\":\"Thermora\"},{\"codigo\":\"F33\",\"destino\":\"produto\",\"produto\":\"Thermora\"},{\"codigo\":\"F32\",\"destino\":\"produto\",\"produto\":\"Thermora\"},{\"codigo\":\"F31\",\"destino\":\"produto\",\"produto\":\"Thermora\"}],\"perguntas\":[]}"
+}

@@ -22,10 +22,10 @@ import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, moeda, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado, confirmar, faixaRolavel } from '../core/ui.js';
 import { dadosDoPacote, gruposPlataforma, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
-import { lerReferencias, aplicarReferencias, comUsos, produtosComFotos, imagemDoLugar, arquivosPorPasta, rotuloFoto, temCodigo, resumoUsos, porCodigo, slidesDoBanner } from '../lib/fotos-site.js';
+import { lerReferencias, aplicarReferencias, resolverEscolha, comUsos, produtosComFotos, imagemDoLugar, arquivosPorPasta, rotuloFoto, temCodigo, resumoUsos, porCodigo, slidesDoBanner } from '../lib/fotos-site.js';
 import { desenharArquivo, limparCache } from '../lib/recortes-canvas.js';
 import { garantirCodigos, salvarUsos, desfazerMigracaoFotos } from '../lib/materiais.js';
-import { preferenciasHtml, referenciaExtraHtml, ligarPreferencias, resultadoFotosTextoHtml } from './preferencias-site.js';
+import { preferenciasHtml, referenciaExtraHtml, ligarPreferencias, resultadoFotosTextoHtml, ligarEscolhas } from './preferencias-site.js';
 import { provaSocialHtml, ligarProvaSocial } from './prova-social.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { abrirMateriais } from './materiais-cliente.js';
@@ -33,8 +33,8 @@ import { excluirMateriais } from './excluir-material.js';
 import { abrirProduto, garantirMigracaoFotos } from './produtos.js';
 import { tarefasSiteHtml, ligarTarefasSite } from './tarefas-site.js';
 import { ETAPAS, STATUS_ETAPA, statusEtapas, primeiraEtapaComFalta, plataformaDoSite, patchPlataforma, PLATAFORMAS_SITE, TEMAS_SHOPIFY, nomeTema } from '../lib/etapas-site.js';
-import { itensAceitos, aplicacaoDoPlano, checklistObrigatorio, itensFaltando, recursosDoSite, TIPOS_PEDIDO } from '../lib/plano-site.js';
-import { blocoAnaliseHtml, ligarAnalise, planoAplicado, conferenciaHtml, conferirPlano, abrirPlanoDaVersao, tarefasLojaHtml, alegacoesSiteHtml } from './plano-site.js';
+import { itensAceitos, aplicacaoDoPlano, checklistObrigatorio, itensFaltando, recursosDoSite, TIPOS_PEDIDO, planoDasFotos } from '../lib/plano-site.js';
+import { blocoAnaliseHtml, ligarAnalise, planoAplicado, planoAtual, conferenciaHtml, conferirPlano, abrirPlanoDaVersao, tarefasLojaHtml, alegacoesSiteHtml } from './plano-site.js';
 import { aplicarTextosNoEstado, alegacoesMantidas, alegacoesParaCliente } from '../lib/textos-site.js';
 import { ehProdutoSaude } from '../lib/saude.js';
 import { resumoBlocosSite } from './ajuste-site.js';
@@ -136,21 +136,29 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   // "F3 no banner, F5 no Thermora" (texto "Como eu quero o site"): aplica como se fosse o seletor "Usar em", marcado
   // "definido pelo texto". Sem IA. O seletor e a escolha direta do modo vencem; conflito e código que não existe ficam
   // guardados no site (site.fotosTexto) e aparecem no passo 4 até a próxima aplicação.
-  // Com um plano aplicado para o texto atual ("Analisar meu pedido"), as fotos vêm SÓ dos itens aceitos do plano.
-  const aplicarFotosTexto = async () => {
+  // Com um plano do texto atual ("Analisar meu pedido") aplicado, ou com seções aplicadas no "Entendi assim", as fotos vêm
+  // SÓ dos itens aceitos do plano. `plano`: o plano que acabou de mudar (aplicar seção/tudo, resposta de pergunta).
+  const aplicarFotosTexto = async ({ plano = null } = {}) => {
     const mats = await garantirCodigos(cliente, await db.listar(COL.materiais, { clienteId: cliente.id }));
-    const pl = planoAplicado(site);
-    const doPlano = pl && pl.base?.texto === String(cliente.preferenciasSite?.texto || '').trim();
-    const { refs, avisos } = doPlano ? { refs: aplicacaoDoPlano(itensAceitos(pl), { modo: modoV, materiais: mats, produtos }).refs, avisos: [] } : lerReferencias(cliente.preferenciasSite?.texto || '', { materiais: mats, produtos });
+    const pl = plano || planoDasFotos(planoAplicado(site), planoAtual(site), cliente.preferenciasSite?.texto || '');
+    const local = pl ? null : lerReferencias(cliente.preferenciasSite?.texto || '', { materiais: mats, produtos });
+    const refs = pl ? aplicacaoDoPlano(itensAceitos(pl), { modo: modoV, materiais: mats, produtos }).refs : local.refs;
     const L = normalizarLayout(site?.layout);
     const direta = site?.modo === 'custom' ? { banner: L.imagens.hero || null, sobre: L.imagens.marca || null } : { banner: normalizarVisual(site?.pacote?.visual).banner };
     const r = aplicarReferencias(mats, refs, { direta, produtos });
     await salvarUsos(r.patches);
     materiais.splice(0, materiais.length, ...comUsos(mats, r.patches));
-    const fotosTexto = { em: new Date().toISOString(), aplicadas: r.aplicadas, conflitos: r.conflitos, avisos };
+    const fotosTexto = { em: new Date().toISOString(), doPlano: Boolean(pl), aplicadas: r.aplicadas, conflitos: r.conflitos, escolhas: r.escolhas, avisos: local?.avisos || [], naoEntendidas: local?.naoEntendidas || [], inexistentes: local?.inexistentes || [], resumo: local?.resumo || '' };
     if (site) await salvarSite({ fotosTexto });
     document.dispatchEvent(new CustomEvent('gcc:materiais', { detail: { clienteId: cliente.id, lista: [...materiais] } }));
     return fotosTexto;
+  };
+
+  const usarNoSeletor = async (lista = []) => {
+    let atual = await db.listar(COL.materiais, { clienteId: cliente.id });
+    for (const u of lista) { const p = resolverEscolha(atual, u); await salvarUsos(p); atual = comUsos(atual, p); }
+    materiais.splice(0, materiais.length, ...atual);
+    document.dispatchEvent(new CustomEvent('gcc:materiais', { detail: { clienteId: cliente.id, lista: [...materiais] } }));
   };
 
   // O ÚNICO "Gerar site" (passo 4). Se o OUTRO modo já foi gerado e este ainda não, a base (textos principais, cores,
@@ -223,7 +231,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const direta = custom ? { banner: L.imagens.hero || null, sobre: L.imagens.marca || null } : { banner: normalizarVisual(site?.pacote?.visual).banner };
     // Fotos: só as dos itens aceitos (as marcas antigas "definido pelo texto" saem); a escolha manual em "Usar em" vence.
     // As refs de foto vêm do plano INTEIRO (aplicarReferencias troca todas as marcas de texto de uma vez).
-    const comFoto = itens.some((x) => ['banner_fotos', 'clientes_fotos', 'produto_fotos'].includes(x.tipo));
+    const comFoto = itens.some((x) => ['banner_fotos', 'clientes_fotos', 'produto_fotos', 'galeria_fotos', 'sobre_fotos', 'nao_fotos'].includes(x.tipo));
     const refs = comFoto ? aplicacaoDoPlano(planoAplicado(site) ? itensAceitos(planoAplicado(site)) : itens, { modo: modoV, materiais: mats, produtos }).refs : [];
     const rf = comFoto ? aplicarReferencias(mats, refs, { direta, produtos }) : { patches: [], conflitos: [], aplicadas: [] };
     await salvarUsos(rf.patches);
@@ -233,7 +241,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const comRec = custom ? { ...antes, config: { ...antes.config, recursos: a.recursos, ...(a.pagamentosConfig ? { pagamentos: a.pagamentosConfig } : {}) } } : { pacote: { ...antes.pacote, recursos: a.recursos } };
     const r = aplicarOperacoes(comRec, a.ops, { modo: modoV, materiais, produtos });
     const v = registrarVersao(site, { modo: modoV, estadoAntes: antes, estadoDepois: r.estado, resumo, origem: 'plano', extra });
-    await salvarSite({ ...r.estado, ...v, ...(comFoto ? { fotosTexto: { em: new Date().toISOString(), aplicadas: rf.aplicadas, conflitos: rf.conflitos, avisos: [] } } : {}) });
+    await salvarSite({ ...r.estado, ...v, ...(comFoto ? { fotosTexto: { em: new Date().toISOString(), aplicadas: rf.aplicadas, conflitos: rf.conflitos, escolhas: rf.escolhas, avisos: [] } } : {}) });
     return { conflitos: rf.conflitos, recusadas: r.descartadas.filter((d) => !/já est|já aparece|já é|já usa/.test(d.motivo)).map((d) => d.motivo) };
   }
   // "Aplicar o plano": só os itens e sugestões marcados. Estrutura primeiro (versão nova), depois os textos com a lista
@@ -453,7 +461,8 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ${blocoAnaliseHtml(cliente, site, { saude })}`;
     const caixa = $('[data-como-quero]', alvo);
     ligarPreferencias(caixa, cliente, () => { const x = $('[data-referencia-extra]', caixa); if (x) x.outerHTML = referenciaExtraHtml(cliente); }, { aplicarFotosTexto: site?.modo ? aplicarFotosTexto : null });
-    ligarAnalise($('[data-analise-pedido]', alvo), { cliente, get site() { return site; }, salvarSite, produtos: produtosComF(), materiais, plataforma: plat, tema: String(site?.tema || ''), modo: modoV, saude, aplicar: aplicarPlano });
+    ligarAnalise($('[data-analise-pedido]', alvo), { cliente, get site() { return site; }, salvarSite, produtos: produtosComF(), materiais, plataforma: plat, tema: String(site?.tema || ''), modo: modoV, saude, aplicar: aplicarPlano,
+      aplicarFotos: (plano) => aplicarFotosTexto({ plano }), usarNoSeletor });
     on(alvo, 'change', '[data-plataforma]', (i) => ocupado(i, async () => {
       const novo = i.value;
       await salvarSite({ ...patchPlataforma(novo), ...(novo === 'shopify' && !TEMAS_SHOPIFY.some(([k]) => k === site?.tema) ? { tema: null } : {}), ...(novo !== 'shopify' && TEMAS_SHOPIFY.some(([k]) => k === site?.tema) ? { tema: null } : {}) });
@@ -489,7 +498,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           ${designHtml(cliente, site)}
           ${animacoesHtml(cliente, site)}
           ${ajustesRapidosHtml()}
-          ${resultadoFotosTextoHtml(site.fotosTexto)}${conferenciaHtml(site)}${caraDeIaHtml({ cliente, site, modo: modoV, produtos: produtosComF() })}</div>` : ''}</div>
+          <div data-fotos-texto-passo4>${resultadoFotosTextoHtml(site.fotosTexto, { mantidos: cliente.preferenciasSite?.conflitosMantidos || [] })}</div>${conferenciaHtml(site)}${caraDeIaHtml({ cliente, site, modo: modoV, produtos: produtosComF() })}</div>` : ''}</div>
       <details class="card mt-4" data-conteudo-manual ${!gerado && plat ? '' : ''}><summary class="cursor-pointer font-semibold">Editar os textos à mão (sem IA)</summary>
         ${plat ? formularioConteudoHtml(c, cfg) : '<p class="hint mt-2">Escolha a plataforma no passo 3.</p>'}</details>
       ${plat ? `<div class="card mt-4" data-cartao-depoimentos><h3 class="mb-1 font-semibold"><i class="fa-solid fa-star-half-stroke mr-1 text-amber-500"></i> Depoimentos do site</h3>
@@ -516,6 +525,14 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       if (mostrarDepoisDeGerar.has(cliente.id)) { mostrarDepoisDeGerar.delete(cliente.id); mostrarResultado($('[data-area-resultado]', alvo), 'Pronto: site gerado. A prévia está aqui; ajuste à vontade e depois vá para "Aprovar".'); }
     }
     on(alvo, 'click', '[data-corrigir-faltou]', (b) => ocupado(b, () => corrigirFaltou()));
+    // Conflitos das fotos (texto x seletor): "Usar F27" muda o seletor; o conflito resolvido sai da lista guardada.
+    const caixaFotos = $('[data-fotos-texto-passo4]', alvo);
+    if (caixaFotos) ligarEscolhas(caixaFotos, cliente, { depois: async ({ chave }) => {
+      const ft = site.fotosTexto || {};
+      await salvarSite({ fotosTexto: { ...ft, escolhas: (ft.escolhas || []).filter((e) => e.chave !== chave) } });
+      caixaFotos.innerHTML = resultadoFotosTextoHtml(site.fotosTexto, { mantidos: cliente.preferenciasSite?.conflitosMantidos || [] });
+      mostrarResultado(caixaFotos, 'Escolha feita. Gere o site de novo para a prévia mostrar a mudança.');
+    } });
     on(alvo, 'click', '[data-conferir-de-novo]', (b) => ocupado(b, async () => { await conferirDoSite(); recarregar(); mostrarResultado('[data-conferencia]', 'Conferência refeita.'); }));
     on(alvo, 'click', '[data-ver-plano]', (b) => abrirPlanoDaVersao(site, b.dataset.verPlano, site.conferencia?.versao || null, { saude }));
     on(alvo, 'click', '[data-mostrar-previa-loja]', (b) => { const a = $('[data-area-previa-loja]', alvo); a.classList.toggle('hidden'); b.setAttribute('aria-expanded', String(!a.classList.contains('hidden'))); b.innerHTML = a.classList.contains('hidden') ? '<i class="fa-solid fa-eye"></i> Ver prévia' : '<i class="fa-solid fa-eye-slash"></i> Esconder prévia'; });

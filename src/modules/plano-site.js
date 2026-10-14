@@ -1,7 +1,8 @@
 // "Analisar meu pedido" (passo 3), "Conferência do pedido" (passo 4) e as tarefas de loja do plano (passo 6).
 // Regras em lib/plano-site.js; aqui só a tela e a gravação. O plano mora no site (site.planos, os 10 últimos); nada
 // é aplicado antes de "Aplicar o plano" (quem aplica é sites.js, pelas mesmas regras de sempre).
-import { analisarPedidoSite, conferirPedidoIa, sugerirVersoesTexto } from '../core/ia.js';
+import { analisarPedidoSite, conferirPedidoIa, sugerirVersoesTexto, reanalisarSecao } from '../core/ia.js';
+import { escolhasHtml, ligarEscolhas } from './preferencias-site.js';
 import { emailAtual } from '../core/auth.js';
 import {
   ehItemTexto, pendenciasParte, alegacoesDe, numerosDe, textoEscolhido, escolherVersao, definirFonte, confirmarAlegacao,
@@ -11,6 +12,8 @@ import {
 import {
   normalizarPlano, responderPergunta, diferencaPlanos, itensAceitos, TIPOS_PEDIDO, STATUS_ITEM, ONDE, RESULTADO,
   ondeFunciona, contagemConferencia, conferirPorCodigo, itensFaltando, secoesDoModo, tarefasDaLoja,
+  normalizarPlanoSecoes, recomporPlano, aplicarSecao, aplicarTodasSecoes, responderPerguntaSecao, substituirSecao, ehPlanoPorSecao,
+  secoesAplicaveis, conferenciaPorSecao, STATUS_SECAO,
 } from '../lib/plano-site.js';
 import { esc, $, on, toast, ocupado, mostrarResultado, modal, dataBR } from '../core/ui.js';
 
@@ -91,6 +94,51 @@ function itemHtml(x, { leitura = false, saude = false } = {}) {
         ${x.resposta ? `<p class="text-xs text-emerald-800" data-resposta-item><i class="fa-solid fa-reply"></i> Sua resposta: ${esc(x.resposta)}</p>` : ''}</div></div></li>`;
 }
 
+
+// ---------- "Entendi assim": um cartão por seção do texto do operador ----------
+const COR_SECAO = { entendido: 'tag-ok', decidir: 'tag-warn', impossivel: 'tag-bad' };
+function perguntaSecaoHtml(q, leitura) {
+  return `<div class="rounded bg-amber-50 p-2" data-pergunta-secao="${esc(q.id)}"><p class="text-sm font-semibold text-amber-800"><i class="fa-solid fa-circle-question"></i> ${esc(q.texto)}</p>
+    ${q.resposta ? `<p class="mt-1 text-xs text-emerald-800" data-resposta-secao><i class="fa-solid fa-reply"></i> Sua resposta: ${esc(q.resposta)}</p>`
+    : leitura ? '' : `<div class="mt-1 flex flex-wrap gap-2">${q.opcoes.map((o, i) => `<button type="button" class="btn-ghost btn-sm min-h-[44px]" data-responder-secao="${esc(q.id)}" data-opcao="${i}">${esc(o.texto)}</button>`).join('')}</div>`}</div>`;
+}
+function secaoHtml(plano, s, { leitura, saude }) {
+  const itens = plano.itens.filter((x) => x.secao === s.id);
+  const perguntas = (plano.perguntas || []).filter((q) => q.secao === s.id);
+  const ign = (plano.ignorado || []).filter((x) => x.secao === s.id);
+  const nFotos = new Set((plano.fotos || []).filter((f) => f.secao === s.id).map((f) => f.codigo)).size;
+  const pode = itens.some((x) => x.status === 'pronto');
+  return `<li data-secao="${esc(s.id)}" data-status-secao="${s.status}"><details class="rounded-lg border ${s.aplicada ? 'border-emerald-300' : 'border-slate-200'} bg-white" ${s.status !== 'entendido' && !leitura ? 'open' : ''}>
+    <summary class="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-2 p-2"><span class="tag ${COR_SECAO[s.status]}">${esc(STATUS_SECAO[s.status])}</span>${s.aplicada ? '<span class="tag tag-ok" data-secao-aplicada><i class="fa-solid fa-check"></i> aplicada</span>' : ''}
+      <b class="min-w-0 flex-1 break-words text-sm">${esc(s.titulo)}</b>${nFotos ? `<span class="text-xs text-slate-600">${nFotos} foto${nFotos > 1 ? 's' : ''}</span>` : ''}</summary>
+    <div class="space-y-2 border-t border-slate-100 p-2">
+      <p class="text-sm" data-entendi><b>Entendi:</b> ${esc(s.entendi || (s.faltou ? 'A IA não leu esta parte.' : '—'))}</p>
+      ${s.status === 'impossivel' && s.motivo ? `<p class="text-xs text-rose-700">${esc(s.motivo)}</p>${s.alternativa ? `<p class="text-xs text-slate-700"><b>Mais próximo possível:</b> ${esc(s.alternativa)}</p>` : ''}` : ''}
+      ${s.corrigida ? `<p class="text-xs text-slate-600" data-secao-corrigida><i class="fa-solid fa-pen"></i> Sua correção: "${esc(s.corrigida.texto)}"</p>` : ''}
+      ${ign.map((x) => `<p class="rounded bg-amber-50 p-2 text-xs text-amber-800" data-ignorado><i class="fa-solid fa-triangle-exclamation"></i> ${esc(x.motivo || 'Não foi usado.')}${x.trecho && x.trecho !== s.titulo ? ` ("${esc(x.trecho)}")` : ''}</p>`).join('')}
+      ${perguntas.map((q) => perguntaSecaoHtml(q, leitura)).join('')}
+      ${itens.length ? `<ul class="space-y-2" data-itens-secao>${itens.map((x) => itemHtml(x, { leitura, saude })).join('')}</ul>` : ''}
+      <details class="text-xs"><summary class="flex min-h-[44px] cursor-pointer items-center text-slate-600">Seu texto desta parte</summary><p class="whitespace-pre-wrap break-words rounded bg-slate-50 p-2 text-slate-700">${esc(s.trecho)}</p></details>
+      ${leitura ? '' : `<div class="flex flex-wrap gap-2"><button type="button" class="btn-primary btn-sm min-h-[44px]" data-aplicar-secao="${esc(s.id)}" ${pode ? '' : 'disabled'}><i class="fa-solid fa-check"></i> ${s.aplicada ? 'Aplicar de novo' : 'Aplicar esta seção'}</button>
+        <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-abrir-corrigir="${esc(s.id)}" aria-expanded="false" aria-controls="corrigir-${esc(s.id)}"><i class="fa-solid fa-pen"></i> Corrigir</button></div>
+      <div id="corrigir-${esc(s.id)}" class="rounded bg-slate-50 p-2" data-corrigir-area="${esc(s.id)}" hidden><label class="text-xs font-semibold" for="corr-${esc(s.id)}">O que está errado nesta parte? Só ela é lida de novo.</label>
+        <textarea id="corr-${esc(s.id)}" class="input mt-1" rows="2" maxlength="600" data-correcao="${esc(s.id)}" placeholder="Ex.: a F27 é a principal; a F31 vai só na galeria do produto"></textarea>
+        <button type="button" class="btn-ia btn-sm mt-1 min-h-[44px]" data-enviar-correcao="${esc(s.id)}"><i class="fa-solid fa-wand-magic-sparkles"></i> Ler esta parte de novo</button></div>`}
+    </div></details></li>`;
+}
+function entendiAssimHtml(plano, { leitura, saude, escolhas = [], mantidos = [] }) {
+  const n = (st) => plano.secoes.filter((s) => s.status === st).length;
+  const geral = (plano.ignorado || []).filter((x) => !x.secao);
+  return `<div class="mt-2" data-entendi-assim><h5 class="text-sm font-semibold">Entendi assim</h5>
+    <p class="text-xs text-slate-600" data-contagem-secoes>${plano.secoes.length} parte(s) do seu texto, na sua ordem: <b>${n('entendido')}</b> entendida(s) · <b>${n('decidir')}</b> para decidir · <b>${n('impossivel')}</b> não dá.</p>
+    ${(plano.inexistentes || []).length ? `<p class="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800" data-codigos-inexistentes><i class="fa-solid fa-triangle-exclamation"></i> Não existe esse código nos Materiais: ${esc(plano.inexistentes.map((x) => x.codigo).join(', '))}. Envie a foto em Materiais (passo 2) e analise de novo.</p>` : ''}
+    ${geral.map((x) => `<p class="mt-1 rounded bg-amber-50 p-2 text-xs text-amber-800" data-ignorado><i class="fa-solid fa-triangle-exclamation"></i> Não usado: "${esc(x.trecho)}" — ${esc(x.motivo)}</p>`).join('')}
+    ${leitura ? '' : `<div class="mt-2 flex flex-wrap items-center gap-2"><button type="button" class="btn-primary min-h-[44px]" data-aplicar-tudo ${secoesAplicaveis(plano).length ? '' : 'disabled'}><i class="fa-solid fa-check-double"></i> Aplicar tudo</button>
+      <span class="hint !mt-0">Fotos vão para o "Usar em" (você ainda pode mudar lá) e os textos para o plano. As perguntas em aberto ficam como estão.</span></div>
+    <div data-plano-conflitos>${escolhasHtml(escolhas, mantidos)}</div>`}
+    <ol class="mt-2 space-y-2" data-secoes-plano>${plano.secoes.map((s) => secaoHtml(plano, s, { leitura, saude })).join('')}</ol></div>`;
+}
+
 function diferencaHtml(dif) {
   if (!dif) return '';
   if (dif.igual) return '<p class="mt-2 rounded bg-slate-50 p-2 text-xs text-slate-600" data-diferenca-plano>Igual ao plano anterior.</p>';
@@ -101,20 +149,21 @@ function diferencaHtml(dif) {
 }
 
 /** Plano completo (passo 3, editável; ou só leitura em "Ver plano desta versão"). */
-export function planoHtml(plano, { leitura = false, aplicado = false, saude = false } = {}) {
+export function planoHtml(plano, { leitura = false, aplicado = false, saude = false, escolhas = [], mantidos = [] } = {}) {
   if (!plano) return '';
   const aceitos = itensAceitos(plano).length;
+  const porSecao = ehPlanoPorSecao(plano);
   return `<div class="mt-3 rounded-lg border-2 border-violet-200 bg-white p-3" data-plano="${esc(plano.id)}">
     <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="font-semibold"><i class="fa-solid fa-list-check text-violet-600"></i> Plano ${plano.n ? `#${plano.n}` : ''} <span class="text-xs font-normal text-slate-500">· analisado em ${esc(quando(plano.criadoEm))}${plano.aplicadoEm ? ` · aplicado em ${esc(quando(plano.aplicadoEm))}${plano.versao ? ` (v${plano.versao})` : ''}` : ''}</span></h4>
       ${aplicado ? '<span class="tag tag-ok">aplicado</span>' : ''}</div>
     ${plano.resumo ? `<p class="caption">${esc(plano.resumo)}</p>` : ''}
-    ${leitura ? '' : '<p class="hint">Marque o que você aceita e responda as perguntas. Nada muda no site antes de "Aplicar o plano".</p>'}
+    ${leitura ? '' : `<p class="hint">${porSecao ? 'Confira cada parte do seu texto. Nada muda no site antes de "Aplicar esta seção" ou "Aplicar tudo".' : 'Marque o que você aceita e responda as perguntas. Nada muda no site antes de "Aplicar o plano".'}</p>`}
     ${diferencaHtml(plano.diferenca)}
-    <ul class="mt-2 space-y-2" data-itens-plano>${plano.itens.map((x) => itemHtml(x, { leitura, saude })).join('') || '<li class="hint">A IA não achou pedidos no texto.</li>'}</ul>
+    ${porSecao ? entendiAssimHtml(plano, { leitura, saude, escolhas, mantidos }) : `<ul class="mt-2 space-y-2" data-itens-plano>${plano.itens.map((x) => itemHtml(x, { leitura, saude })).join('') || '<li class="hint">A IA não achou pedidos no texto.</li>'}</ul>`}
     ${plano.sugestoes.length ? `<p class="mt-3 text-sm font-semibold"><i class="fa-solid fa-lightbulb text-amber-500"></i> Sugestões para ficar mais profissional</p><p class="hint !mt-0">Ideias da IA pelo nicho e pela referência. Nenhuma entra sem você marcar.</p>
       <ul class="mt-1 space-y-2" data-sugestoes-plano>${plano.sugestoes.map((x) => itemHtml(x, { leitura, saude })).join('')}</ul>` : ''}
     ${plano.conferencia ? conferenciaListaHtml(plano, plano.conferencia) : ''}
-    ${leitura ? '' : `<div class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3"><button type="button" class="btn-primary" data-aplicar-plano ${aceitos ? '' : 'disabled'}><i class="fa-solid fa-check-double"></i> Aplicar o plano (${aceitos} item(ns))</button>
+    ${leitura ? '' : `<div class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3"><button type="button" class="btn-primary min-h-[44px]" data-aplicar-plano ${aceitos ? '' : 'disabled'}><i class="fa-solid fa-check-double"></i> ${porSecao ? 'Aplicar o plano e gerar o site' : 'Aplicar o plano'} (${aceitos} item(ns))</button>
       <span class="hint">Aplica a estrutura (fotos, seções, frete, pagamento…) e gera os textos com os itens marcados como obrigatórios. A escolha feita em "Usar em" continua valendo.</span></div>`}</div>`;
 }
 
@@ -127,7 +176,7 @@ export function blocoAnaliseHtml(cliente, site, { saude = false } = {}) {
       <p class="caption">A IA lê o que você escreveu (e a referência), e mostra item a item como vai ficar e onde funciona, ANTES de mudar qualquer coisa.</p></div>
       <button type="button" class="btn-ia" data-analisar-pedido><i class="fa-solid fa-wand-magic-sparkles"></i> ${p ? 'Analisar de novo' : 'Analisar meu pedido'}</button></div>
     ${mudou ? '<p class="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-800" data-texto-mudou><i class="fa-solid fa-pen"></i> Você mudou o texto depois desta análise: clique em "Analisar de novo" para ver o que muda.</p>' : ''}
-    <div data-plano-area>${planoHtml(p, { aplicado: p && site?.planoAplicado === p.id, saude })}</div></div>`;
+    <div data-plano-area>${planoHtml(p, { aplicado: p && site?.planoAplicado === p.id, saude, escolhas: site?.fotosTexto?.doPlano ? site.fotosTexto.escolhas || [] : [], mantidos: cliente.preferenciasSite?.conflitosMantidos || [] })}</div></div>`;
 }
 
 // ---------- análise ----------
@@ -142,7 +191,7 @@ export function ligarAnalise(alvo, ctx) {
   };
   const redesenhar = () => {
     const area = $('[data-plano-area]', alvo); const p = planoAtual(ctx.site);
-    if (area) area.innerHTML = planoHtml(p, { aplicado: p && ctx.site?.planoAplicado === p.id, saude: !!ctx.saude });
+    if (area) area.innerHTML = planoHtml(p, { aplicado: p && ctx.site?.planoAplicado === p.id, saude: !!ctx.saude, escolhas: ctx.site?.fotosTexto?.doPlano ? ctx.site.fotosTexto.escolhas || [] : [], mantidos: ctx.cliente.preferenciasSite?.conflitosMantidos || [] });
   };
   // Muda um item de texto do plano atual, grava, redesenha e deixa a frase mexida à vista.
   const mudarItem = async (itemId, f, parteId = null) => {
@@ -206,18 +255,21 @@ export function ligarAnalise(alvo, ctx) {
     const texto = String(ctx.cliente.preferenciasSite?.texto || '').trim();
     if (!texto && !String(ctx.cliente.preferenciasSite?.gostei || '').trim()) throw new Error('Escreva em "Como eu quero o site" o que você quer antes de analisar.');
     const bruto = await analisarPedidoSite({ cliente: ctx.cliente, produtos: ctx.produtos, materiais: ctx.materiais, plataforma: ctx.plataforma, tema: ctx.tema, modo: ctx.modo, secoes: secoesDoModo(ctx.modo) });
+    const { partes, ...resposta } = bruto;
+    const porSecao = Array.isArray(resposta.secoes) && Array.isArray(partes) && partes.length > 0;
     const anterior = planoAtual(ctx.site);
     const novo = {
       id: `pl${Date.now().toString(36)}`, n: ((ctx.site?.planos || []).reduce((m, p) => Math.max(m, p.n || 0), 0)) + 1, criadoEm: new Date().toISOString(),
       base: { texto, gostei: String(ctx.cliente.preferenciasSite?.gostei || '').trim() }, plataforma: ctx.plataforma, tema: ctx.tema || '', modo: ctx.modo,
-      ...normalizarPlano(bruto, contexto()),
+      ...(porSecao ? normalizarPlanoSecoes(resposta, { ...contexto(), secoesTexto: partes }) : normalizarPlano(resposta, contexto())),
     };
     if (anterior) novo.diferenca = diferencaPlanos(anterior, novo);
     await ctx.salvarSite({ planos: [novo, ...(ctx.site?.planos || [])].slice(0, MAX_PLANOS) });
     redesenhar(); $('[data-texto-mudou]', alvo)?.remove();
     b.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Analisar de novo';
     const area = $('[data-plano]', alvo);
-    mostrarResultado(area, `Plano pronto: ${novo.itens.length} item(ns)${novo.sugestoes.length ? ` e ${novo.sugestoes.length} sugestão(ões)` : ''}. Marque o que aceita e clique em "Aplicar o plano".`);
+    mostrarResultado(area, porSecao ? `Entendi assim: ${novo.secoes.length} parte(s) do seu texto. Confira cada uma e clique em "Aplicar esta seção" ou "Aplicar tudo".${novo.ignorado.length ? ` ${novo.ignorado.length} ponto(s) não foram usados: veja nas partes marcadas.` : ''}`
+      : `Plano pronto: ${novo.itens.length} item(ns)${novo.sugestoes.length ? ` e ${novo.sugestoes.length} sugestão(ões)` : ''}. Marque o que aceita e clique em "Aplicar o plano".`);
   }));
   on(alvo, 'change', '[data-aceitar-item]', async (c) => {
     const p = planoAtual(ctx.site); if (!p) return;
@@ -234,10 +286,83 @@ export function ligarAnalise(alvo, ctx) {
     const li = $(`[data-item-plano="${id}"]`, alvo); if (li) mostrarResultado(li, 'Resposta registrada: o item foi atualizado.');
   });
   on(alvo, 'click', '[data-aplicar-plano]', (b) => ocupado(b, () => ctx.aplicar(planoAtual(ctx.site), b)));
+  // ---------- "Entendi assim" ----------
+  const ctxPlano = () => ({ ...contexto(), materiais: ctx.materiais });
+  const cartao = (secaoId) => $(`[data-secao="${secaoId}"]`, alvo);
+  const abrirCartao = (secaoId) => { const d = cartao(secaoId)?.querySelector('details'); if (d) d.open = true; return cartao(secaoId); };
+  // Fotos das seções aplicadas vão para o "Usar em"; conflito com o seletor aparece com os botões de escolha.
+  // (o resultado fica em site.fotosTexto e o redesenho mostra os conflitos no topo do "Entendi assim").
+  const levarFotos = async (plano) => (ctx.aplicarFotos ? ctx.aplicarFotos(plano) : null);
+  ligarEscolhas(alvo, ctx.cliente, { depois: async ({ chave, acao }) => {
+    const ft = ctx.site?.fotosTexto;
+    if (acao === 'usar' && ft) await ctx.salvarSite({ fotosTexto: { ...ft, escolhas: (ft.escolhas || []).filter((e) => e.chave !== chave) } });
+    const p = planoAtual(ctx.site);
+    if (acao === 'usar' && p && ehPlanoPorSecao(p)) await salvarPlano(recomporPlano(p, ctxPlano()));
+    redesenhar();
+    const area = $('[data-entendi-assim]', alvo); if (area) mostrarResultado(area, acao === 'usar' ? 'Escolha feita: o seletor "Usar em" já mostra.' : 'Mantido como está no seletor.');
+  } });
+  on(alvo, 'click', '[data-aplicar-secao]', (b) => ocupado(b, async () => {
+    const id = b.dataset.aplicarSecao; const p = planoAtual(ctx.site); if (!p) return;
+    const novo = aplicarSecao(p, id, ctxPlano());
+    await salvarPlano(novo);
+    const r = await levarFotos(novo);
+    redesenhar();
+    const el = abrirCartao(id);
+    if (el) mostrarResultado(el, `Seção aplicada: ${r?.aplicadas?.length ? 'fotos no "Usar em" e ' : ''}textos no plano.${r?.escolhas?.length ? ' Há conflito com o seletor: escolha no topo do "Entendi assim".' : ''} Para o site sair assim, clique em "Aplicar o plano e gerar o site".`);
+  }));
+  on(alvo, 'click', '[data-aplicar-tudo]', (b) => ocupado(b, async () => {
+    const p = planoAtual(ctx.site); if (!p) return;
+    const novo = aplicarTodasSecoes(p, ctxPlano());
+    await salvarPlano(novo);
+    const r = await levarFotos(novo);
+    redesenhar();
+    const abertas = novo.secoes.filter((s) => s.status === 'decidir').length;
+    mostrarResultado($('[data-entendi-assim]', alvo), `Tudo aplicado: ${itensAceitos(novo).length} item(ns) no plano${r?.aplicadas?.length ? ` e ${r.aplicadas.length} foto(s) no "Usar em"` : ''}.${abertas ? ` ${abertas} parte(s) ainda precisam de decisão.` : ''} Para o site sair assim, clique em "Aplicar o plano e gerar o site".`);
+  }));
+  on(alvo, 'click', '[data-responder-secao]', (b) => ocupado(b, async () => {
+    const p = planoAtual(ctx.site); if (!p) return;
+    const q = (p.perguntas || []).find((x) => x.id === b.dataset.responderSecao);
+    const { plano, usar } = responderPerguntaSecao(p, b.dataset.responderSecao, Number(b.dataset.opcao), ctxPlano());
+    if (usar.length && ctx.usarNoSeletor) await ctx.usarNoSeletor(usar); // foi o operador quem escolheu: vira escolha do seletor
+    const novo = recomporPlano(plano, ctxPlano());
+    await salvarPlano(novo);
+    if (q && novo.secoes.find((s) => s.id === q.secao)?.aplicada) await levarFotos(novo);
+    redesenhar();
+    const el = q && abrirCartao(q.secao);
+    if (el) mostrarResultado(el, usar.length ? 'Resposta registrada e o seletor "Usar em" já mostra a escolha.' : 'Resposta registrada.');
+  }));
+  on(alvo, 'click', '[data-abrir-corrigir]', (b) => {
+    const area = $(`[data-corrigir-area="${b.dataset.abrirCorrigir}"]`, alvo); if (!area) return;
+    area.hidden = !area.hidden; b.setAttribute('aria-expanded', String(!area.hidden));
+    if (!area.hidden) $('textarea', area)?.focus();
+  });
+  on(alvo, 'click', '[data-enviar-correcao]', (b) => ocupado(b, async () => {
+    const id = b.dataset.enviarCorrecao; const p = planoAtual(ctx.site); if (!p) return;
+    const s = p.secoes.find((x) => x.id === id);
+    const correcao = $(`[data-correcao="${id}"]`, alvo)?.value.trim() || '';
+    if (!correcao) throw new Error('Escreva o que está errado nesta parte antes de pedir a nova leitura.');
+    const d = await reanalisarSecao({ cliente: ctx.cliente, secao: { id, titulo: s.titulo, texto: s.trecho }, atual: s, correcao, produtos: ctx.produtos, materiais: ctx.materiais, plataforma: ctx.plataforma, tema: ctx.tema });
+    const novo = substituirSecao(p, id, d, ctxPlano(), correcao);
+    await salvarPlano(novo);
+    redesenhar();
+    const el = abrirCartao(id);
+    if (el) mostrarResultado(el, 'Esta parte foi lida de novo com a sua correção. Confira e clique em "Aplicar esta seção".');
+  }));
 }
 
 // ---------- conferência ----------
+const RESULTADO_SECAO = { atendido: 'Feito no site', parcial: 'Parcial', nao: 'Não feito' };
+const codigosHtml = (cs) => (cs?.length ? `<span class="mt-1 flex flex-wrap gap-1" data-codigos-conferidos>${cs.map((c) => `<span class="tag ${c.ok ? 'tag-ok' : 'tag-bad'}">${esc(c.codigo)} ${c.ok ? '<i class="fa-solid fa-check" aria-label="no lugar"></i>' : '<i class="fa-solid fa-xmark" aria-label="faltando"></i>'}</span>`).join('')}</span>` : '');
+/** Conferência por seção do texto do operador: cada item feito / não feito (motivo) e cada código de foto no lugar pedido. */
+function conferenciaSecoesHtml(plano, conf) {
+  return `<div class="mt-2 space-y-2" data-lista-conferencia data-conferencia-secoes>${conferenciaPorSecao(plano, conf.resultados).map(({ secao, linhas }) => {
+    const feitos = linhas.filter((l) => l.status === 'atendido').length;
+    return `<details class="rounded border border-slate-200 bg-white" data-conferencia-secao="${esc(secao.id)}" ${feitos < linhas.length ? 'open' : ''}><summary class="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-2 px-2"><span class="tag ${!linhas.length ? '' : feitos === linhas.length ? 'tag-ok' : feitos ? 'tag-warn' : 'tag-bad'}">${linhas.length ? `${feitos} de ${linhas.length} feito(s)` : 'sem pedido'}</span><b class="min-w-0 flex-1 break-words text-sm">${esc(secao.titulo)}</b></summary>
+      <ul class="space-y-1 border-t border-slate-100 p-2 text-sm">${linhas.map((l) => `<li class="flex flex-wrap items-start gap-2" data-conferido="${esc(l.item.id)}" data-resultado="${l.status}"><span class="tag ${COR_RES[l.status]}">${esc(RESULTADO_SECAO[l.status])}</span><span class="min-w-0 flex-1"><b>${esc(l.item.pedido || TIPOS_PEDIDO[l.item.tipo])}</b>: ${esc(l.motivo || '')}${l.por === 'ia' ? ' <span class="text-xs text-slate-500">(conferido pela IA)</span>' : ''}${codigosHtml(l.codigos)}</span></li>`).join('') || '<li class="hint">Nada para conferir nesta parte.</li>'}</ul></details>`;
+  }).join('')}</div>`;
+}
 function conferenciaListaHtml(plano, conf) {
+  if (ehPlanoPorSecao(plano)) return conferenciaSecoesHtml(plano, conf);
   const itens = [...plano.itens, ...plano.sugestoes].filter((x) => conf.resultados?.[x.id]);
   return `<ul class="mt-2 space-y-1 text-sm" data-lista-conferencia>${itens.map((x) => { const r = conf.resultados[x.id]; return `<li class="flex flex-wrap items-start gap-2 rounded bg-slate-50 px-2 py-1" data-conferido="${esc(x.id)}" data-resultado="${r.status}">
     <span class="tag ${COR_RES[r.status]}">${esc(RESULTADO[r.status])}</span><span class="min-w-0 flex-1"><b>${esc(x.pedido || TIPOS_PEDIDO[x.tipo])}</b>: ${esc(r.motivo || '')}${r.por === 'ia' ? ' <span class="text-xs text-slate-400">(conferido pela IA)</span>' : ''}</span></li>`; }).join('')}</ul>`;

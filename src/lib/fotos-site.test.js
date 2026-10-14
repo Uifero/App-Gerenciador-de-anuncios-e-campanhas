@@ -66,11 +66,13 @@ describe('referências no texto', () => {
     const { refs } = lerReferencias('efe três na galeria. f 2 como foto principal do thermora. Na história use F4', { materiais: lista, produtos });
     expect(refs.map((r) => [r.codigo, r.uso, r.principal])).toEqual([['F3', 'galeria', false], ['F2', 'produto', true], ['F4', 'sobre', false]]);
   });
-  it('código que não existe e destino que não entendeu viram aviso, nada inventado', () => {
-    const { refs, avisos } = lerReferencias('F20 no banner, F1 na vitrine', { materiais: lista, produtos });
+  it('código que não existe e destino que não entendeu viram UM resumo cada, nada inventado', () => {
+    const { refs, avisos, naoEntendidas, inexistentes, resumo } = lerReferencias('F20 no banner, F1 na vitrine', { materiais: lista, produtos });
     expect(refs).toEqual([]);
-    expect(avisos.join(' ')).toMatch(/F20 não existe nos Materiais do cliente \(os códigos vão de F1 a F8\)/);
-    expect(avisos.join(' ')).toMatch(/Não entendi onde usar F1/);
+    expect(inexistentes).toEqual(['F20']);
+    expect(avisos.join(' ')).toMatch(/Não existe esse código nos Materiais do cliente: F20 \(os códigos vão de F1 a F8\)/);
+    expect(naoEntendidas).toEqual([expect.objectContaining({ codigos: ['F1'], motivo: 'o texto não diz o lugar' })]);
+    expect(resumo).toBe('1 foto não foi entendida sem IA. Clique em "Analisar meu pedido" para a IA resolver.');
   });
   it('aplica marcando "texto" e refaz do zero a cada geração', () => {
     const { refs } = lerReferencias('F3 no banner, F5 no Thermora', { materiais: lista, produtos });
@@ -97,6 +99,8 @@ describe('prioridade: o seletor vence o texto', () => {
     expect(r.conflitos[0]).toMatch(/o banner já foi escolhido no seletor \(F2\): vale o seletor/);
     expect(r.conflitos[1]).toMatch(/F5 está "Não usar no site": vale o seletor/);
     expect(r.conflitos[2]).toMatch(/tirada no seletor/);
+    // cada conflito traz a escolha em um clique
+    expect(r.escolhas.map((e) => [e.usar.rotulo, e.manter.rotulo])).toEqual([['Somar F3 ao banner', 'Manter só F2'], ['Usar F5 no Thermora', 'Manter fora do site'], ['Usar F6 no Thermora', 'Manter como está']]);
   });
   it('escolha direta do modo (ajustes rápidos) também vence o texto', () => {
     const lista = [foto('m1', 'F1'), foto('m3', 'F3')];

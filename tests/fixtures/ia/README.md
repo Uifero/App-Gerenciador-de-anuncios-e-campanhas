@@ -42,6 +42,9 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |
 | `api-falsa.mjs` | API da Anthropic falsa (stream SSE) para testar a reserva | sem IA |
+| `plano-thermora-secoes-real.json` | "Analisar meu pedido" por seção (tarefa `plano_site`, Sonnet 5, maxTokens 16000) com `tests/fixtures/pedido-site-thermora-longo.md` (~11.400 caracteres: "###", "**...:**", "***", listas "F23, F26..." e "f27/f28/...", F99 inexistente, F27 x F41 no seletor): 20 seções, ignorado vazio, ordem certa, F99 marcado, F27/F41 e F29 como perguntas; 14.386 tokens de saída em 93 s | chamada real, 14/10/2026 |
+| `plano-thermora-secoes.json` | O mesmo pedido no formato por seção, escrito à mão (testes unitários e IA simulada no navegador) | escrita à mão |
+| `plano-secao-thermora.json` | "Corrigir" de uma seção (tarefa `plano_secao`, Haiku): a página do produto relida com a correção do operador | escrita à mão |
 
 ## IA simulada no navegador
 Com o app no modo demo, troque `window.fetch` para responder `POST /api/claude` com `{ trabalho: 'mock1' }` (202) e

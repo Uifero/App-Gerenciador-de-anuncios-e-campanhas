@@ -151,24 +151,143 @@ const mudados = (materiais, mapa) => materiais.filter((m) => mapa.has(m.id) && !
 /** Aplica os patches numa cópia da lista (para prévia e para atualizar a tela sem reler o banco). */
 export const comUsos = (materiais = [], patches = []) => materiais.map((m) => { const p = patches.find((x) => x.id === m.id); return p ? { ...m, usos: p.usos } : m; });
 
-// ---------- referências no texto ("F3 no banner, F5 e F6 no Thermora") ----------
+// ---------- referências no texto ("F3 no banner, F5 e F6 no Thermora", listas e títulos) ----------
+// O operador escreve do jeito dele: listas ("F23, F26, F25", "f27/f28/f29", "F20 a F25"), títulos de seção ("### Página do
+// produto", "**Carrinho:**", "Galeria:") e códigos no meio da frase ("nas perguntas frequentes usar F31"). Sem IA, o app
+// entende o lugar pela própria frase ou, sem lugar na frase, pelo título mais próximo acima. "***" e "---" só separam.
+// O que não der para entender vira UMA linha de resumo ("X fotos não foram entendidas sem IA"): a IA resolve no
+// "Analisar meu pedido". Nada é inventado.
 const NUMEROS = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, treze: 13, quatorze: 14, catorze: 14, quinze: 15, dezesseis: 16, dezessete: 17, dezoito: 18, dezenove: 19, vinte: 20 };
-const RE_COD = new RegExp(`\\b(?:f|efe)\\s*-?\\s*(\\d{1,3}|${Object.keys(NUMEROS).join('|')})\\b`, 'g');
-const LIGA = /^[\s,&e]*$/; // só vírgula, "e" ou "&" entre dois códigos = mesmo grupo
-const CONECTORES = /^(?:[\s,:-]|\b(?:no|na|nos|nas|em|de|do|da|dos|das|para|pra|pro|como|vai|vao|fica|ficam|usar|use|usa|coloca|colocar|coloque|e|o|a|os|as|foto|fotos)\b)+/;
-const DESTINOS = [
-  ['nao', /\b(nao usar|nao use|nao vai|nao vao|nao coloca|nao colocar|fora do site|nenhum lugar|ignorar|ignora)\b/],
-  ['banner', /\b(banner|capa da loja|capa do site|topo|hero)\b/],
+const COD = `\\b(?:f|efe)\\s*-?\\s*(\\d{1,3}|${Object.keys(NUMEROS).join('|')})\\b`;
+const RE_COD = new RegExp(COD, 'g');
+const TEM_COD = new RegExp(COD);
+const numDe = (x) => (/^\d+$/.test(x) ? Number(x) : NUMEROS[x] || 0);
+// Normaliza SEM mudar o tamanho do texto (as posições valem no original): acentos fora, tudo minúsculo.
+const norm = (s) => String(s ?? '').normalize('NFC').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+// Entre dois códigos só vírgula, barra, ponto e vírgula, "e", "&", espaço ou quebra de linha = a mesma lista.
+const SO_SEPARADOR = /^(?:[\s,;/&+|]|\be\b)*$/;
+// "F20 a F25", "F20-F25", "F20 até F25" = intervalo (até 40 fotos).
+const INTERVALO = /^\s*(?:-|–|—|\ba\b|\bate\b)\s*$/;
+const MAX_INTERVALO = 40;
+
+/** Listas de códigos do texto (já normalizado): [{ ns: [números, sem repetir], ini, fim }]. */
+function gruposDeCodigos(t) {
+  const achados = [...t.matchAll(RE_COD)].map((x) => ({ n: numDe(x[1]), ini: x.index, fim: x.index + x[0].length })).filter((a) => a.n > 0);
+  const grupos = [];
+  for (const a of achados) {
+    const g = grupos[grupos.length - 1];
+    const gap = g ? t.slice(g.fim, a.ini) : null;
+    const ult = g ? g.ns[g.ns.length - 1] : 0;
+    if (g && INTERVALO.test(gap) && a.n > ult && a.n - ult <= MAX_INTERVALO) { for (let k = ult + 1; k <= a.n; k++) g.ns.push(k); g.fim = a.fim; }
+    else if (g && SO_SEPARADOR.test(gap)) { g.ns.push(a.n); g.fim = a.fim; }
+    else grupos.push({ ns: [a.n], ini: a.ini, fim: a.fim });
+  }
+  for (const g of grupos) g.ns = [...new Set(g.ns)];
+  return grupos;
+}
+/** Todos os códigos citados, na ordem em que aparecem (listas e intervalos abertos, sem repetir): [{ codigo, pos }]. */
+export function codigosDoTexto(texto) {
+  const vistos = new Set(), out = [];
+  for (const g of gruposDeCodigos(norm(texto))) for (const n of g.ns) if (!vistos.has(n)) { vistos.add(n); out.push({ codigo: `F${n}`, pos: g.ini }); }
+  return out;
+}
+
+// ---------- títulos e seções do texto ----------
+const RE_SEPARADOR = /^\s*(?:[*_\-–—=~]\s*){3,}$/;
+const limparTitulo = (s) => String(s).replace(/[*_#`]+/g, '').replace(/\s*:\s*$/, '').trim();
+/**
+ * Título de uma linha: "### Página do produto" (nivel 1), "**Carrinho:**" (nivel 2, com ou sem texto depois) e
+ * "Galeria do produto:" (nivel 3, subtítulo) valem para as linhas de baixo (fixo); "Galeria: F27, F28" (rótulo com
+ * conteúdo) vale só para a própria linha. null = não é título.
+ */
+export function tituloDaLinha(linha) {
+  const l = String(linha ?? '');
+  if (RE_SEPARADOR.test(l)) return null;
+  let m = /^\s*#{1,6}\s+(.+?)\s*#*\s*$/.exec(l);
+  if (m) return { titulo: limparTitulo(m[1]), resto: '', fixo: true, nivel: 1 };
+  m = /^\s*(?:[-•]\s*)?\*{1,3}([^*\n]{1,80})\*{1,3}\s*(.*)$/.exec(l);
+  if (m) {
+    const dentro = m[1].trim(), depois = m[2];
+    if (/:$/.test(dentro) || /^:/.test(depois) || !depois.trim()) return { titulo: limparTitulo(dentro), resto: depois.replace(/^:\s*/, ''), fixo: true, nivel: 2 };
+  }
+  m = /^\s*(?:[-•]\s*)?([^:.!?\n]{2,60}):(?!\/\/)\s*(.*)$/.exec(l);
+  if (m && /[a-zà-ú]/i.test(m[1]) && !TEM_COD.test(norm(m[1])) && m[1].trim().split(/\s+/).length <= 6) return { titulo: limparTitulo(m[1]), resto: m[2], fixo: !m[2].trim(), nivel: 3 };
+  return null;
+}
+
+/**
+ * Linhas com os títulos que valem nelas: [{ ini, fim, secao, sub, rotulo }] (secao = título de seção acima; sub =
+ * subtítulo dentro dela, como "Galeria do produto:"; rotulo = o da própria linha).
+ */
+function contextosDasLinhas(orig) {
+  const out = [];
+  let pos = 0, secao = null, sub = null;
+  for (const linha of orig.split('\n')) {
+    const ini = pos, fim = pos + linha.length; pos = fim + 1;
+    if (RE_SEPARADOR.test(linha)) { secao = null; sub = null; out.push({ ini, fim }); continue; } // separador: o título de cima não vale mais
+    const t = tituloDaLinha(linha);
+    if (t?.fixo && t.nivel < 3) { secao = t.titulo; sub = null; } else if (t?.fixo) sub = t.titulo;
+    out.push({ ini, fim, secao, sub, rotulo: t && !t.fixo ? t.titulo : null });
+  }
+  return out;
+}
+
+const MAX_SECOES = 30;
+/**
+ * Divide o texto nas seções do operador, na ordem dele: [{ id: 'S1', titulo, texto }]. Começa uma seção nos títulos mais
+ * fortes que o texto usa ("###" e "**...:**"; sem eles, linha que termina em ":"; sem nenhum, cada rótulo "Banner: ...";
+ * sem rótulo, cada parágrafo). Subtítulo fica dentro da seção. "***"/"---" só separam. Nada fica de fora: acima de 30
+ * seções, o resto entra na última.
+ */
+export function dividirSecoes(texto) {
+  const orig = String(texto ?? '').normalize('NFC').replace(/\r\n?/g, '\n');
+  if (!orig.trim()) return [];
+  const linhas = orig.split('\n').map((l) => ({ l, t: tituloDaLinha(l), sep: RE_SEPARADOR.test(l) }));
+  const nivel = linhas.some((x) => x.t?.fixo && x.t.nivel < 3) ? 2 : linhas.some((x) => x.t?.fixo) ? 3 : 0;
+  const temRotulo = linhas.some((x) => x.t);
+  const secoes = [];
+  let atual = null;
+  const nova = (titulo) => { atual = { titulo, linhas: [] }; secoes.push(atual); };
+  linhas.forEach((x, i) => {
+    if (x.sep) { atual = null; return; }
+    const abre = nivel ? Boolean(x.t?.fixo && x.t.nivel <= nivel) : temRotulo ? Boolean(x.t) : Boolean(x.l.trim()) && (!atual || !linhas[i - 1]?.l.trim());
+    if (abre) nova(x.t ? x.t.titulo : '');
+    if (!x.l.trim() && !atual) return;
+    if (!atual) nova('');
+    atual.linhas.push(x.l);
+  });
+  const limpas = secoes.map((s) => ({ ...s, texto: s.linhas.join('\n').trim() })).filter((s) => s.texto);
+  if (limpas.length > MAX_SECOES) { const resto = limpas.splice(MAX_SECOES - 1); limpas.push({ titulo: resto[0].titulo, texto: resto.map((s) => s.texto).join('\n\n') }); }
+  return limpas.map((s, i) => {
+    const primeira = s.texto.split('\n')[0].replace(/[*#_`]+/g, '').trim();
+    const rotulo = tituloDaLinha(s.texto.split('\n')[0])?.titulo;
+    const titulo = s.titulo || rotulo || (i === 0 && nivel ? 'Começo do texto' : primeira.length > 48 ? `${primeira.slice(0, 45).trim()}…` : primeira);
+    return { id: `S${i + 1}`, titulo, texto: s.texto };
+  });
+}
+
+// ---------- lugar de cada lista ----------
+const RE_NAO = /\b(nao usar|nao use|nao vai|nao vao|nao coloca|nao colocar|fora do site|nenhum lugar|ignorar|ignora)\b/;
+const RE_PRINCIPAL = /\b(foto principal|imagem principal|capa do produto|como principal|principal d[oa])\b/;
+const RE_PRODUTO = /\b(paginas? d[oe] produto|fotos? d[oe] produto|galeria d[oe] produto|carrossel d[oe] produto|produto)\b/;
+// Lugares com vaga no seletor "Usar em" e lugares que o site não tem para foto (a IA decide o que fazer com eles).
+const LUGARES = [
+  ['banner', /\b(banner|topo|capa|hero)\b/],
   ['clientes', /\b(depoimentos?|clientes? reais?|prova social|provas sociais|avaliac\w*|quem ja comprou)\b/],
+  ['faq', /\b(perguntas frequentes|perguntas e respostas|faq|duvidas)\b/],
   ['sobre', /\b(sobre|historia|quem somos|nossa marca|da marca)\b/],
-  ['galeria', /\b(galeria)\b/],
+  ['galeria', /\b(galeria|carrossel)\b/],
+  ['carrinho', /\b(carrinho|checkout|finalizar compra)\b/],
+  ['rodape', /\b(rodape)\b/],
+  ['beneficios', /\b(beneficios|como usar|modo de uso|como tomar)\b/],
 ];
+export const LUGARES_SEM_FOTO = { faq: 'perguntas frequentes', carrinho: 'carrinho', rodape: 'rodapé', beneficios: 'seção de benefícios/como usar' };
 const destinoTexto = (k, p) => (k === 'produto' ? `no ${p?.nome || 'produto'}` : { banner: 'no banner', clientes: 'em Clientes reais', sobre: 'em Sobre a loja', galeria: 'na Galeria', nao: 'fora do site (não usar)' }[k]);
 
 function acharProduto(alvo, produtos) {
-  const a = ` ${sem(alvo).replace(/[^a-z0-9]+/g, ' ')} `;
+  const a = ` ${norm(alvo).replace(/[^a-z0-9]+/g, ' ')} `;
   const notas = produtos.map((p) => {
-    const nome = sem(p.nome).replace(/[^a-z0-9]+/g, ' ').trim(); if (!nome) return 0;
+    const nome = norm(p.nome).replace(/[^a-z0-9]+/g, ' ').trim(); if (!nome) return 0;
     if (a.includes(` ${nome} `)) return 1000 + nome.length; // o nome inteiro está no texto
     return nome.split(' ').filter((w) => w.length >= 4 && a.includes(` ${w} `)).length; // palavras do nome
   });
@@ -176,45 +295,79 @@ function acharProduto(alvo, produtos) {
   const melhores = produtos.filter((_, i) => notas[i] === max);
   return max > 0 && melhores.length === 1 ? melhores[0] : null; // empate = ambíguo: não chuta
 }
+/** Lugar de um trecho: { uso, produto?, principal?, lugar? } ou null. uso 'semlugar' = lugar sem foto no site. */
 function classificar(alvo, produtos) {
-  const t = sem(alvo);
-  if (DESTINOS[0][1].test(t)) return { uso: 'nao' };
+  const t = norm(alvo);
+  if (!t.trim()) return null;
+  if (RE_NAO.test(t)) return { uso: 'nao' };
+  const principal = RE_PRINCIPAL.test(t);
   const p = acharProduto(alvo, produtos);
-  if (p) return { uso: 'produto', produto: p, principal: /\b(principal|capa)\b/.test(t) };
-  for (const [k, re] of DESTINOS.slice(1)) if (re.test(t)) return { uso: k };
+  if (p) return { uso: 'produto', produto: p, principal };
+  if (principal || RE_PRODUTO.test(t)) return { uso: 'produto', produto: produtos.length === 1 ? produtos[0] : null, principal };
+  for (const [k, re] of LUGARES) if (re.test(t)) return LUGARES_SEM_FOTO[k] ? { uso: 'semlugar', lugar: LUGARES_SEM_FOTO[k] } : { uso: k };
   return null;
 }
+/** A frase manda; o título completa ("Galeria:" debaixo de "### Página do produto" = fotos do produto). */
+function combinar(d, ctx) {
+  if (!d) return ctx;
+  if (ctx?.uso === 'produto' && d.uso === 'galeria') return { ...ctx, principal: false };
+  if (ctx?.uso === 'produto' && d.uso === 'produto' && !d.produto) return { ...d, produto: ctx.produto };
+  return d;
+}
+
+// Fim de frase ou começo da próxima instrução: o que vem depois disso no vão entre duas listas é da lista seguinte.
+const CORTE = /[.;!?\n]|,|\s(?:e|mas|depois)\s/;
+const CONECTORES = /^(?:[\s,:-]|\b(?:no|na|nos|nas|em|de|do|da|dos|das|para|pra|pro|como|vai|vao|fica|ficam|usar|use|usa|coloca|colocar|coloque|e|o|a|os|as|foto|fotos|quero|queria)\b)+/;
 
 /**
  * Lê as referências por código no texto. Devolve { refs: [{ codigo, materialId, uso, produtoId, produtoNome, principal,
- * ordem }], avisos: [texto] }. Código que não existe e destino que não deu para entender viram aviso (nada é inventado).
+ * ordem }], naoEntendidas: [{ codigos, trecho, motivo }], inexistentes: ['F99'], resumo, avisos }. `resumo` é a linha
+ * única do que não deu para entender sem IA; `avisos` junta o resumo e os códigos que não existem (nada é inventado).
  */
 export function lerReferencias(texto, { materiais = [], produtos = [] } = {}) {
-  const t = sem(texto);
-  const achados = [...t.matchAll(RE_COD)].map((x) => ({ n: /^\d+$/.test(x[1]) ? Number(x[1]) : NUMEROS[x[1]], ini: x.index, fim: x.index + x[0].length }));
-  if (!achados.length) return { refs: [], avisos: [] };
-  // Códigos seguidos (separados só por vírgula/"e") formam um grupo com o mesmo destino.
-  const grupos = [];
-  for (const a of achados) {
-    const g = grupos[grupos.length - 1];
-    if (g && LIGA.test(t.slice(g.fim, a.ini))) { g.ns.push(a.n); g.fim = a.fim; } else grupos.push({ ns: [a.n], ini: a.ini, fim: a.fim });
-  }
+  const orig = String(texto ?? '').normalize('NFC').replace(/\r\n?/g, '\n');
+  const t = norm(orig);
+  const grupos = gruposDeCodigos(t);
+  if (!grupos.length) return { refs: [], avisos: [], naoEntendidas: [], inexistentes: [], resumo: '' };
+  const linhas = contextosDasLinhas(orig);
+  const linhaDe = (pos) => linhas.find((l) => pos >= l.ini && pos <= l.fim) || {};
   const codigos = new Map(materiais.filter(temCodigo).filter((m) => numeroCodigo(m.codigo)).map((m) => [numeroCodigo(m.codigo), m]));
   const existentes = [...codigos.keys()].sort((a, b) => a - b);
-  const refs = [], avisos = [];
+  const refs = [], naoEntendidas = [], inexistentes = new Set(), vistos = new Set();
   const ordemPorProduto = new Map();
+  // O vão entre duas listas é dividido no primeiro corte: o começo é o "depois" de uma, o resto é o "antes" da outra.
+  const vaos = grupos.map((g, i) => {
+    const fimVao = grupos[i + 1]?.ini ?? t.length;
+    const vao = t.slice(g.fim, fimVao);
+    const c = CORTE.exec(vao);
+    return { depois: c ? vao.slice(0, c.index) : vao, sobra: c ? vao.slice(c.index) : '' };
+  });
   grupos.forEach((g, i) => {
-    const limite = grupos[i + 1]?.ini ?? t.length;
-    const depois = t.slice(g.fim, limite).split(/[.;\n!?]/)[0].replace(/,\s*$/, '');
-    const antesIni = Math.max(grupos[i - 1]?.fim ?? 0, t.lastIndexOf('\n', g.ini) + 1, t.lastIndexOf('.', g.ini) + 1, t.lastIndexOf(';', g.ini) + 1);
-    const antes = t.slice(antesIni, g.ini);
-    const alvo = depois.replace(CONECTORES, '').trim();
-    const destino = alvo ? classificar(alvo, produtos) : antes.trim() ? classificar(antes, produtos) : null; // destino depois do código; sem nada depois, o que veio antes ("na galeria use F4")
-    const nomes = g.ns.map((n) => `F${n}`).join(', ');
-    if (!destino) { avisos.push(`Não entendi onde usar ${nomes}${alvo ? ` ("${alvo.slice(0, 40)}")` : ''}: nada foi feito. Escreva, por exemplo, "${g.ns.length > 1 ? nomes : `F${g.ns[0]}`} no banner", "no <nome do produto>", "nos depoimentos", "no sobre", "na galeria" ou "não usar".`); return; }
-    g.ns.forEach((n, k) => {
+    const linha = linhaDe(g.ini);
+    const iniFrase = Math.max(linha.ini ?? 0, t.lastIndexOf('.', g.ini - 1) + 1, t.lastIndexOf(';', g.ini - 1) + 1, t.lastIndexOf('!', g.ini - 1) + 1, t.lastIndexOf('?', g.ini - 1) + 1);
+    const antes = i > 0 && grupos[i - 1].fim > iniFrase ? vaos[i - 1].sobra.replace(/^[\s,]*(?:e|mas|depois)?\s*/, '') : t.slice(iniFrase, g.ini);
+    const depois = vaos[i].depois.replace(CONECTORES, '').trim();
+    // Sem lugar na frase vale o título: o rótulo da linha ("Galeria: F27"), o subtítulo e o título da seção, nessa ordem.
+    const cl = (x) => (x ? classificar(x, produtos) : null);
+    const ctxTitulo = combinar(cl(linha.rotulo), combinar(cl(linha.sub), cl(linha.secao)));
+    const daFrase = classificar(depois, produtos) || classificar(antes, produtos);
+    const destino = combinar(daFrase, ctxTitulo);
+    const fimTrecho = Math.min(linha.fim ?? t.length, g.fim + 60);
+    const trecho = `${orig.slice(Math.max(iniFrase, g.ini - 60), fimTrecho).replace(/[*#_`]+/g, '').trim()}${fimTrecho < (linha.fim ?? 0) ? '…' : ''}`;
+    const naoExiste = g.ns.filter((n) => !codigos.has(n));
+    naoExiste.forEach((n) => inexistentes.add(`F${n}`));
+    const ok = g.ns.filter((n) => codigos.has(n));
+    if (!ok.length) return;
+    if (!destino || destino.uso === 'semlugar' || (destino.uso === 'produto' && !destino.produto)) {
+      const motivo = !destino ? 'o texto não diz o lugar' : destino.uso === 'semlugar' ? `${destino.lugar}: esse lugar não tem foto no seletor "Usar em"` : 'qual produto? há mais de um cadastrado';
+      naoEntendidas.push({ codigos: ok.map((n) => `F${n}`), trecho, motivo });
+      return;
+    }
+    ok.forEach((n, k) => {
       const m = codigos.get(n);
-      if (!m) { avisos.push(`F${n} não existe nos Materiais do cliente${existentes.length ? ` (os códigos vão de F${existentes[0]} a F${existentes[existentes.length - 1]})` : ' (ainda não há fotos com código)'}: nada foi feito com ele.`); return; }
+      const chave = `${n}|${destino.uso}|${destino.produto?.id || ''}`;
+      if (vistos.has(chave)) return; // repetido no texto = uma vez só
+      vistos.add(chave);
       const ref = { codigo: `F${n}`, materialId: m.id, uso: destino.uso, principal: false, ordem: 0 };
       if (destino.uso === 'produto') {
         const o = (ordemPorProduto.get(destino.produto.id) || 0) + 1; ordemPorProduto.set(destino.produto.id, o);
@@ -223,14 +376,22 @@ export function lerReferencias(texto, { materiais = [], produtos = [] } = {}) {
       refs.push(ref);
     });
   });
-  return { refs, avisos: [...new Set(avisos)] };
+  // Um código pode ir para dois lugares: o pedido de um lugar sem vaga conta mesmo que o outro tenha entrado.
+  const naoEnt = naoEntendidas;
+  const qtd = new Set(naoEnt.flatMap((x) => x.codigos)).size;
+  const resumo = qtd ? `${qtd} foto${qtd > 1 ? 's' : ''} não ${qtd > 1 ? 'foram entendidas' : 'foi entendida'} sem IA. Clique em "Analisar meu pedido" para a IA resolver.` : '';
+  const ine = [...inexistentes];
+  const avisoIne = ine.length ? `Não existe esse código nos Materiais do cliente: ${ine.join(', ')}${existentes.length ? ` (os códigos vão de F${existentes[0]} a F${existentes[existentes.length - 1]})` : ' (ainda não há fotos com código)'}. Nada foi feito com ${ine.length > 1 ? 'eles' : 'ele'}.` : '';
+  return { refs, naoEntendidas: naoEnt, inexistentes: ine, resumo, avisos: [resumo, avisoIne].filter(Boolean) };
 }
 
 /**
  * Aplica as referências do texto como se fossem escolhidas no seletor, marcadas "texto". Antes, tira todas as marcas
  * "texto" anteriores (o texto atual é a fonte). O seletor sempre vence: conflito vira uma linha de explicação e a
- * referência não entra. `direta` = escolha direta do modo atual ({ banner, sobre }: { materialId, nome } | null).
- * Devolve { patches: [{ id, usos }], conflitos: [texto], aplicadas: [texto] }.
+ * referência não entra, mas o operador resolve num clique (`escolhas`, uma por conflito: "Usar F27" muda o seletor,
+ * "Manter F41" deixa como está). `direta` = escolha direta do modo atual ({ banner, sobre }: { materialId, nome } | null).
+ * Devolve { patches: [{ id, usos }], conflitos: [texto], escolhas: [{ chave, texto, usar: { rotulo, materialId, uso,
+ * produtoId?, principal? }, manter: { rotulo } }], aplicadas: [texto] }.
  */
 export function aplicarReferencias(materiais = [], refs = [], { direta = {}, produtos = [] } = {}) {
   const mapa = new Map(materiais.map((m) => {
@@ -242,25 +403,39 @@ export function aplicarReferencias(materiais = [], refs = [], { direta = {}, pro
   const porId = new Map(materiais.map((m) => [m.id, m]));
   const cod = (id) => porId.get(id)?.codigo || 'a foto';
   const nomeProd = (pid) => produtos.find((p) => p.id === pid)?.nome || 'produto';
-  const conflitos = [], aplicadas = [];
+  const conflitos = [], escolhas = [], aplicadas = [];
+  const conflito = (r, texto, curto, usar, manter) => {
+    conflitos.push(texto);
+    const chave = `${r.codigo}|${usar.uso}|${usar.produtoId || ''}|${usar.principal ? 'p' : ''}`;
+    if (!escolhas.some((e) => e.chave === chave)) escolhas.push({ chave, texto: curto, usar: { materialId: r.materialId, ...usar }, manter: { rotulo: manter } });
+  };
   for (const r of refs) {
     const u = mapa.get(r.materialId); if (!u) continue;
     const quer = `${r.codigo} ${destinoTexto(r.uso, { nome: r.produtoNome })}`;
     const chave = r.uso === 'produto' ? `produto:${r.produtoId}` : r.uso;
-    if (u.bloqueados.includes(chave)) { conflitos.push(`O texto pede ${quer}, mas essa escolha foi tirada no seletor "Usar em": vale o seletor.`); continue; }
-    if (r.uso !== 'nao' && u.nao === 'manual') { conflitos.push(`O texto pede ${quer}, mas no seletor ${r.codigo} está "Não usar no site": vale o seletor.`); continue; }
+    const usarAssim = { rotulo: `Usar ${quer}`, uso: r.uso, ...(r.uso === 'produto' ? { produtoId: r.produtoId, principal: Boolean(r.principal) } : {}) };
+    if (u.bloqueados.includes(chave)) { conflito(r, `O texto pede ${quer}, mas essa escolha foi tirada no seletor "Usar em": vale o seletor.`, `O texto pede ${quer}, mas essa escolha foi tirada no seletor "Usar em".`, usarAssim, 'Manter como está'); continue; }
+    if (r.uso !== 'nao' && u.nao === 'manual') { conflito(r, `O texto pede ${quer}, mas no seletor ${r.codigo} está "Não usar no site": vale o seletor.`, `O texto pede ${quer}, mas no seletor ${r.codigo} está "Não usar no site".`, usarAssim, 'Manter fora do site'); continue; }
     if (r.uso === 'nao') {
-      if (temUsoManual(u)) { conflitos.push(`O texto pede ${r.codigo} fora do site, mas no seletor ela tem uso marcado: vale o seletor.`); continue; }
+      if (temUsoManual(u)) { conflito(r, `O texto pede ${r.codigo} fora do site, mas no seletor ela tem uso marcado: vale o seletor.`, `O texto pede ${r.codigo} fora do site, mas no seletor ela tem uso marcado.`, { rotulo: `Tirar ${r.codigo} do site`, uso: 'nao' }, 'Manter no site'); continue; }
       for (const k of SIMPLES) delete u[k]; u.produtos = []; u.nao = u.nao || 'texto'; aplicadas.push(`${r.codigo}: não usar no site`); continue;
     }
     if (u.nao === 'texto') delete u.nao;
     if (r.uso === 'produto') {
       const e = u.produtos.find((p) => p.id === r.produtoId);
-      if (e) { if (r.principal && !e.principal) conflitos.push(`O texto pede ${r.codigo} como foto principal do ${nomeProd(r.produtoId)}, mas no seletor ela está nesse produto sem ser a principal: vale o seletor.`); continue; }
+      const usarPrincipal = { rotulo: `Usar ${r.codigo}`, uso: 'produto', produtoId: r.produtoId, principal: true };
+      if (e) {
+        if (r.principal && !e.principal) {
+          const atual = [...mapa].find(([id, x]) => id !== r.materialId && x.produtos.some((p) => p.id === r.produtoId && p.principal));
+          conflito(r, `O texto pede ${r.codigo} como foto principal do ${nomeProd(r.produtoId)}, mas no seletor ela está nesse produto sem ser a principal: vale o seletor.`,
+            `O texto pede ${r.codigo} como foto principal do ${nomeProd(r.produtoId)}, mas no seletor ${atual ? `está ${cod(atual[0])}` : 'ela não é a principal'}.`, usarPrincipal, atual ? `Manter ${cod(atual[0])}` : 'Manter como está');
+        }
+        continue;
+      }
       let principal = r.principal;
       if (principal) {
         const outra = [...mapa].find(([id, x]) => id !== r.materialId && x.produtos.some((p) => p.id === r.produtoId && p.principal && p.por === 'manual'));
-        if (outra) { conflitos.push(`O texto pede ${r.codigo} como foto principal do ${nomeProd(r.produtoId)}, mas no seletor a principal é ${cod(outra[0])}: vale o seletor (${r.codigo} entra sem ser a principal).`); principal = false; }
+        if (outra) { conflito(r, `O texto pede ${r.codigo} como foto principal do ${nomeProd(r.produtoId)}, mas no seletor a principal é ${cod(outra[0])}: vale o seletor (${r.codigo} entra sem ser a principal).`, `O texto pede ${r.codigo} como foto principal do ${nomeProd(r.produtoId)}, mas no seletor está ${cod(outra[0])}.`, usarPrincipal, `Manter ${cod(outra[0])}`); principal = false; }
         else for (const [, x] of mapa) x.produtos.forEach((p) => { if (p.id === r.produtoId) p.principal = false; });
       }
       u.produtos.push({ id: r.produtoId, ordem: r.ordem, principal, por: 'texto' });
@@ -269,17 +444,27 @@ export function aplicarReferencias(materiais = [], refs = [], { direta = {}, pro
     if (u[r.uso] === 'manual') continue; // já escolhido assim no seletor
     if (r.uso === 'banner' || r.uso === 'sobre') {
       const outraManual = [...mapa].find(([id, x]) => id !== r.materialId && x[r.uso] === 'manual');
-      if (r.uso === 'banner' && outraManual) { conflitos.push(`O texto pede ${quer}, mas o banner já foi escolhido no seletor (${[...mapa].filter(([, x]) => x.banner === 'manual').map(([id]) => cod(id)).join(', ')}): vale o seletor. Para somar ao carrossel, marque ${r.codigo} em "Usar em: Banner".`); continue; }
+      if (r.uso === 'banner' && outraManual) {
+        const ja = [...mapa].filter(([, x]) => x.banner === 'manual').map(([id]) => cod(id)).join(', ');
+        conflito(r, `O texto pede ${quer}, mas o banner já foi escolhido no seletor (${ja}): vale o seletor. Para somar ao carrossel, marque ${r.codigo} em "Usar em: Banner".`, `O texto pede ${quer}, mas o banner já foi escolhido no seletor (${ja}).`, { rotulo: `Somar ${r.codigo} ao banner`, uso: 'banner' }, `Manter só ${ja}`);
+        continue;
+      }
       const d = direta?.[r.uso];
-      if (d && d.materialId !== r.materialId && !outraManual) { conflitos.push(`O texto pede ${quer}, mas ${r.uso === 'banner' ? 'a imagem do banner' : 'a imagem da história'} já foi escolhida à mão nos ajustes ("${d.nome || 'imagem'}"): vale essa escolha. Para trocar, marque ${r.codigo} em "Usar em" ou mude nos ajustes rápidos.`); continue; }
+      if (d && d.materialId !== r.materialId && !outraManual) {
+        const qual = r.uso === 'banner' ? 'a imagem do banner' : 'a imagem da história';
+        conflito(r, `O texto pede ${quer}, mas ${qual} já foi escolhida à mão nos ajustes ("${d.nome || 'imagem'}"): vale essa escolha. Para trocar, marque ${r.codigo} em "Usar em" ou mude nos ajustes rápidos.`, `O texto pede ${quer}, mas ${qual} foi escolhida à mão nos ajustes ("${d.nome || 'imagem'}").`, { rotulo: `Usar ${r.codigo}`, uso: r.uso }, `Manter "${d.nome || 'imagem'}"`);
+        continue;
+      }
     }
     // Várias fotos no mesmo lugar (carrossel do banner, Clientes reais, Galeria): a ordem do texto vira a ordem do site.
     if (ORDENAVEIS.includes(r.uso)) u.ordem[r.uso] = proximaPosicao(mapa, r.uso);
     u[r.uso] = 'texto';
     aplicadas.push(`${r.codigo} → ${nomeUso(r.uso)}`);
   }
-  return { patches: mudados(materiais, mapa), conflitos: [...new Set(conflitos)], aplicadas };
+  return { patches: mudados(materiais, mapa), conflitos: [...new Set(conflitos)], escolhas, aplicadas };
 }
+/** "Usar F27" de um conflito: a escolha vira do seletor (manual). Devolve [{ id, usos }] (mudarUso). */
+export const resolverEscolha = (materiais = [], usar = {}) => mudarUso(materiais, usar.materialId, { uso: usar.uso, ligado: true, produtoId: usar.produtoId || null, ...(usar.uso === 'produto' && usar.principal ? { principal: true } : {}) });
 
 // ---------- o que vai para o site ----------
 const usaveis = (materiais) => materiais.filter((m) => temCodigo(m) && !naoUsa(m));

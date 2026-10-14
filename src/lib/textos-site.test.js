@@ -31,13 +31,13 @@ function resolver(item, { fonte = { tipo: 'vendas_cliente' } } = {}) {
 
 describe('limite do texto "Como eu quero o site"', () => {
   it('conta, avisa a partir de 90% e nunca corta calado', () => {
-    expect(LIMITE_TEXTO_SITE).toBeGreaterThanOrEqual(8000);
-    expect(contadorTexto('abc').rotulo).toBe('3 de 8.000 caracteres');
-    expect(contadorTexto('x'.repeat(7199)).perto).toBe(false);
-    expect(contadorTexto('x'.repeat(7200)).perto).toBe(true);
-    const longo = 'y'.repeat(8000);
-    expect(exigirTamanho(longo)).toBe(longo); // 8.000 inteiros, sem corte
-    expect(() => exigirTamanho('z'.repeat(8001))).toThrow(/8\.001 caracteres.*Encurte/);
+    expect(LIMITE_TEXTO_SITE).toBe(12000);
+    expect(contadorTexto('abc').rotulo).toBe('3 de 12.000 caracteres');
+    expect(contadorTexto('x'.repeat(10799)).perto).toBe(false);
+    expect(contadorTexto('x'.repeat(10800)).perto).toBe(true);
+    const longo = 'y'.repeat(12000);
+    expect(exigirTamanho(longo)).toBe(longo); // 12.000 inteiros, sem corte
+    expect(() => exigirTamanho('z'.repeat(12001))).toThrow(/12\.001 caracteres.*Encurte/);
   });
 });
 
@@ -228,10 +228,10 @@ describe('e) texto do site reaproveitado em criativo', () => {
 
 describe('prompts do site', async () => {
   const { contextoPreferencias, regraSite } = await import('../core/ia.js');
-  it('o texto inteiro vai para a IA (8.000 caracteres, sem corte); acima do limite pede para encurtar', () => {
-    const texto = `${'a'.repeat(7987)} FIM-DO-TEXTO`; // 8.000 exatos
+  it('o texto inteiro vai para a IA (12.000 caracteres, sem corte); acima do limite pede para encurtar', () => {
+    const texto = `${'a'.repeat(11987)} FIM-DO-TEXTO`; // 12.000 exatos
     expect(contextoPreferencias({ preferenciasSite: { texto } })).toContain('FIM-DO-TEXTO');
-    expect(() => contextoPreferencias({ preferenciasSite: { texto: 'b'.repeat(8001) } })).toThrow(/Encurte/);
+    expect(() => contextoPreferencias({ preferenciasSite: { texto: 'b'.repeat(12001) } })).toThrow(/Encurte/);
   });
   it('site não é anúncio: no cliente de saúde a IA não recusa alegação do operador e nunca acrescenta', () => {
     expect(regraSite(THERMORA)).toMatch(/SITE NÃO É ANÚNCIO/);

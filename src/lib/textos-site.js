@@ -13,7 +13,7 @@ const txt = (v) => String(v ?? '').trim();
 const sem = (s) => txt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ');
 
 // ---------- tamanho do texto "Como eu quero o site" ----------
-export const LIMITE_TEXTO_SITE = 8000;
+export const LIMITE_TEXTO_SITE = 12000;
 const fmt = (n) => Number(n).toLocaleString('pt-BR');
 /** "X de Y caracteres", com aviso a partir de 90% e "passou" acima do limite. */
 export function contadorTexto(texto, limite = LIMITE_TEXTO_SITE) {

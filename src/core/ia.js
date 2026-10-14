@@ -6,6 +6,9 @@ import { paisDoCliente, infoPais, descreverMercado, simboloDoCliente } from '../
 import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloNarrativa } from '../lib/narrativas.js';
 import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
 import { exigirTamanho } from '../lib/textos-site.js';
+import { dividirSecoes, codigosDoTexto, temCodigo, porCodigo, resumoUsos, nomeArquivo } from '../lib/fotos-site.js';
+import { tipoMaterial } from '../lib/prova-social.js';
+import { ehVertical } from '../lib/medidas-site.js';
 import { textoComoAnuncia } from '../lib/anuncio.js';
 import { REGRA_INSTAGRAM } from '../lib/formatos-instagram.js';
 import { linhaGanchos, conferirGanchos, numeroModelo } from '../lib/ganchos.js';
@@ -711,39 +714,93 @@ const TIPOS_PLANO = `banner_fotos {"codigos":["F3",...]} (fotos do banner/carros
 /** Como pedir as três versões de cada texto do operador (no plano e em "Sugerir de novo"). */
 const VERSAO_CADA = '{"original": as palavras EXATAS dele, sem mudar nada, "melhorada": o MESMO sentido e as MESMAS alegações e números que ele escreveu (nem mais, nem menos), mais claro e persuasivo para a tela do celular (curto, fácil de ler rolando a página), no tom da marca, e DIFERENTE do original (se não der para melhorar sem mudar o sentido, devolva ""), "segura": sem promessa de efeito no corpo (energia, disposição, metabolismo, emagrecer, queima, apetite...) e sem número que não tenha fonte no cadastro, usando só a composição real (ativos e quantidades da fórmula cadastrada), fatos do produto e dados com fonte; serve também para anúncio; se não houver nenhum fato real para escrever, devolva "", "numero": o trecho com número que precisa de fonte (ex.: "mais de 5000 pessoas") ou ""}';
 
+// Tipos de item SEM os de foto: no plano por seção as fotos vão só em "fotos" (lugar + ordem), nunca dentro dos itens.
+const TIPOS_PLANO_SEM_FOTO = TIPOS_PLANO.split(' | ').filter((t) => !/^(banner_fotos|clientes_fotos|produto_fotos)\b/.test(t)).join(' | ');
+// Lugares de foto que o site tem (as chaves de "destino"); o resto é "outro" (o app mostra "não dá" com a alternativa).
+const LUGARES_FOTO_IA = '"banner" (topo/capa da home), "produto" (fotos da página do produto; "galeria do produto", "fotos do produto" e "carrossel do produto" são isto; a principal é a capa), "galeria" (galeria de fotos da loja), "clientes" (depoimentos, prova social, avaliações), "sobre" (sobre nós, quem somos, história), "nao" (não usar no site) ou "outro" (lugar que o site não tem para foto: perguntas frequentes, carrinho, rodapé, benefícios, como usar...)';
+const FORMATO_FOTO = '{"codigo":"F27","secao":id da parte,"destino":um dos lugares,"produto":nome do produto ou null,"principal":true só para a foto principal/capa do produto,"lugar":em "outro", o lugar que ele pediu,"alternativa":em "outro", o lugar mais próximo que existe}';
+
+/** Uma foto em uma linha para a IA: código, o que é (nome, print, em pé, ponto principal) e o que está no seletor "Usar em". */
+function linhaFotoIa(m, produtos) {
+  const usos = resumoUsos(m, produtos).map((u) => `${u.texto}${u.por === 'manual' ? ' (marcado à mão)' : ' (pelo texto)'}`);
+  const oque = [nomeArquivo(m), tipoMaterial(m) === 'prova_social' ? 'print de prova social' : '', ehVertical(m) ? 'em pé' : '', m.foco?.oque ? `ponto principal: ${m.foco.oque}` : ''].filter(Boolean).join(', ');
+  return `${m.codigo}: ${oque}${usos.length ? ` · no seletor: ${usos.join(', ')}` : ''}`;
+}
+
 /**
- * Lê "Como eu quero o site" (+ o que gostou na referência e a leitura do print) e devolve um PLANO item a item, sem
- * aplicar nada. O app confere o plano depois (lib/plano-site.js normalizarPlano): códigos e produtos que não existem
- * viram "Não dá para fazer" e o caminho de menu de cada item sai da tabela do app, nunca da IA.
+ * Lê "Como eu quero o site" (até 12.000 caracteres) SEÇÃO POR SEÇÃO, na ordem do operador (o app divide o texto pelos
+ * títulos dele: lib/fotos-site.js dividirSecoes), e devolve o plano "Entendi assim", sem aplicar nada: o que entendeu
+ * de cada seção, os itens, TODAS as fotos citadas com lugar e ordem, as perguntas (só dúvida real) e o que ficou de
+ * fora (deve vir vazio). O app confere tudo depois (lib/plano-site.js normalizarPlanoSecoes): seção que faltou, código
+ * esquecido, código que não existe, ordem das fotos e conflito com o seletor "Usar em".
  */
 export async function analisarPedidoSite({ cliente, produtos = [], materiais = [], plataforma, tema = '', modo = 'pacote', secoes = [] }) {
   const p = cliente?.preferenciasSite || {};
-  const system = 'Você é um consultor de lojas online. Você NÃO aplica nada: lê o pedido do operador e devolve um plano item a item, honesto sobre o que dá e o que não dá para fazer. Fala com uma pessoa leiga, em frases curtas, em português do Brasil.';
-  const fotos = materiais.filter((m) => m.codigo).slice(0, 60).map((m) => `${m.codigo}: ${m.nomeOriginal || m.nome || 'imagem'}`).join(' | ') || '(nenhuma foto com código)';
-  const prods = produtos.slice(0, 15).map((x) => `"${x.nome}"${x.preco ? ` R$ ${x.precoPromocional || x.preco}` : ''} · ${(x.fotos || []).length} foto(s) · descrição ${String(x.descricao || '').length > 120 ? 'longa' : x.descricao ? 'curta' : 'vazia'}${x.formula ? ' · tem fórmula' : ''}${x.beneficios ? ' · tem benefícios' : ''}`).join('\n') || '(nenhum produto)';
-  const pedido = `PEDIDO DO OPERADOR ("Como eu quero o site"): "${exigirTamanho(String(p.texto || '').trim()) || '(vazio)'}"
-${String(p.gostei || '').trim() ? `O que ele gostou no site de referência: "${String(p.gostei).trim().slice(0, 800)}"` : ''}
-${String(cliente?.siteReferencia || '').trim() ? `Site de referência: ${String(cliente.siteReferencia).trim()}` : ''}
-${String(p.referenciaLeitura || '').trim() ? `Estrutura e estilo lidos do print da referência: ${String(p.referenciaLeitura).trim().slice(0, 1200)}` : ''}
+  const texto = exigirTamanho(String(p.texto || '').trim());
+  const partes = dividirSecoes(texto);
+  const saude = ehProdutoSaude(cliente);
+  const system = 'Você é um consultor de lojas online. Você NÃO aplica nada: lê o pedido do operador parte por parte, na ordem dele, e devolve como entendeu cada parte, honesto sobre o que dá e o que não dá para fazer. Nunca deixa parte do texto de fora sem dizer. Fala com uma pessoa leiga, em frases curtas, em português do Brasil.';
+  const fotos = materiais.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo).slice(0, 80).map((m) => linhaFotoIa(m, produtos)).join('\n') || '(nenhuma foto com código)';
+  const prods = produtos.slice(0, 15).map((x) => `"${x.nome}"${x.preco ? ` R$ ${x.precoPromocional || x.preco}` : ''} · descrição ${String(x.descricao || '').length > 120 ? 'longa' : x.descricao ? 'curta' : 'vazia'}${x.formula ? ' · tem fórmula' : ''}${x.beneficios ? ' · tem benefícios' : ''}${x.modoUso ? ' · tem modo de uso' : ''}`).join('\n') || '(nenhum produto)';
+  const pedido = `TEXTO DO OPERADOR ("Como eu quero o site"), já dividido pelo app em ${partes.length} parte(s), NA ORDEM DELE:
+${partes.map((s) => `[${s.id}] ${s.titulo}\n${s.texto}`).join('\n\n') || '(vazio)'}
+${String(p.gostei || '').trim() ? `\nO que ele gostou no site de referência: "${String(p.gostei).trim().slice(0, 800)}"` : ''}${String(cliente?.siteReferencia || '').trim() ? `\nSite de referência: ${String(cliente.siteReferencia).trim()}` : ''}${String(p.referenciaLeitura || '').trim() ? `\nEstrutura e estilo lidos do print da referência: ${String(p.referenciaLeitura).trim().slice(0, 1200)}` : ''}
 
-PLATAFORMA: ${plataforma === 'custom' ? 'site personalizado (HTML gerado pelo app)' : plataforma ? `${plataforma}${tema ? `, tema ${tema}` : ''}` : 'ainda não escolhida'}
-Seções da home neste modelo (chaves): ${secoes.join(', ')}
+CLIENTE: ${cliente?.nome || ''}${cliente?.nicho ? ` · nicho: ${cliente.nicho}${cliente.subnicho ? ` / ${cliente.subnicho}` : ''}` : ''} · produto de saúde: ${saude ? 'SIM (vale a regra de saúde: veja abaixo)' : 'não'}
+PLATAFORMA: ${plataforma === 'custom' ? 'site personalizado (HTML gerado pelo app)' : plataforma ? `${plataforma}${tema ? `, tema ${tema}` : ''}` : 'ainda não escolhida'} · seções da home neste modelo (chaves): ${secoes.join(', ')}
 PRODUTOS CADASTRADOS:
 ${prods}
-FOTOS DOS MATERIAIS (código: nome): ${fotos}
+FOTOS DOS MATERIAIS (código: o que é · o que já está marcado no seletor "Usar em"; "marcado à mão" vence o texto):
+${fotos}
 
-Separe o pedido em itens (um por coisa pedida, na ordem do texto). Para cada item:
-- "pedido": as palavras do operador (trecho curto copiado do texto)
-- "tipo" e "params": um destes tipos: ${TIPOS_PLANO}
-- "como": como vai ficar no site, em 1 frase (seção, layout, fotos pelo código)
-- "status": "pronto" | "pergunta" (o pedido é ambíguo: faça UMA pergunta com 2 a 4 opções; cada opção pode trazer "como" e "params") | "impossivel" (diga o motivo em "motivo" e a alternativa mais próxima em "alternativa")
-- Só no tipo "texto" com frases escritas pelo operador (títulos, "5 motivos", benefícios, alegações, números, texto de uma seção): "textos", um elemento por frase/motivo/benefício, na ordem dele, cada um ${VERSAO_CADA}. Esse item é "pronto" (o app pede a fonte do número e mostra o aviso da alegação ao operador). Se o texto dele parecer cortado ou incompleto (ex.: pediu 5 motivos e só tem 3), "status": "pergunta" com "pedeTexto": true e a pergunta "Você me manda o texto completo?".${regraSite(cliente)}
-Use só fotos, produtos e dados que existem acima. Fórmula, ingredientes, benefícios, preço, prazo e depoimento NUNCA são inventados: se faltar o dado, diga no "como" que ele precisa ser preenchido na aba Produtos.
-Depois, "sugestoes": até 5 ideias para a loja ficar mais profissional, pelo nicho do cliente e pela referência, que o operador NÃO pediu, cada uma com "texto", "motivo" (1 linha), "tipo" e "params" (mesmos tipos).
-Saída JSON: {"resumo": string (1 frase), "itens": [{"pedido","tipo","params","como","status","pergunta": {"texto","opcoes":[{"texto","como","params"}]} | null,"motivo","alternativa","pedeTexto": true | ausente,"textos": [{"original","melhorada","segura","numero"}] | ausente}], "sugestoes": [{"texto","motivo","tipo","params"}]}
+COMO RESPONDER
+1. "secoes": UMA para CADA parte [S1]...[S${partes.length || 1}], com o mesmo "id", na mesma ordem (nenhuma pode faltar):
+ - "titulo": o título como ele escreveu; "entendi": o que você entendeu dessa parte, em 1 a 3 frases simples, citando os códigos de foto e o lugar de cada um
+ - "status": "entendido" | "decidir" (há uma pergunta dessa parte em "perguntas") | "impossivel" (a parte inteira não dá: "motivo" e "alternativa", o mais próximo que dá)
+ - "itens": os pedidos dessa parte, um por coisa pedida, cada um {"pedido": trecho curto copiado do texto, "tipo", "params", "como": como vai ficar em 1 frase, "status": "pronto" | "pergunta" | "impossivel", "motivo", "alternativa"}. Tipos: ${TIPOS_PLANO_SEM_FOTO}
+ - Só no tipo "texto" com frases escritas por ele (títulos, motivos, benefícios, história, linhas de confiança): "textos", um por frase, na ordem dele, cada um ${VERSAO_CADA}. Esse item é "pronto" (o app pede a fonte do número e mostra o aviso da alegação).
+ - NUNCA ponha código de foto dentro dos itens: fotos vão SÓ em "fotos".
+2. "fotos": TODO código citado no texto, em listas ("F23, F26, F25"), com barra ("f27/f28/f29"), intervalo ("F20 a F25" = F20, F21... F25), minúsculo (f27 = F27) ou no meio da frase. Um elemento por código e por lugar: ${FORMATO_FOTO}.
+ - Lugares: ${LUGARES_FOTO_IA}.
+ - Lista sem lugar na própria frase pega o lugar do título da parte ou do subtítulo logo acima ("**Depoimentos:**" + "F23, F26" = clientes; "Galeria do produto:" + "f27/f28" = produto). "***" e "---" só separam partes.
+ - A ORDEM do array é a ordem em que ele escreveu (é a ordem do carrossel/galeria). Código repetido no mesmo lugar entra uma vez.
+ - Código que não está na lista de FOTOS DOS MATERIAIS entra mesmo assim (o app avisa "não existe esse código"). Não troque por outro.
+3. "perguntas": SÓ dúvida real, nunca pergunta genérica: o texto pede uma coisa e o seletor tem outra marcada à mão; o texto se contradiz; falta saber de qual produto é a foto. Cada uma: {"secao","texto","opcoes":[2 ou 3 opções clicáveis, cada uma {"texto": curto, "fotos": [o que entra ou muda, no formato de "fotos"] ou [], "remover": [{"codigo","destino"}] o que sai de um lugar, ou []}]}. Ex.: o texto pede F27 como principal e no seletor a principal (à mão) é F41 → {"texto":"Foto principal do Thermora: F27 (seu texto) ou F41 (seletor)?","opcoes":[{"texto":"Usar F27","fotos":[{"codigo":"F27","destino":"produto","produto":"Thermora","principal":true}]},{"texto":"Manter F41","fotos":[]}]}; nesse caso, em "fotos" a F27 entra no produto com "principal": false.
+4. "ignorado": tem que ficar VAZIO. Se algum trecho não virou item, foto nem pergunta, ponha {"secao","trecho","motivo"}. Nunca deixe parte do texto de fora calado.
+5. "sugestoes": até 3 ideias que ele NÃO pediu para a loja ficar mais profissional (nicho e referência), cada uma {"texto","motivo","tipo","params"}.
+Use só fotos, produtos e dados que existem acima. Fórmula, ingredientes, benefícios, preço, prazo e depoimento NUNCA são inventados: se faltar o dado, diga no "como" onde preencher (aba Produtos).${regraSite(cliente)}
+Saída JSON: {"resumo": string (1 frase), "secoes": [{"id","titulo","entendi","status","motivo","alternativa","itens":[...]}], "fotos": [...], "perguntas": [...], "ignorado": [], "sugestoes": [...]}
 ${SO_JSON}`;
-  // As versões dos textos vêm na MESMA chamada (sem chamada extra por item): limite de saída maior que o padrão.
-  const { dados } = await gerarJSON({ tarefa: 'plano_site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }], maxTokens: 10000 });
+  // Texto de até 12.000 caracteres lido parte por parte, com as versões dos textos na MESMA chamada: saída grande.
+  const { dados } = await gerarJSON({ tarefa: 'plano_site', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }], maxTokens: 16000 });
+  return { ...(dados || {}), partes };
+}
+
+/**
+ * "Corrigir" de UMA seção do plano: o operador escreve uma correção curta e só essa seção é relida (IA barata, tarefa
+ * plano_secao). Devolve { secao: { entendi, status, motivo, alternativa, itens }, fotos, perguntas } no mesmo formato.
+ */
+export async function reanalisarSecao({ cliente, secao, atual = {}, correcao = '', produtos = [], materiais = [], plataforma, tema = '' }) {
+  const corr = String(correcao || '').trim();
+  if (!corr) throw new Error('Escreva a correção antes de pedir a nova leitura.');
+  if (corr.length > 600) throw new Error(`A correção tem ${corr.length} caracteres; o limite é 600. Encurte e tente de novo.`);
+  const codigos = new Set(codigosDoTexto(`${secao?.texto || ''}\n${corr}`).map((c) => c.codigo));
+  const fotos = materiais.filter((m) => temCodigo(m) && codigos.has(String(m.codigo).toUpperCase())).map((m) => linhaFotoIa(m, produtos)).join('\n') || '(nenhuma das fotos citadas existe nos Materiais)';
+  const system = 'Você relê UMA parte do pedido de site do operador, com a correção que ele escreveu, e devolve como entendeu, sem inventar nada. Fala em português do Brasil, frases curtas.';
+  const pedido = `PARTE DO TEXTO [${secao?.id}] ${secao?.titulo || ''}:
+${String(secao?.texto || '').slice(0, 6000)}
+
+COMO VOCÊ TINHA ENTENDIDO: ${String(atual.entendi || '').slice(0, 600) || '(nada)'}
+CORREÇÃO DO OPERADOR (vale mais que o texto acima): "${corr}"
+
+PLATAFORMA: ${plataforma === 'custom' ? 'site personalizado' : plataforma || 'ainda não escolhida'}${tema ? `, tema ${tema}` : ''}
+PRODUTOS: ${produtos.slice(0, 15).map((x) => `"${x.nome}"`).join(', ') || '(nenhum)'}
+FOTOS CITADAS (código: o que é · seletor "Usar em"):
+${fotos}
+
+Devolva SÓ esta parte: "secao" {"entendi","status": "entendido"|"decidir"|"impossivel","motivo","alternativa","itens": [{"pedido","tipo","params","como","status","motivo","alternativa"}]} (tipos: ${TIPOS_PLANO_SEM_FOTO}; nunca código de foto nos itens), "fotos": todos os códigos desta parte, na ordem escrita, cada um ${FORMATO_FOTO} (lugares: ${LUGARES_FOTO_IA}), e "perguntas": só dúvida real, com 2 ou 3 opções {"texto","fotos","remover"}.${regraSite(cliente)}
+Saída JSON: {"secao": {...}, "fotos": [...], "perguntas": [...]} ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'plano_secao', cliente, system, messages: [{ role: 'user', content: pedido }], maxTokens: 4000 });
   return dados || {};
 }
 
