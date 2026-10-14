@@ -8,6 +8,7 @@
 //    > referência no texto "Como eu quero o site" ("texto"). Gerar de novo só refaz as marcas "texto"; nunca mexe nas
 //    "manual". Tirar uma escolha no seletor deixa a marca em `bloqueados`, para o texto não colocá-la de volta.
 import { tipoMaterial } from './prova-social.js';
+import { linhasSemModelo, limparModelo, tituloMaiusculo } from './modelo-pedido-site.js';
 import { focoDe, ehVertical, planoArquivos } from './medidas-site.js';
 
 export const USOS_FOTO = [['banner', 'Banner'], ['produto', 'Produto'], ['clientes', 'Clientes reais'], ['sobre', 'Sobre a loja/história'], ['galeria', 'Galeria'], ['nao', 'Não usar no site']];
@@ -205,6 +206,8 @@ export function tituloDaLinha(linha) {
   if (RE_SEPARADOR.test(l)) return null;
   let m = /^\s*#{1,6}\s+(.+?)\s*#*\s*$/.exec(l);
   if (m) return { titulo: limparTitulo(m[1]), resto: '', fixo: true, nivel: 1 };
+  const caps = tituloMaiusculo(l); // "PÁGINA DO PRODUTO:" (títulos do modelo): seção, como "**...:**"
+  if (caps) return { titulo: caps, resto: '', fixo: true, nivel: 2 };
   m = /^\s*(?:[-•]\s*)?\*{1,3}([^*\n]{1,80})\*{1,3}\s*(.*)$/.exec(l);
   if (m) {
     const dentro = m[1].trim(), depois = m[2];
@@ -242,27 +245,30 @@ const MAX_SECOES = 30;
 export function dividirSecoes(texto) {
   const orig = String(texto ?? '').normalize('NFC').replace(/\r\n?/g, '\n');
   if (!orig.trim()) return [];
-  const linhas = orig.split('\n').map((l) => ({ l, t: tituloDaLinha(l), sep: RE_SEPARADOR.test(l) }));
+  // Linha que ainda tem "[...]" do modelo sai (não vai para a IA); a seção que ficou só com o título é "não preenchida".
+  const linhas = linhasSemModelo(orig).map(({ linha: l, ignorada }) => ({ l, ign: ignorada, t: tituloDaLinha(l), sep: RE_SEPARADOR.test(l) }));
   const nivel = linhas.some((x) => x.t?.fixo && x.t.nivel < 3) ? 2 : linhas.some((x) => x.t?.fixo) ? 3 : 0;
   const temRotulo = linhas.some((x) => x.t);
   const secoes = [];
   let atual = null;
-  const nova = (titulo) => { atual = { titulo, linhas: [] }; secoes.push(atual); };
+  const nova = (titulo) => { atual = { titulo, linhas: [], ignoradas: 0 }; secoes.push(atual); };
   linhas.forEach((x, i) => {
     if (x.sep) { atual = null; return; }
     const abre = nivel ? Boolean(x.t?.fixo && x.t.nivel <= nivel) : temRotulo ? Boolean(x.t) : Boolean(x.l.trim()) && (!atual || !linhas[i - 1]?.l.trim());
     if (abre) nova(x.t ? x.t.titulo : '');
+    if (x.ign) { if (atual) atual.ignoradas++; return; }
     if (!x.l.trim() && !atual) return;
     if (!atual) nova('');
     atual.linhas.push(x.l);
   });
   const limpas = secoes.map((s) => ({ ...s, texto: s.linhas.join('\n').trim() })).filter((s) => s.texto);
-  if (limpas.length > MAX_SECOES) { const resto = limpas.splice(MAX_SECOES - 1); limpas.push({ titulo: resto[0].titulo, texto: resto.map((s) => s.texto).join('\n\n') }); }
+  if (limpas.length > MAX_SECOES) { const resto = limpas.splice(MAX_SECOES - 1); limpas.push({ titulo: resto[0].titulo, texto: resto.map((s) => s.texto).join('\n\n'), ignoradas: 0 }); }
   return limpas.map((s, i) => {
     const primeira = s.texto.split('\n')[0].replace(/[*#_`]+/g, '').trim();
     const rotulo = tituloDaLinha(s.texto.split('\n')[0])?.titulo;
     const titulo = s.titulo || rotulo || (i === 0 && nivel ? 'Começo do texto' : primeira.length > 48 ? `${primeira.slice(0, 45).trim()}…` : primeira);
-    return { id: `S${i + 1}`, titulo, texto: s.texto };
+    const naoPreenchido = s.ignoradas > 0 && s.texto.split('\n').filter((l) => l.trim()).length <= 1 && Boolean(tituloDaLinha(s.texto)?.fixo);
+    return { id: `S${i + 1}`, titulo, texto: s.texto, ...(naoPreenchido ? { naoPreenchido: true } : {}) };
   });
 }
 
@@ -325,7 +331,7 @@ const CONECTORES = /^(?:[\s,:-]|\b(?:no|na|nos|nas|em|de|do|da|dos|das|para|pra|
  * única do que não deu para entender sem IA; `avisos` junta o resumo e os códigos que não existem (nada é inventado).
  */
 export function lerReferencias(texto, { materiais = [], produtos = [] } = {}) {
-  const orig = String(texto ?? '').normalize('NFC').replace(/\r\n?/g, '\n');
+  const orig = limparModelo(String(texto ?? '').normalize('NFC')); // linha ainda com "[...]" do modelo não conta
   const t = norm(orig);
   const grupos = gruposDeCodigos(t);
   if (!grupos.length) return { refs: [], avisos: [], naoEntendidas: [], inexistentes: [], resumo: '' };

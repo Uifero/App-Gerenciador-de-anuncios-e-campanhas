@@ -38,6 +38,7 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `recomendacao-thermora-qualidade-real.json` | "Analisar e recomendar" (tarefa `recomendacao_anuncio`, Sonnet 5) com pouco dado (3 dias, 2 vendas) e a LEITURA DOS DADOS do app: "Dados insuficientes para decidir", `decisao` e `mudaSe` | chamada real, 14/10/2026 |
 | `ajuste-cliches-moda.json` | "Cara de IA" > Corrigir: reescrita dos clichês pela proposta de "Ajustar este site" | escrita à mão |
 | `refino-natural-thermora.json` | "Parece anúncio?" > Aplicar as sugestões numa ideia com cara de vitrine | escrita à mão |
+| `plano-modelo-secoes.json` | "Analisar meu pedido" com o modelo pronto preenchido em parte (S1, S2, S3, S6): FAQ vazia da IA e um preço inventado no "não sei" (o app tira) | escrita à mão |
 | `animacao-thermora-real.json` | Biblioteca de animações: "Preencher os textos com IA" (tarefa `animacao`, Haiku 4.5, limite 900) no preset "Foto com zoom lento + legenda falada" pela ideia "Rotina" da Thermora | chamada real, 14/10/2026 |
 | `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |

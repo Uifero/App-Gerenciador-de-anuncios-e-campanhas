@@ -13,6 +13,7 @@ import { normalizarLayout, ORDEM_PADRAO, nomeBloco } from './site-blocos.js';
 import { FORMAS_PAGAMENTO } from './sitegen.js';
 import { normalizarRecursos, recursosDoSite, textoSecaoProduto, sugeridoPara, SECOES_PRODUTO, numero } from './recursos-loja.js';
 import { normalizarParte, atualizarItemTexto, ehItemTexto, conferirTextoItem, textosParaAplicar, DESTINOS_TEXTO } from './textos-site.js';
+import { paresFaq, naoSeiDoTexto } from './modelo-pedido-site.js';
 
 const txt = (v) => String(v ?? '').trim();
 const sem = (s) => txt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -157,6 +158,7 @@ export function limparParams(tipo, p = {}, { materiais = [], produtos = [], modo
     case 'cores': { const hex = (c) => (/^#[0-9a-f]{6}$/i.test(txt(c)) ? txt(c).toLowerCase() : null); return { params: { corPrimaria: hex(p.corPrimaria), corFundo: hex(p.corFundo) }, problema: null }; }
     case 'pagina_produto': return { params: { todasFotos: true, descricaoDetalhada: p.descricaoDetalhada !== false }, problema: null };
     case 'texto': return { params: { destino: DESTINOS_TEXTO[p.destino] ? p.destino : 'secao', titulo: txt(p.titulo).slice(0, 120) }, problema: null };
+    case 'faq': { const pares = (Array.isArray(p.pares) ? p.pares : []).map((x) => ({ p: txt(x?.p).slice(0, 200), r: txt(x?.r).slice(0, 600) })).filter((x) => x.p && x.r).slice(0, 15); return { params: pares.length ? { pares } : {}, problema: null }; }
     default: return { params: {}, problema: null };
   }
 }
@@ -418,7 +420,7 @@ export const assinaturaUsos = (materiais = []) => materiais.filter(temCodigo).ma
 // IA, sem confiar nela: seção que faltou, código citado que a IA não pôs em lugar nenhum, código que não existe, ordem
 // das fotos (= a ordem em que o operador escreveu) e conflito do texto com o seletor "Usar em" (vira pergunta com botão).
 // Nada é aplicado antes de "Aplicar esta seção"/"Aplicar tudo": os itens nascem desmarcados.
-export const STATUS_SECAO = { entendido: 'Entendido', decidir: 'Precisa decidir', impossivel: 'Não dá para fazer' };
+export const STATUS_SECAO = { entendido: 'Entendido', decidir: 'Precisa decidir', impossivel: 'Não dá para fazer', nao_preenchido: 'Não preenchido' };
 const DESTINOS_FOTO = { banner: 'banner', topo: 'banner', capa: 'banner', produto: 'produto', galeria: 'galeria', clientes: 'clientes', depoimentos: 'clientes', prova_social: 'clientes', sobre: 'sobre', nao: 'nao', outro: 'outro' };
 const TIPO_DO_DESTINO = { banner: 'banner_fotos', clientes: 'clientes_fotos', galeria: 'galeria_fotos', sobre: 'sobre_fotos', nao: 'nao_fotos', produto: 'produto_fotos' };
 const NOME_DESTINO = { banner: 'no banner', clientes: 'nos depoimentos (Clientes reais)', galeria: 'na galeria da loja', sobre: 'em Sobre a loja', nao: 'fora do site' };
@@ -467,6 +469,8 @@ export function normalizarPlanoSecoes(d = {}, ctx = {}) {
   const porId = new Map(brutas.map((x, i) => [txt(x.id) || `S${i + 1}`, x]));
   const fotosIa = [], itens = [];
   const secoes = locais.map((S) => {
+    // Parte do modelo que ficou só com "[...]": não foi para a IA e não é erro nem aviso (cinza, "Não preenchido").
+    if (S.naoPreenchido) return { id: S.id, titulo: S.titulo, trecho: S.texto, entendi: '', statusIa: 'entendido', motivo: '', alternativa: '', aplicada: false, faltou: false, naoPreenchido: true };
     const ia = porId.get(S.id);
     (Array.isArray(ia?.itens) ? ia.itens : []).filter((x) => x && typeof x === 'object').slice(0, 20).forEach((x) => {
       if (TIPOS_FOTO.has(x.tipo)) { fotosIa.push(...fotosDeItem(x, S.id)); return; }
@@ -484,7 +488,41 @@ export function normalizarPlanoSecoes(d = {}, ctx = {}) {
   const perguntas = (Array.isArray(d.perguntas) ? d.perguntas : []).map((q, i) => normalizarPergunta(q, i, ctx)).filter((q) => q.texto && q.opcoes.length >= 2 && secoes.some((s) => s.id === q.secao));
   const ignoradoIa = (Array.isArray(d.ignorado) ? d.ignorado : []).map((x) => ({ trecho: txt(typeof x === 'string' ? x : x?.trecho).slice(0, 200), motivo: txt(x?.motivo).slice(0, 200), secao: txt(x?.secao) })).filter((x) => x.trecho || x.motivo);
   const sugestoes = normalizarPlano({ sugestoes: d.sugestoes }, ctx).sugestoes;
-  return recomporPlano({ resumo: txt(d.resumo).slice(0, 400), secoes, itens, fotos, perguntas, ignoradoIa, sugestoes }, ctx);
+  let todos = itens;
+  for (const S of locais.filter((x) => !x.naoPreenchido)) {
+    todos = comFaqDoTexto(todos, S, ctx);
+    const r = comNaoSei(todos, perguntas, S);
+    todos = r.itens; ignoradoIa.push(...r.ignorado);
+  }
+  return recomporPlano({ resumo: txt(d.resumo).slice(0, 400), secoes, itens: todos, fotos, perguntas, ignoradoIa, sugestoes }, ctx);
+}
+
+/**
+ * Pares "pergunta | resposta" do texto da seção (lib/modelo-pedido-site.js paresFaq): viram UM item "Perguntas
+ * frequentes" com os pares exatamente como ele escreveu (o app põe no site: lib/textos-site.js aplicarTextosNoEstado).
+ * O item "faq" da IA e o texto dela que só repete essas perguntas saem (não duplica).
+ */
+function comFaqDoTexto(itens, S, ctx) {
+  const pares = paresFaq(S.texto, S.titulo);
+  if (!pares.length) return itens;
+  const so = (s) => sem(s).replace(/[^a-z0-9]+/g, ' ').trim();
+  const doTexto = so(pares.map((x) => `${x.p} ${x.r}`).join(' '));
+  const repete = (x) => x.tipo === 'faq' || (ehItemTexto(x) && (x.partes || []).length > 0 && x.partes.every((p) => doTexto.includes(so(p.original))));
+  const resto = itens.filter((x) => !(x.secao === S.id && repete(x)));
+  const it = montarItem({ tipo: 'faq', params: { pares }, pedido: 'Perguntas frequentes', como: `${pares.length} pergunta${pares.length > 1 ? 's' : ''} do seu texto ${pares.length > 1 ? 'entram' : 'entra'} na seção Perguntas frequentes, como você escreveu.`, status: 'pronto' }, `${S.id}-faq`, ctx);
+  return [...resto, { ...it, secao: S.id, aceito: false }];
+}
+
+/**
+ * "não sei" escrito pelo operador: nada é inventado para esse ponto. Item da IA feito a partir dele sai, e, se a IA não
+ * perguntou nada nessa seção, o ponto fica marcado para ele decidir (amarelo, com o trecho).
+ */
+function comNaoSei(itens, perguntas, S) {
+  const pontos = naoSeiDoTexto(S.texto);
+  if (!pontos.length) return { itens, ignorado: [] };
+  const fica = itens.filter((x) => !(x.secao === S.id && x.status !== 'pergunta' && /\bn[aã]o sei\b/i.test(x.pedido)));
+  const perguntou = perguntas.some((q) => q.secao === S.id) || fica.some((x) => x.secao === S.id && x.status === 'pergunta');
+  return { itens: fica, ignorado: perguntou ? [] : pontos.map((p) => ({ secao: S.id, trecho: p.trecho, motivo: 'Você escreveu "não sei": aqui nada é inventado. Preencha no texto ou diga em "Corrigir" o que usar.' })) };
 }
 
 /**
@@ -580,6 +618,7 @@ function itemImpossivel(id, pedido, motivo, alternativa) {
 
 /** entendido | decidir (pergunta aberta, item pendente, algo ignorado) | impossivel (a seção inteira não dá). */
 export function statusSecao(plano, s, ctx = {}) {
+  if (s.naoPreenchido) return 'nao_preenchido';
   const itens = (plano.itens || []).filter((x) => x.secao === s.id);
   const aberta = (plano.perguntas || []).some((q) => q.secao === s.id && !q.resposta);
   const ignorada = (plano.ignorado || []).some((x) => x.secao === s.id);
@@ -647,7 +686,7 @@ export function substituirSecao(plano, secaoId, d = {}, ctx = {}, correcao = '')
   const fotos = [...plano.fotos.filter((f) => f.secao !== secaoId), ...[...(Array.isArray(d.fotos) ? d.fotos : []), ...fotosIa].map((f) => normalizarFoto({ ...f, secao: secaoId }, ctx, secaoId)).filter(Boolean)];
   const perguntas = [...plano.perguntas.filter((q) => q.secao !== secaoId), ...(Array.isArray(d.perguntas) ? d.perguntas : []).map((q, i) => normalizarPergunta({ ...q, secao: secaoId, id: `${secaoId}-q${Date.now().toString(36)}${i + 1}` }, i, ctx)).filter((q) => q.texto && q.opcoes.length >= 2)];
   const secoes = plano.secoes.map((x) => (x.id === secaoId ? { ...x, entendi: txt(ia.entendi).slice(0, 600) || x.entendi, statusIa: ['entendido', 'decidir', 'impossivel'].includes(ia.status) ? ia.status : 'entendido', motivo: txt(ia.motivo).slice(0, 300), alternativa: txt(ia.alternativa).slice(0, 300), aplicada: false, faltou: false, corrigida: { texto: txt(correcao).slice(0, 600), em: new Date().toISOString() } } : x));
-  const itens = [...plano.itens.filter((x) => x.secao !== secaoId), ...novosItens];
+  const itens = comFaqDoTexto([...plano.itens.filter((x) => x.secao !== secaoId), ...novosItens], { id: secaoId, texto: s.trecho, titulo: s.titulo }, ctx);
   const ignoradoIa = (plano.ignoradoIa || []).filter((x) => x.secao !== secaoId);
   return recomporPlano({ ...plano, secoes, itens, fotos, perguntas, ignoradoIa }, ctx);
 }

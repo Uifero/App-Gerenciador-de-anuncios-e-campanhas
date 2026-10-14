@@ -6,6 +6,7 @@ import { paisDoCliente, infoPais, descreverMercado, simboloDoCliente } from '../
 import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloNarrativa } from '../lib/narrativas.js';
 import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
 import { exigirTamanho } from '../lib/textos-site.js';
+import { limparModelo } from '../lib/modelo-pedido-site.js';
 import { dividirSecoes, codigosDoTexto, temCodigo, porCodigo, resumoUsos, nomeArquivo } from '../lib/fotos-site.js';
 import { tipoMaterial } from '../lib/prova-social.js';
 import { ehVertical } from '../lib/medidas-site.js';
@@ -658,8 +659,10 @@ const linhaBase = (base) => (base && (base.heroTitulo || base.storytelling)
  */
 export function contextoPreferencias(cliente) {
   const p = cliente?.preferenciasSite || {};
+  // Linhas do modelo ainda com "[...]" não são desejo dele: não vão (lib/modelo-pedido-site.js).
+  const texto = limparModelo(exigirTamanho(String(p.texto || '').trim())).replace(/\n{3,}/g, '\n\n').trim();
   const linhas = [
-    String(p.texto || '').trim() && `Como o operador quer o site (palavras dele): "${exigirTamanho(String(p.texto).trim())}"`,
+    texto && `Como o operador quer o site (palavras dele): "${texto}"${/\bn[aã]o sei\b/i.test(texto) ? ' (onde ele escreveu "não sei", não invente: deixe o ponto de fora ou neutro)' : ''}`,
     String(cliente?.siteReferencia || '').trim() && `Site de referência: ${String(cliente.siteReferencia).trim()}`,
     String(p.gostei || '').trim() && `O que ele gostou nesse site: "${String(p.gostei).trim().slice(0, 800)}"`,
     String(p.referenciaLeitura || '').trim() && `Estrutura e estilo lidos do print da referência: ${String(p.referenciaLeitura).trim().slice(0, 1200)}`,
@@ -738,12 +741,15 @@ export async function analisarPedidoSite({ cliente, produtos = [], materiais = [
   const p = cliente?.preferenciasSite || {};
   const texto = exigirTamanho(String(p.texto || '').trim());
   const partes = dividirSecoes(texto);
+  // Partes do modelo só com "[...]" não vão para a IA (o plano mostra "Não preenchido", em cinza).
+  const preenchidas = partes.filter((s) => !s.naoPreenchido);
+  if (partes.length && !preenchidas.length && !String(p.gostei || '').trim()) throw new Error('O modelo ainda não foi preenchido: troque os textos entre [ ] pelo que você quer e analise de novo.');
   const saude = ehProdutoSaude(cliente);
   const system = 'Você é um consultor de lojas online. Você NÃO aplica nada: lê o pedido do operador parte por parte, na ordem dele, e devolve como entendeu cada parte, honesto sobre o que dá e o que não dá para fazer. Nunca deixa parte do texto de fora sem dizer. Fala com uma pessoa leiga, em frases curtas, em português do Brasil.';
   const fotos = materiais.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo).slice(0, 80).map((m) => linhaFotoIa(m, produtos)).join('\n') || '(nenhuma foto com código)';
   const prods = produtos.slice(0, 15).map((x) => `"${x.nome}"${x.preco ? ` R$ ${x.precoPromocional || x.preco}` : ''} · descrição ${String(x.descricao || '').length > 120 ? 'longa' : x.descricao ? 'curta' : 'vazia'}${x.formula ? ' · tem fórmula' : ''}${x.beneficios ? ' · tem benefícios' : ''}${x.modoUso ? ' · tem modo de uso' : ''}`).join('\n') || '(nenhum produto)';
-  const pedido = `TEXTO DO OPERADOR ("Como eu quero o site"), já dividido pelo app em ${partes.length} parte(s), NA ORDEM DELE:
-${partes.map((s) => `[${s.id}] ${s.titulo}\n${s.texto}`).join('\n\n') || '(vazio)'}
+  const pedido = `TEXTO DO OPERADOR ("Como eu quero o site"), já dividido pelo app em ${preenchidas.length} parte(s), NA ORDEM DELE:
+${preenchidas.map((s) => `[${s.id}] ${s.titulo}\n${s.texto}`).join('\n\n') || '(vazio)'}
 ${String(p.gostei || '').trim() ? `\nO que ele gostou no site de referência: "${String(p.gostei).trim().slice(0, 800)}"` : ''}${String(cliente?.siteReferencia || '').trim() ? `\nSite de referência: ${String(cliente.siteReferencia).trim()}` : ''}${String(p.referenciaLeitura || '').trim() ? `\nEstrutura e estilo lidos do print da referência: ${String(p.referenciaLeitura).trim().slice(0, 1200)}` : ''}
 
 CLIENTE: ${cliente?.nome || ''}${cliente?.nicho ? ` · nicho: ${cliente.nicho}${cliente.subnicho ? ` / ${cliente.subnicho}` : ''}` : ''} · produto de saúde: ${saude ? 'SIM (vale a regra de saúde: veja abaixo)' : 'não'}
@@ -754,12 +760,14 @@ FOTOS DOS MATERIAIS (código: o que é · o que já está marcado no seletor "Us
 ${fotos}
 
 COMO RESPONDER
-1. "secoes": UMA para CADA parte [S1]...[S${partes.length || 1}], com o mesmo "id", na mesma ordem (nenhuma pode faltar):
+1. "secoes": UMA para CADA parte (${preenchidas.map((s) => s.id).join(', ') || 'S1'}), com o mesmo "id", na mesma ordem (nenhuma pode faltar):
  - "titulo": o título como ele escreveu; "entendi": o que você entendeu dessa parte, em 1 a 3 frases simples, citando os códigos de foto e o lugar de cada um
  - "status": "entendido" | "decidir" (há uma pergunta dessa parte em "perguntas") | "impossivel" (a parte inteira não dá: "motivo" e "alternativa", o mais próximo que dá)
  - "itens": os pedidos dessa parte, um por coisa pedida, cada um {"pedido": trecho curto copiado do texto, "tipo", "params", "como": como vai ficar em 1 frase, "status": "pronto" | "pergunta" | "impossivel", "motivo", "alternativa"}. Tipos: ${TIPOS_PLANO_SEM_FOTO}
  - Só no tipo "texto" com frases escritas por ele (títulos, motivos, benefícios, história, linhas de confiança): "textos", um por frase, na ordem dele, cada um ${VERSAO_CADA}. Esse item é "pronto" (o app pede a fonte do número e mostra o aviso da alegação).
  - NUNCA ponha código de foto dentro dos itens: fotos vão SÓ em "fotos".
+ - Linhas "pergunta | resposta" são perguntas frequentes: o app já lê os pares como ele escreveu. Devolva só um item {"tipo":"faq"}, sem reescrever.
+ - Onde ele escreveu "não sei": NÃO invente nada para esse ponto (nem preço, prazo, dado ou texto); faça uma pergunta em "perguntas" sobre ele, com 2 ou 3 opções simples (ex.: "Deixar de fora por enquanto").
 2. "fotos": TODO código citado no texto, em listas ("F23, F26, F25"), com barra ("f27/f28/f29"), intervalo ("F20 a F25" = F20, F21... F25), minúsculo (f27 = F27) ou no meio da frase. Um elemento por código e por lugar: ${FORMATO_FOTO}.
  - Lugares: ${LUGARES_FOTO_IA}.
  - Lista sem lugar na própria frase pega o lugar do título da parte ou do subtítulo logo acima ("**Depoimentos:**" + "F23, F26" = clientes; "Galeria do produto:" + "f27/f28" = produto). "***" e "---" só separam partes.

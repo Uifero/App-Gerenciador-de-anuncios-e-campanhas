@@ -96,13 +96,14 @@ function itemHtml(x, { leitura = false, saude = false } = {}) {
 
 
 // ---------- "Entendi assim": um cartão por seção do texto do operador ----------
-const COR_SECAO = { entendido: 'tag-ok', decidir: 'tag-warn', impossivel: 'tag-bad' };
+const COR_SECAO = { entendido: 'tag-ok', decidir: 'tag-warn', impossivel: 'tag-bad', nao_preenchido: '' }; // não preenchido: cinza (não é erro)
 function perguntaSecaoHtml(q, leitura) {
   return `<div class="rounded bg-amber-50 p-2" data-pergunta-secao="${esc(q.id)}"><p class="text-sm font-semibold text-amber-800"><i class="fa-solid fa-circle-question"></i> ${esc(q.texto)}</p>
     ${q.resposta ? `<p class="mt-1 text-xs text-emerald-800" data-resposta-secao><i class="fa-solid fa-reply"></i> Sua resposta: ${esc(q.resposta)}</p>`
     : leitura ? '' : `<div class="mt-1 flex flex-wrap gap-2">${q.opcoes.map((o, i) => `<button type="button" class="btn-ghost btn-sm min-h-[44px]" data-responder-secao="${esc(q.id)}" data-opcao="${i}">${esc(o.texto)}</button>`).join('')}</div>`}</div>`;
 }
 function secaoHtml(plano, s, { leitura, saude }) {
+  if (s.naoPreenchido) return secaoVaziaHtml(s);
   const itens = plano.itens.filter((x) => x.secao === s.id);
   const perguntas = (plano.perguntas || []).filter((q) => q.secao === s.id);
   const ign = (plano.ignorado || []).filter((x) => x.secao === s.id);
@@ -126,11 +127,17 @@ function secaoHtml(plano, s, { leitura, saude }) {
         <button type="button" class="btn-ia btn-sm mt-1 min-h-[44px]" data-enviar-correcao="${esc(s.id)}"><i class="fa-solid fa-wand-magic-sparkles"></i> Ler esta parte de novo</button></div>`}
     </div></details></li>`;
 }
+/** Parte do modelo que ainda está só com "[...]": cinza, sem botões (não foi para a IA). */
+function secaoVaziaHtml(s) {
+  return `<li data-secao="${esc(s.id)}" data-status-secao="nao_preenchido"><div class="flex min-h-[44px] flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 p-2 text-slate-500">
+    <span class="tag">${esc(STATUS_SECAO.nao_preenchido)}</span><b class="min-w-0 flex-1 break-words text-sm">${esc(s.titulo)}</b>
+    <span class="w-full text-xs">Ainda com o texto do modelo entre [ ]. Fica de fora até você preencher no campo acima.</span></div></li>`;
+}
 function entendiAssimHtml(plano, { leitura, saude, escolhas = [], mantidos = [] }) {
   const n = (st) => plano.secoes.filter((s) => s.status === st).length;
   const geral = (plano.ignorado || []).filter((x) => !x.secao);
   return `<div class="mt-2" data-entendi-assim><h5 class="text-sm font-semibold">Entendi assim</h5>
-    <p class="text-xs text-slate-600" data-contagem-secoes>${plano.secoes.length} parte(s) do seu texto, na sua ordem: <b>${n('entendido')}</b> entendida(s) · <b>${n('decidir')}</b> para decidir · <b>${n('impossivel')}</b> não dá.</p>
+    <p class="text-xs text-slate-600" data-contagem-secoes>${plano.secoes.length} parte(s) do seu texto, na sua ordem: <b>${n('entendido')}</b> entendida(s) · <b>${n('decidir')}</b> para decidir · <b>${n('impossivel')}</b> não dá${n('nao_preenchido') ? ` · <span class="text-slate-500">${n('nao_preenchido')} não preenchida(s)</span>` : ''}.</p>
     ${(plano.inexistentes || []).length ? `<p class="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800" data-codigos-inexistentes><i class="fa-solid fa-triangle-exclamation"></i> Não existe esse código nos Materiais: ${esc(plano.inexistentes.map((x) => x.codigo).join(', '))}. Envie a foto em Materiais (passo 2) e analise de novo.</p>` : ''}
     ${geral.map((x) => `<p class="mt-1 rounded bg-amber-50 p-2 text-xs text-amber-800" data-ignorado><i class="fa-solid fa-triangle-exclamation"></i> Não usado: "${esc(x.trecho)}" — ${esc(x.motivo)}</p>`).join('')}
     ${leitura ? '' : `<div class="mt-2 flex flex-wrap items-center gap-2"><button type="button" class="btn-primary min-h-[44px]" data-aplicar-tudo ${secoesAplicaveis(plano).length ? '' : 'disabled'}><i class="fa-solid fa-check-double"></i> Aplicar tudo</button>

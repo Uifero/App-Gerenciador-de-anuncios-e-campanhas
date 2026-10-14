@@ -3,7 +3,8 @@
 // contextoPreferencias), acima dos padrões da IA e abaixo das regras do app. Da referência: só estrutura e estilo.
 import { db, COL } from '../core/storage.js';
 import { salvarMaterial, removerMaterial, garantirCodigos, salvarUsos } from '../lib/materiais.js';
-import { temCodigo, lerReferencias, nomeUso, porCodigo, aplicarReferencias, resolverEscolha, comUsos } from '../lib/fotos-site.js';
+import { temCodigo, lerReferencias, nomeUso, porCodigo, aplicarReferencias, resolverEscolha, comUsos, dividirSecoes } from '../lib/fotos-site.js';
+import { MODELO_PEDIDO_SITE } from '../lib/modelo-pedido-site.js';
 import { lerReferenciaPrint } from '../core/ia.js';
 import { prepararImagem } from './diagnostico.js';
 import { esc, $, on, toast, ocupado, campoArquivo, mostrarResultado } from '../core/ui.js';
@@ -34,12 +35,23 @@ export function preferenciasHtml(cliente, fotosTexto = null) {
     <div class="flex flex-wrap items-center justify-between gap-2"><label class="text-sm font-semibold" for="pref-texto"><i class="fa-solid fa-pen-to-square text-indigo-500"></i> Como eu quero o site</label>${botaoDitado('texto')}</div>
     <p class="hint !mt-0">Escreva do seu jeito. Ex: banner com a foto do produto, fotos inteiras sem cortar, poucas seções, tudo em fundo branco.</p>
     ${DICA_ESCREVER}
+    ${MODELO_BOTOES}
     <textarea id="pref-texto" class="input mt-1" rows="5" maxlength="${LIMITE_TEXTO_SITE}" aria-describedby="pref-texto-contador" data-pref="texto">${esc(prefs(cliente).texto || '')}</textarea>
     ${contadorHtml(prefs(cliente).texto || '')}
     <p class="hint" data-pref-salvo>Vale para toda geração e todo ajuste do site (nos dois modos). Fica abaixo das regras do app: nada de prova inventada nem promessa que o Meta proíbe.</p>
     <div class="mt-2" data-fotos-codigos><p class="hint"><i class="fa-solid fa-spinner fa-spin"></i> Carregando as fotos…</p></div>
     <div data-leitura-referencias></div>${resultadoFotosTextoHtml(fotosTexto, { soAplicadas: true })}</div>`;
 }
+
+// Modelo pronto (lib/modelo-pedido-site.js): "Usar modelo" põe no campo (nunca apaga o texto dele); "Copiar modelo" copia.
+const MODELO_BOTOES = `<div class="mt-1" data-modelo-pedido><div class="flex flex-wrap gap-2">
+    <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-usar-modelo aria-controls="pref-texto"><i class="fa-solid fa-file-lines"></i> Usar modelo</button>
+    <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-copiar-modelo><i class="fa-regular fa-copy"></i> Copiar modelo</button></div>
+  <div class="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800" role="group" aria-labelledby="modelo-pergunta" data-modelo-confirmar hidden>
+    <p id="modelo-pergunta" class="font-medium">O campo já tem texto. Colocar o modelo no fim?</p>
+    <div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-primary btn-sm min-h-[44px]" data-modelo-no-fim>Colocar no fim</button>
+      <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-modelo-cancelar>Cancelar</button></div></div>
+  <p class="text-xs text-slate-600" aria-live="polite" data-modelo-status></p></div>`;
 
 // Dica opcional (nunca obrigatória) para o texto ser entendido melhor, com e sem IA.
 const DICA_ESCREVER = `<details class="mt-1 text-xs" data-dica-escrever><summary class="flex min-h-[44px] cursor-pointer items-center font-medium text-indigo-700">Como escrever para a IA entender melhor</summary>
@@ -130,14 +142,18 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
   // Leitura sem IA, ao vivo: o que entendeu (por lugar), UMA linha do que não entendeu e os conflitos com botão.
   const lerTexto = () => {
     if (!leitura) return;
-    const r = lerReferencias($('[data-pref="texto"]', alvo)?.value || '', { materiais: fotos, produtos });
+    const valor = $('[data-pref="texto"]', alvo)?.value || '';
+    const r = lerReferencias(valor, { materiais: fotos, produtos });
+    const vazias = dividirSecoes(valor).filter((x) => x.naoPreenchido);
+    const naoPreenchidas = vazias.length ? `<p class="mt-1 text-slate-500" data-nao-preenchidas><b>Não preenchido</b> (fica de fora até você escrever): ${vazias.map((x) => `<span class="tag">${esc(x.titulo)}</span>`).join(' ')}</p>` : '';
+
     const { escolhas } = r.refs.length ? aplicarReferencias(fotos, r.refs, { produtos }) : { escolhas: [] };
     const lugares = new Map();
     for (const x of r.refs) { const k = x.uso === 'produto' ? x.produtoNome : nomeUso(x.uso); lugares.set(k, [...(lugares.get(k) || []), `${x.codigo}${x.principal ? ' (principal)' : ''}`]); }
-    leitura.innerHTML = r.refs.length || r.avisos.length || escolhas.length ? `<div class="mt-1 text-xs" data-referencias-lidas>
+    leitura.innerHTML = r.refs.length || r.avisos.length || escolhas.length || vazias.length ? `<div class="mt-1 text-xs" data-referencias-lidas>
       ${r.refs.length ? `<p class="text-slate-700"><b>Entendi sem IA:</b> ${esc([...lugares].map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · '))}. Vale ao gerar o site${aplicarFotosTexto ? ' ou em "Aplicar agora"' : ''}; a escolha feita em "Usar em" vence.</p>` : ''}
       ${naoEntendidasHtml(r)}${escolhasHtml(escolhas, prefs(cliente).conflitosMantidos || [])}
-      ${r.refs.length && aplicarFotosTexto ? '<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-aplicar-fotos-texto><i class="fa-solid fa-images"></i> Aplicar agora (sem IA)</button>' : ''}</div>` : '';
+      ${naoPreenchidas}${r.refs.length && aplicarFotosTexto ? '<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-aplicar-fotos-texto><i class="fa-solid fa-images"></i> Aplicar agora (sem IA)</button>' : ''}</div>` : '';
   };
   let espera = null;
   const lerTextoDepois = () => { clearTimeout(espera); espera = setTimeout(lerTexto, 250); };
@@ -173,6 +189,35 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
     const ins = `${antes && !/\s$/.test(antes) ? ' ' : ''}${b.dataset.inserirCodigo} `;
     campo.value = antes + ins + depois; campo.focus(); campo.selectionStart = campo.selectionEnd = (antes + ins).length;
     campo.dispatchEvent(new Event('change', { bubbles: true })); lerTexto(); contar();
+  });
+  // "Usar modelo": campo vazio recebe o modelo; com texto, pergunta antes e só põe no fim. O cursor vai para o 1º "[".
+  const statusModelo = (msg) => { const st = $('[data-modelo-status]', alvo); if (st) st.textContent = msg; };
+  const confirmar = (abrir) => { const c = $('[data-modelo-confirmar]', alvo); if (c) c.hidden = !abrir; if (abrir) $('[data-modelo-no-fim]', c)?.focus(); };
+  const porModelo = (noFim) => {
+    const campo = $('[data-pref="texto"]', alvo); if (!campo) return;
+    const atual = campo.value.replace(/\s+$/, '');
+    const antes = noFim && atual.trim() ? `${atual}\n\n` : '';
+    const novo = antes + MODELO_PEDIDO_SITE;
+    if (novo.length > LIMITE_TEXTO_SITE) { confirmar(false); toast(`O modelo não coube: o campo ficaria com ${novo.length.toLocaleString('pt-BR')} caracteres e o limite é ${LIMITE_TEXTO_SITE.toLocaleString('pt-BR')}. Encurte o texto e tente de novo.`, 'erro'); return; }
+    campo.value = novo;
+    const cursor = antes.length + MODELO_PEDIDO_SITE.indexOf('[');
+    campo.focus(); campo.setSelectionRange(cursor, cursor);
+    // o navegador deixa o campo rolado no fim: rola até a linha do cursor (a 1ª a preencher fica à vista)
+    const linha = novo.slice(0, cursor).split('\n').length - 1, alt = parseFloat(getComputedStyle(campo).lineHeight) || 24;
+    campo.scrollTop = Math.max(0, (linha - 1) * alt);
+    campo.dispatchEvent(new Event('change', { bubbles: true })); lerTexto(); contar(); confirmar(false);
+    statusModelo(noFim ? 'Modelo colocado no fim do seu texto. Troque o que está entre [ ]; o que ficar com [ ] não vai para a IA.' : 'Modelo no campo. Troque o que está entre [ ]; o que ficar com [ ] não vai para a IA.');
+  };
+  on(alvo, 'click', '[data-usar-modelo]', () => { const campo = $('[data-pref="texto"]', alvo); if (!campo) return; if (campo.value.trim()) confirmar(true); else porModelo(false); });
+  on(alvo, 'click', '[data-modelo-no-fim]', () => porModelo(true));
+  on(alvo, 'click', '[data-modelo-cancelar]', () => { confirmar(false); statusModelo('Nada mudou no seu texto.'); $('[data-usar-modelo]', alvo)?.focus(); });
+  on(alvo, 'click', '[data-copiar-modelo]', async () => {
+    try { await navigator.clipboard.writeText(MODELO_PEDIDO_SITE); } catch {
+      const t = document.createElement('textarea'); t.value = MODELO_PEDIDO_SITE; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select();
+      const ok = document.execCommand('copy'); t.remove();
+      if (!ok) { toast('Não consegui copiar agora. Use "Usar modelo" para pôr o modelo direto no campo.', 'erro'); return; }
+    }
+    statusModelo('Modelo copiado.'); toast('Modelo copiado');
   });
   on(alvo, 'click', '[data-aplicar-fotos-texto]', (b) => ocupado(b, async () => {
     const campo = $('[data-pref="texto"]', alvo);

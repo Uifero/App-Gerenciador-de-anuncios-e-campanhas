@@ -130,13 +130,17 @@ export function aplicarTextosNoEstado(estado, itens = [], modo = 'pacote', ctx =
   const juntar = (g) => g.linhas.map((l) => l.texto).join(' ');
   const destaques = grupos.filter((g) => g.destino === 'secao').map(({ destino, ...g }) => g);
   const titulo = grupos.find((g) => g.destino === 'banner_titulo'), sub = grupos.find((g) => g.destino === 'banner_subtitulo');
+  // Perguntas frequentes escritas por ele ("pergunta | resposta"): entram primeiro, como escritas; as da IA com a mesma pergunta saem.
+  const faqDele = itens.filter((x) => x.tipo === 'faq').flatMap((x) => x.params?.pares || []);
+  const comFaq = (atual = []) => (faqDele.length ? [...faqDele, ...(Array.isArray(atual) ? atual : []).filter((f) => !faqDele.some((q) => sem(q.p) === sem(f?.p)))].slice(0, 15) : atual);
   if (modo === 'custom') {
-    const conteudo = { ...(estado.conteudo || {}), destaques };
+    const conteudo = { ...(estado.conteudo || {}), destaques, ...(faqDele.length ? { faq: comFaq(estado.conteudo?.faq) } : {}) };
     if (titulo) conteudo.heroTitulo = juntar(titulo);
     if (sub) conteudo.heroSubtitulo = juntar(sub);
     return { ...estado, conteudo };
   }
   const pacote = { ...(estado.pacote || {}), destaques };
+  if (faqDele.length) pacote.textosPagina = { ...(pacote.textosPagina || {}), faq: comFaq(pacote.textosPagina?.faq) };
   if (titulo || sub) {
     const banners = [...(pacote.banners || [])];
     banners[0] = { uso: 'Banner principal', cta: '', ...(banners[0] || {}), ...(titulo ? { titulo: juntar(titulo) } : {}), ...(sub ? { subtitulo: juntar(sub) } : {}) };
