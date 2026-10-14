@@ -1,0 +1,4 @@
+{
+  "_origem": "escrita à mão: \"Cara de IA\" > Corrigir, a reescrita dos clichês do site da loja de moda pela proposta de \"Ajustar este site\" (tarefa ajuste_site_amplo)",
+  "texto": "{\"tipo\":\"proposta\",\"resposta\":\"Troquei o subtítulo do banner por fatos do perfil: linho 100% e costura francesa, feitos em São Paulo.\",\"operacoes\":[{\"op\":\"texto\",\"campo\":\"heroSubtitulo\",\"valor\":\"Linho 100% e costura francesa, cortados em São Paulo.\"}],\"naoFeito\":[]}"
+}

@@ -5,6 +5,7 @@ import { rastreamentoDe } from './rastreamento.js';
 import { printsDoCliente, printsSemAutorizacao } from './visual-site.js';
 import { linhasDeProva, provasEmImagem, ehModelo } from './prova-social.js';
 import { temCustom, temPacote } from './site-modos.js';
+import { checklistLegal } from './legal-loja.js';
 
 
 export const ETAPAS = [
@@ -136,6 +137,8 @@ export function checklistFinal({ cliente = {}, site = null, produtos = [], temLo
     { id: 'prints', texto: 'Prints e fotos de clientes borrados ou autorizados', ok: !semAut.length, falta: 'Há print/foto de cliente sem borrar e sem autorização.', acao: { tipo: 'etapa', alvo: 2 } },
     { id: 'pixel', texto: 'Pixel do Meta ou Google Ads (ou marcado "ainda não tem")', ok: !semPixel, falta: 'Sem Pixel do Meta nem Google Ads.', acao: { tipo: 'etapa', alvo: 1 } },
     { id: 'publicado', texto: 'Loja no ar (endereço colado abaixo ou status "publicado")', ok: cheio(site?.linkPublicado) || site?.status === 'publicado', falta: 'Quando a loja estiver no ar, cole o endereço abaixo.', acao: { tipo: 'ancora', alvo: 'publicado' } },
+    // Requisitos legais de loja no Brasil (lib/legal-loja.js): o que falta vai para o cartão "Requisitos legais", logo acima.
+    ...checklistLegal({ cliente, site, produtos }).map((x) => ({ ...x, legal: true, acao: { tipo: 'ancora', alvo: 'legal' } })),
   ];
 }
 

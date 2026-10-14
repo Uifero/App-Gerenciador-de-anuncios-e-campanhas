@@ -33,6 +33,11 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `plano-thermora-motivos-real.json` | "Analisar meu pedido" (tarefa `plano_site`, Sonnet 5, maxTokens 10000) com os "5 motivos" da Thermora: plano + as 3 versões de cada texto no MESMO pedido; a IA devolveu a "melhorada" igual ao original (o app trata como sem versão) e a "segura" vazia nas alegações | chamada real, 09/10/2026 |
 | `plano-thermora-motivos.json` | O mesmo plano com versões melhorada/segura distintas, para os testes a–e (unitários e navegador) | escrita à mão a partir da real |
 | `sugerir-textos-thermora.json` | "Sugerir de novo" de um item de texto (tarefa `plano_site`) | escrita à mão |
+| `pacote-thermora-qualidade-real.json` | "Gerar site" da Thermora (tarefa `pacote`, Sonnet 5) com as referências de loja sem cara de IA, página de produto e requisitos legais | chamada real, 14/10/2026 |
+| `ideias-thermora-qualidade-real.json` | "Criar criativos", passo 2 (tarefa `criativos`, Sonnet 5), 4 ideias com estilo orgânico, roteiro por formato (`roteiro`) e políticas por nicho | chamada real, 14/10/2026 |
+| `recomendacao-thermora-qualidade-real.json` | "Analisar e recomendar" (tarefa `recomendacao_anuncio`, Sonnet 5) com pouco dado (3 dias, 2 vendas) e a LEITURA DOS DADOS do app: "Dados insuficientes para decidir", `decisao` e `mudaSe` | chamada real, 14/10/2026 |
+| `ajuste-cliches-moda.json` | "Cara de IA" > Corrigir: reescrita dos clichês pela proposta de "Ajustar este site" | escrita à mão |
+| `refino-natural-thermora.json` | "Parece anúncio?" > Aplicar as sugestões numa ideia com cara de vitrine | escrita à mão |
 | `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |
 | `api-falsa.mjs` | API da Anthropic falsa (stream SSE) para testar a reserva | sem IA |

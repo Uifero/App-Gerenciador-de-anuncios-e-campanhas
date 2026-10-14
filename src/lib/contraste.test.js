@@ -30,13 +30,13 @@ describe('prévia da loja e site usam a cor calculada sem trocar a cor do client
   it('loja: fundo continua na cor do cliente; texto do banner, CTA, preço e "de" passam de 4,5', () => {
     const site = { plataforma: 'nuvemshop', pacote: { briefingTema: { paletaSugerida: ['#d9734a'] } } };
     const html = gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos }));
-    expect(html).toContain('.banner{background:#d9734a;');
-    const cta = html.match(/\.cta\{[^}]*color:(#[\da-f]{6})/)[1];
-    expect(contraste(cta, '#ffffff')).toBeGreaterThanOrEqual(MINIMO_TEXTO);
+    expect(html).toContain('--acento:#d9734a;'); // a cor do cliente fica como destaque (botão, barra de frete)
+    const cta = html.match(/\.cta\{[^}]*background:#d9734a;color:(#[\da-f]{6})/)[1];
+    expect(contraste(cta, '#d9734a')).toBeGreaterThanOrEqual(MINIMO_TEXTO);
     const precoCor = html.match(/\.preco b\{color:(#[\da-f]{6})/)[1];
     expect(contraste(precoCor, '#ffffff')).toBeGreaterThanOrEqual(MINIMO_TEXTO);
-    const banner = html.match(/\.banner\{background:#d9734a;color:(#[\da-f]{6})/)[1];
-    expect(contraste(banner, '#d9734a')).toBeGreaterThanOrEqual(MINIMO_TEXTO);
+    const [, fundoB, txtB] = html.match(/\.banner\{background:(#[\da-f]{6});color:(#[\da-f]{6})/);
+    expect(contraste(txtB, fundoB)).toBeGreaterThanOrEqual(MINIMO_TEXTO);
     const de = html.match(/\.de\{[^}]*color:(#[\da-f]{6})/)[1];
     expect(contraste(de, '#ffffff')).toBeGreaterThanOrEqual(MINIMO_TEXTO);
   });

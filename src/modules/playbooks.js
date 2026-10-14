@@ -4,6 +4,7 @@ import { db, COL } from '../core/storage.js';
 import { gerarPlaybook } from '../core/ia.js';
 import { CATEGORIAS_HOOK } from '../lib/constantes.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo } from '../lib/ganchos.js';
+import { REFERENCIAS_FIXAS } from '../lib/referencias-fixas.js';
 import { esc, $, on, montar, cabecalho, vazio, tag, dataBR, toast, modal, ocupado, lerForm, confirmar } from '../core/ui.js';
 
 const nomeCat = (v) => (CATEGORIAS_HOOK.find(([k]) => k === v) || [, v])[1];
@@ -144,6 +145,11 @@ const OFERTA_HTML = `<details class="card mb-4" data-oferta><summary class="curs
     <li><b>Objeções:</b> cada objeção do perfil vira uma resposta na oferta ou na página.</li>
     <li><b>Preço e prazo:</b> justificar pelo resultado, não pelo concorrente; desconto, "de/por", escassez e prazo só se forem reais e estiverem cadastrados.</li></ul></details>`;
 
+/** Referências fixas da fase de qualidade (lib/referencias-fixas.js): o cartão sai do mesmo texto que a IA recebe. */
+const FIXAS_HTML = REFERENCIAS_FIXAS.map((r) => `<details class="card mb-4" data-ref-fixa="${esc(r.id)}"><summary class="cursor-pointer font-semibold"><i class="fa-solid fa-bookmark mr-1 text-indigo-500" aria-hidden="true"></i> ${esc(r.titulo)} (referência)</summary>
+  <p class="hint mt-1">${esc(r.resumo)} Usada em: ${esc(r.usoEm)}. Peso: ~${r.tokens} tokens por pedido.</p>
+  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm">${r.partes.map((p) => `<li><b>${esc(p.parte)}:</b> ${esc(p.pontos)}</li>`).join('')}</ul></details>`).join('');
+
 export const view = (el) => montar(el, async (root, recarregar) => {
   const pbs = await db.listar(COL.playbooks);
   root.innerHTML = `${cabecalho('Playbooks', 'Receitas reaproveitáveis por tipo de produto: a sequência de ângulos e hooks que costuma funcionar. Para usar num cliente: escolha o playbook ao cadastrar o cliente, ou dentro dele em "Mais ações" > "Aplicar playbook" — os hooks vão para a aba Hooks e os ângulos aparecem como sugestão ao criar criativos.',
@@ -155,6 +161,7 @@ export const view = (el) => montar(el, async (root, recarregar) => {
     ${COPY_HTML}
     ${GANCHOS_HTML}
     ${OFERTA_HTML}
+    ${FIXAS_HTML}
     ${pbs.length ? `<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${pbs.map((p) => `<button data-abrir="${p.id}" class="card text-left transition hover:border-indigo-400 hover:shadow-md">
       <h3 class="font-semibold leading-tight">${esc(p.nome)}</h3><p class="caption mt-1">${esc(p.tipoProduto)}</p>
       <div class="mt-3 flex flex-wrap gap-1">${tag((p.angulos || []).length + ' ângulos', 'tag-info')}${(p.angulos || []).slice(0, 3).map((a) => tag(a.angulo)).join('')}${p.origemClienteId ? tag('de um cliente', 'tag-ok') : ''}</div>

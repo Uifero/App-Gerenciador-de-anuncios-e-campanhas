@@ -61,6 +61,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     midias: [], logo: null, musica: null, cenas: extrairCenas(criativo), cor: base.cor || pref.cor || '#4f46e5', corTexto: base.corTexto || pref.corTexto || '#ffffff',
     template: base.template || 'destaque', formato: opts.tipo === 'imagem' && opts.formato ? opts.formato : '1080x1350', guiaZona: true,
     formatoVideo: opts.tipo === 'video' && opts.formato ? opts.formato : '1080x1920', urlVideo: null, ctrl: null,
+    logoNoFim: base.logoNoFim !== false, // estilo orgânico: a marca aparece tarde e de leve ("Parece anúncio?", lib/parece-anuncio.js)
   };
   const fmtVideo = formatoDeVideo();
   const m = modal(`Gerar material — ${criativo.nome}`, `<div id="est"></div>`, {
@@ -115,7 +116,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     <details class="mt-3 rounded-lg border border-violet-200 p-2"><summary class="cursor-pointer text-sm font-medium text-violet-800"><i class="fa-solid fa-wand-magic-sparkles"></i> Gerar imagem com IA (gratuito, vários provedores em rodízio)</summary>
       <p class="hint my-2">O app tenta cada gerador gratuito configurado e, se um atingir a cota do dia, passa ao próximo. Peça a imagem sem texto: o texto entra pelo template, com letras nítidas. Para produto real, prefira a foto verdadeira.</p>
       <p class="mb-2 text-xs text-slate-600" data-status-ia>Carregando geradores…</p>
-      <div class="flex gap-2"><input class="input" data-prompt-ia value="${esc(`Foto publicitária vertical, estilo orgânico de redes sociais, para anúncio de ${cliente.nicho || 'produto'}: ${criativo.hook}. Sem texto, sem logotipos.`)}">
+      <div class="flex gap-2"><input class="input" data-prompt-ia value="${esc(`Foto vertical tirada no celular por uma pessoa comum, luz natural de janela, cenário real de casa, sem pose de estúdio, ${cliente.nicho || 'produto'}: ${criativo.hook}. Sem texto, sem logotipos.`)}">
         <button class="btn-ia btn-sm shrink-0" data-gerar-ia>Gerar imagem</button></div>
       <p class="hint mt-2 flex flex-wrap items-center gap-2">Em vez de escrever do zero: <button type="button" class="btn-ghost btn-sm" data-modelo-pronto="gerador"><i class="fa-solid fa-swatchbook"></i> Usar um modelo pronto</button> (o texto do modelo vem para o campo acima).</p></details>
   </section>
@@ -164,6 +165,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     <button class="btn-ghost btn-sm mt-2" data-add-cena><i class="fa-solid fa-plus"></i> Adicionar cena</button>
     <div class="mt-3 flex flex-wrap items-end gap-3">
       <div><label class="label">Formato</label><select class="input" data-formato-video>${opcoes(FORMATOS_IMAGEM, est.formatoVideo)}</select></div>
+      <label class="flex min-h-[44px] items-center gap-2 text-sm" title="Post de pessoa real não abre com logo: a marca aparece no fim, de leve"><input type="checkbox" class="h-4 w-4" data-logo-no-fim ${est.logoNoFim ? 'checked' : ''}> Logo só na última cena (mais natural)</label>
       <button class="btn-primary" data-gravar ${fmtVideo ? '' : 'disabled'}><i class="fa-solid fa-circle-play"></i> Gerar vídeo</button>
       <button class="btn-danger btn-sm hidden" data-cancelar>Cancelar</button>
       <span data-total class="hint"></span></div>
@@ -452,7 +454,8 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     const el = $(`[data-status-final="${qual}"]`, raiz); if (!el) return null;
     el.className = `mt-2 rounded-lg border p-2 text-sm ${cor}`; el.innerHTML = html; return el;
   };
-  const configPeca = () => ({ template: est.template, cor: est.cor, corTexto: est.corTexto, hook: $('[data-hook]', raiz).value, cta: $('[data-cta]', raiz).value,
+  on(raiz, 'change', '[data-logo-no-fim]', (c) => { est.logoNoFim = c.checked; });
+  const configPeca = () => ({ template: est.template, cor: est.cor, corTexto: est.corTexto, logoNoFim: est.logoNoFim, temLogo: Boolean(est.logo), hook: $('[data-hook]', raiz).value, cta: $('[data-cta]', raiz).value,
     cenas: est.cenas.map((c) => ({ texto: c.texto || '', dur: c.dur, tipo: c.tipo })) });
   const finalizar = async (qual, peca) => {
     const bloqueio = motivoPeca();
@@ -670,7 +673,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     await ocupado(b, async () => {
       try {
         const r = await gravarVideo({
-          cenas: est.cenas.map((c) => ({ ...c, midia: c.midiaIdx != null ? est.midias[c.midiaIdx] : null })), midias: est.midias, cor: est.cor, corTexto: est.corTexto, logo: est.logo, musica: est.musica,
+          cenas: est.cenas.map((c) => ({ ...c, midia: c.midiaIdx != null ? est.midias[c.midiaIdx] : null })), midias: est.midias, cor: est.cor, corTexto: est.corTexto, logo: est.logo, logoNoFim: est.logoNoFim, musica: est.musica,
           narracao: narr?.obter()?.arquivo || null, volumeNarracao: narr?.obter()?.volumeNarracao ?? 1, volumeMusica: narr?.obter()?.volumeMusica ?? 0.2,
           largura, altura, sinal: est.ctrl.signal, aoProgresso: (p) => { barra.style.width = `${Math.round(p * 100)}%`; },
         });

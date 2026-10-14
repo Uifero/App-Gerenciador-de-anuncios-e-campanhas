@@ -10,7 +10,7 @@ import {
 } from '../lib/anuncio.js';
 import { aplicarAceitos, VALOR_OPCAO } from '../lib/recomendacao.js';
 import { analisarERecomendar, pesquisaEmCache, obterPesquisa, carregarContexto, montarFontes } from './analise-anuncio.js';
-import { itemHtml, fontesUsadasHtml } from './itens-analise.js';
+import { itemHtml, fontesUsadasHtml, decisaoHtml } from './itens-analise.js';
 import { montarPrintsResultado } from './prints-resultado.js';
 import { esc, $, on, toast, ocupado, opcoes, dataBR, tag, mostrarResultado, confirmar } from '../core/ui.js';
 
@@ -68,6 +68,7 @@ function recomendacaoHtml(a, { aplicados = [] } = {}) {
   return `<div class="mt-3 rounded-lg border border-violet-200 bg-violet-50/30 p-3" data-recomendacao="${esc(a.id)}">
     <p class="text-xs text-slate-500">Análise de ${dataBR(a.criadoEm)} · ${a.origem === 'ia' ? 'com IA' : 'sem IA (regras do app)'}</p>
     ${r.resumo ? `<p class="mt-1 font-medium">${esc(r.resumo)}</p>` : ''}
+    ${decisaoHtml(r.decisao)}
     ${(r.diferencas || []).length || (r.mudancas || []).length ? `<div class="mt-2 rounded border border-sky-300 bg-sky-50 p-2 text-sm" data-o-que-mudou><p class="font-semibold"><i class="fa-solid fa-code-compare"></i> O que mudou desde a análise anterior</p>
       <ul class="ml-4 list-disc">${(r.diferencas || []).map((d) => `<li><b>${esc(d.campo)}:</b> ${esc(d.antes)} → ${esc(d.depois)}</li>`).join('')}${(r.mudancas || []).map((m) => `<li>${esc(m.oque)}${m.porque ? ` — <i>por quê:</i> ${esc(m.porque)}` : ''}</li>`).join('')}</ul></div>` : ''}
     ${(r.avisos || []).length ? `<ul class="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800" data-avisos-analise>${r.avisos.map((x) => `<li data-aviso="${esc(x.id)}"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(x.texto)}</li>`).join('')}</ul>` : ''}

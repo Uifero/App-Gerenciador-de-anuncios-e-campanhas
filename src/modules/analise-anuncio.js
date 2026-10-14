@@ -6,7 +6,8 @@ import { analisesDoTipo } from '../lib/analises.js';
 import { pesquisarNicho, recomendarAnuncio, planejarOtimizacao } from '../core/ia.js';
 import { comoAnunciaDe, avisosDestino, sugerirNicho } from '../lib/anuncio.js';
 import { anunciosDoNicho, resultadosDoNicho, normalizarPesquisa, chavePesquisa, pesquisaValida, mesmoNicho, normNicho } from '../lib/fontes-analise.js';
-import { blocoFontes, normalizarRecomendacao, perguntasFaltantes, recomendacaoSemIA, normalizarOtimizacao, planoSemIA, diferencas } from '../lib/recomendacao.js';
+import { blocoFontes, normalizarRecomendacao, perguntasFaltantes, recomendacaoSemIA, normalizarOtimizacao, planoSemIA, diferencas, decisaoFinal } from '../lib/recomendacao.js';
+import { leituraDosDados } from '../lib/dados-minimos.js';
 import { compararDestinos } from '../lib/destinos.js';
 import { documentosParaAnalise } from '../lib/documentos.js';
 import { fonteDiagnostico, linhasFonteDiagnostico } from '../lib/conexoes.js';
@@ -71,6 +72,8 @@ export async function analisarERecomendar(cliente, { semIA = false, forcarPesqui
   const ctx = await carregarContexto(cliente);
   const anterior = ultima(ctx.analises, 'recomendacao');
   let pesquisa = null, rec;
+  // Há dado para decidir? (lib/dados-minimos.js) Vai no pedido da IA e vence a conclusão dela.
+  const leitura = leituraDosDados({ resultados: ctx.resultados, cliente });
   if (semIA) {
     const f = montarFontes(ctx);
     rec = recomendacaoSemIA({ cliente, produtos: ctx.produtos, comparacao: f.comparacao, anuncios: f.anuncios });
@@ -79,10 +82,11 @@ export async function analisarERecomendar(cliente, { semIA = false, forcarPesqui
     pesquisa = await obterPesquisa(cliente, { forcar: forcarPesquisa });
     const f = montarFontes(ctx, pesquisa);
     const bruto = await recomendarAnuncio({ cliente, fontes: f.texto, cadastro: f.cadastro, produtos: ctx.produtos, criativos: ctx.criativos.filter((c) => !c.arquivado), avisos: f.avisos, perguntas: f.perguntas,
-      anterior: anterior ? { data: String(anterior.criadoEm).slice(0, 10), resumo: anterior.resultado?.resumo || '' } : null });
+      anterior: anterior ? { data: String(anterior.criadoEm).slice(0, 10), resumo: anterior.resultado?.resumo || '' } : null, leitura });
     rec = normalizarRecomendacao(bruto, { cliente, produtos: ctx.produtos, conferencia: f.conferencia });
     rec.perguntas = [...f.perguntas, ...rec.perguntas]; rec.avisos = f.avisos; rec.fontesUsadas = resumoFontes(f, pesquisa);
   }
+  rec.decisao = decisaoFinal(leitura, rec.decisaoIa);
   rec.diferencas = anterior ? diferencas(anterior.resultado, rec) : [];
   // Sem análise anterior não há "o que mudou" (a IA às vezes usa o campo para pendências: elas já vão em perguntas/avisos).
   if (!anterior) rec.mudancas = [];
@@ -94,14 +98,16 @@ export async function analisarERecomendar(cliente, { semIA = false, forcarPesqui
 export async function planoDeOtimizacao(cliente, { semIA = false, intervalo = {} } = {}) {
   const ctx = await carregarContexto(cliente);
   const comparacao = compararDestinos(ctx.resultados, intervalo);
+  const leitura = leituraDosDados({ resultados: ctx.resultados, cliente });
   let plano, pesquisa = null;
   if (semIA) plano = planoSemIA({ cliente, comparacao });
   else {
     pesquisa = await obterPesquisa(cliente);
     const f = montarFontes({ ...ctx, resultados: ctx.resultados }, pesquisa);
-    plano = normalizarOtimizacao(await planejarOtimizacao({ cliente, fontes: f.texto, cadastro: f.cadastro }), { conferencia: f.conferencia, comparacao });
+    plano = normalizarOtimizacao(await planejarOtimizacao({ cliente, fontes: f.texto, cadastro: f.cadastro, leitura }), { conferencia: f.conferencia, comparacao });
     plano.fontesUsadas = resumoFontes(f, pesquisa);
   }
+  plano.decisao = decisaoFinal(leitura, plano.decisaoIa);
   plano.comparacao = { nivel: comparacao.nivel, mensagem: comparacao.mensagem, avisoPeriodo: comparacao.avisoPeriodo };
   const salvo = await db.criar(COL.analises, { clienteId: cliente.id, tipo: 'otimizacao', origem: semIA ? 'manual' : 'ia', resultado: plano, intervalo, pesquisaId: pesquisa?.id || null, aceitos: [] });
   return { analise: salvo, comparacao };

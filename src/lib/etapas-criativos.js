@@ -116,6 +116,6 @@ export function ideiaDe(x, id) {
   return {
     id, nome: x.nome || '', hook: x.hook || '', copy: x.copy || '', cta: x.cta || '', angulo: x.angulo || '', gatilho: x.gatilho || '',
     framework: x.framework || 'livre', formato: x.formato || 'video_curto', porque: x.porque || '', narrativa: x.narrativa || null,
-    modeloGancho: x.modeloGancho || null, avisosGancho: x.avisosGancho || [], marcada: false, criativoId: null,
+    modeloGancho: x.modeloGancho || null, avisosGancho: x.avisosGancho || [], roteiro: x.roteiro || null, marcada: false, criativoId: null,
   };
 }

@@ -158,7 +158,7 @@ export function normalizarRecomendacao(d = {}, { cliente = {}, produtos = [], co
   if (d.escala && txt(d.escala.plano)) itens.push(item('escala', 'escala', 'Plano de escala', { plano: txt(d.escala.plano).slice(0, 1200) }, d.escala));
 
   return {
-    resumo: txt(d.resumo).slice(0, 600), destino: escolha || '', divisao, itens,
+    resumo: txt(d.resumo).slice(0, 600), decisaoIa: d.decisao || null, destino: escolha || '', divisao, itens,
     perguntas: lista(d.perguntas).map((p, i) => ({ id: `ia_${i + 1}`, texto: txt(p?.texto || p), opcoes: lista(p?.opcoes).map(txt).filter(Boolean).slice(0, 5), campo: txt(p?.campo) })).filter((p) => p.texto).slice(0, 6),
     conflitos: lista(d.conflitos).map((x) => txt(x?.texto || x)).filter(Boolean).slice(0, 6),
     mudancas: lista(d.mudancas).map((x) => ({ oque: txt(x?.oque || x), porque: txt(x?.porque) })).filter((x) => x.oque).slice(0, 8),
@@ -280,6 +280,21 @@ const tipoMudanca = (v) => { const s = normTxt(v).replace(/[\s-]+/g, '_'); retur
  * Plano da IA -> { resumo, whatsapp: [ação], site: [ação], ondeVerba, conflitos }. Até 5 ações por lado, na ordem de
  * prioridade. Ação: { id, area, prioridade, numero (o que o número mostra), mudar, tipo, medir, passoSite, ...conferido }.
  */
+/**
+ * Decisão geral ("dá para decidir?"): a leitura do app (lib/dados-minimos.js) vence a IA. Com dado insuficiente, o
+ * título é "Dados insuficientes para decidir" e o "aguardar" é o do app (mais o da IA, se ela disse algo diferente).
+ * Devolve { suficiente, nivel, titulo, aguardar, mudaSe, resumo }.
+ */
+export function decisaoFinal(leitura = null, ia = {}) {
+  const l = leitura || { nivel: 'sem_dados', suficiente: false, aguardar: '', resumo: '' };
+  const suficiente = l.nivel === 'suficiente' || l.nivel === 'perdedor';
+  const aguardarIa = txt(ia?.aguardar);
+  // O "o que esperar" é a conta do app; o da IA só aparece quando o app não tem o que dizer (evita repetir com outras palavras).
+  const aguardar = suficiente ? '' : txt(l.aguardar) || aguardarIa;
+  const titulo = suficiente ? (l.nivel === 'perdedor' ? 'Dá para decidir: gastou o bastante sem vender' : 'Dados suficientes para decidir') : 'Dados insuficientes para decidir';
+  return { suficiente, nivel: l.nivel, titulo, aguardar, mudaSe: txt(ia?.mudaSe).slice(0, 300), resumo: l.resumo || '', iaDiscordou: ia?.suficiente === true && !suficiente };
+}
+
 export function normalizarOtimizacao(d = {}, { conferencia = {}, comparacao = null } = {}) {
   const acoes = (area) => lista(d[area]).map((x, i) => {
     const c = conferirItem(x, conferencia);
@@ -292,7 +307,7 @@ export function normalizarOtimizacao(d = {}, { conferencia = {}, comparacao = nu
   let ondeVerba = dest ? { destino: dest, ...conferirItem(ov, conferencia) } : null;
   // Sem venda dos dois lados no mesmo período, o app não deixa a IA cravar o destino da verba pelo custo por venda.
   if (ondeVerba && comparacao && comparacao.nivel !== 'venda') ondeVerba = { ...ondeVerba, destino: 'indefinido', avisos: [...ondeVerba.avisos, comparacao.mensagem || 'Falta custo por venda dos dois destinos no mesmo período.'] };
-  return { resumo: txt(d.resumo).slice(0, 600), whatsapp: acoes('whatsapp'), site: acoes('site'), ondeVerba, conflitos: lista(d.conflitos).map((x) => txt(x?.texto || x)).filter(Boolean).slice(0, 6) };
+  return { resumo: txt(d.resumo).slice(0, 600), decisaoIa: d.decisao || null, whatsapp: acoes('whatsapp'), site: acoes('site'), ondeVerba, conflitos: lista(d.conflitos).map((x) => txt(x?.texto || x)).filter(Boolean).slice(0, 6) };
 }
 
 /** Caminho sem IA: só regras e contas (empate pela margem; vendas do WhatsApp sem registro). */

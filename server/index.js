@@ -12,6 +12,13 @@ import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
 import { REFERENCIA_COPY } from './referencias/copy.js';
 import { REFERENCIA_OFERTA } from './referencias/oferta.js';
 import { REFERENCIA_GANCHOS } from './referencias/ganchos.js';
+import { REFERENCIA_SITE_PROFISSIONAL } from './referencias/site-profissional.js';
+import { REFERENCIA_PAGINA_PRODUTO } from './referencias/pagina-produto.js';
+import { REFERENCIA_LEGAL } from './referencias/requisitos-legais.js';
+import { REFERENCIA_ROTEIROS } from './referencias/roteiros-video.js';
+import { REFERENCIA_ORGANICO } from './referencias/estilo-organico.js';
+import { REFERENCIA_POLITICAS } from './referencias/politicas-nicho.js';
+import { REFERENCIA_DECISOES } from './referencias/decisoes-trafego.js';
 import { calcularCusto } from '../src/lib/precos-ia.js';
 import { lerLimite, mensagemLimite } from './limite-ia.js';
 import 'dotenv/config';
@@ -72,23 +79,27 @@ const MODELO_COMPLEXO = process.env.ANTHROPIC_MODEL_COMPLEXO || 'claude-sonnet-5
  * copy = acrescenta a referência opcional server/referencias/copy.js (critérios de copy para anúncio) ao contexto estável.
  * oferta = acrescenta a referência opcional server/referencias/oferta.js (critérios de oferta) ao contexto estável.
  * ganchos = acrescenta a biblioteca de modelos de gancho de abertura (server/referencias/ganchos.js) ao contexto estável.
+ * Referências fixas da fase de qualidade (cada uma só nas tarefas que a usam; cartões em src/lib/referencias-fixas.js):
+ * siteProfissional (loja sem cara de IA), paginaProduto (página de produto que converte), legal (requisitos legais de loja
+ * no Brasil), roteiros (roteiros de vídeo por formato), organico (criativo com cara de post real), politicas (políticas de
+ * anúncio por nicho) e decisoes (decisões de tráfego de um profissional experiente).
  */
 export const TAREFAS = {
-  hooks:       { modelo: MODELO_LEVE,     max: 2000, copy: true, ganchos: true },
-  refino:      { modelo: MODELO_LEVE,     max: 3000, copy: true },
+  hooks:       { modelo: MODELO_LEVE,     max: 2000, copy: true, ganchos: true, politicas: true },
+  refino:      { modelo: MODELO_LEVE,     max: 3000, copy: true, organico: true, politicas: true },
   checklist:   { modelo: MODELO_LEVE,     max: 1200, semRaciocinio: true }, // medido: 31 s -> 8 s, mesma avaliação
-  imagem:      { modelo: MODELO_LEVE,     max: 1800, semRaciocinio: true }, // "Sugerir prompts": 35 s -> 16 s, prompts equivalentes
-  criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', metodologia: true, copy: true, ganchos: true },
+  imagem:      { modelo: MODELO_LEVE,     max: 1800, semRaciocinio: true, organico: true }, // "Sugerir prompts": 35 s -> 16 s, prompts equivalentes
+  criativos:   { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', metodologia: true, copy: true, ganchos: true, organico: true, roteiros: true, politicas: true },
   campanha:    { modelo: MODELO_COMPLEXO, max: 7000,  effort: 'medium', metodologia: true, trafego: true },
   discussao_campanha: { modelo: MODELO_COMPLEXO, max: 7000, effort: 'medium', metodologia: true, trafego: true }, // chat do rascunho de campanha
   referencias: { modelo: MODELO_COMPLEXO, max: 10000, effort: 'medium', web: true },
   analise:     { modelo: MODELO_COMPLEXO, max: 2500,  effort: 'low' },
-  site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low', metodologia: true, oferta: true },
-  pacote:      { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'low' },
+  site:        { modelo: MODELO_COMPLEXO, max: 6000,  effort: 'low', metodologia: true, oferta: true, siteProfissional: true, paginaProduto: true, legal: true },
+  pacote:      { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'low', siteProfissional: true, paginaProduto: true, legal: true },
   playbook:    { modelo: MODELO_COMPLEXO, max: 4000,  effort: 'low' },
-  insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low', trafego: true },
-  diagnostico: { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', imagens: true, web: true, trafego: true }, // busca web: benchmarks e práticas do nicho
-  narracao:    { modelo: MODELO_LEVE,     max: 2500 },
+  insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low', trafego: true, decisoes: true },
+  diagnostico: { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', imagens: true, web: true, trafego: true, decisoes: true }, // busca web: benchmarks e práticas do nicho
+  narracao:    { modelo: MODELO_LEVE,     max: 2500, roteiros: true },
   faq:         { modelo: MODELO_LEVE,     max: 2500 }, // FAQ do site a partir das objeções
   leitura_site: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low' },            // interpreta o texto extraído do site do cliente
   leitura_web:  { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // site do cliente que bloqueia leitura direta (busca web)
@@ -96,8 +107,8 @@ export const TAREFAS = {
   leitura_provas: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', imagens: true }, // prints de prova social (avaliações, WhatsApp)
   modelo_prompt: { modelo: MODELO_LEVE,     max: 1500, semRaciocinio: true }, // "Modelos de Prompt": preenche os marcadores com os dados do cliente
   ajuste_site: { modelo: MODELO_LEVE,     max: 3000, semRaciocinio: true },  // "Ajustar este site": pedido pontual (texto, ordem, cor); 8 s -> 6 s, mesmas operações
-  ajuste_site_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low' }, // "Ajustar este site": pedido amplo (várias seções / reescrever)
-  plano_site:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low' },       // "Analisar meu pedido": plano item a item ANTES de aplicar (sem imagem: o print da referência já vem lido em texto)
+  ajuste_site_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', siteProfissional: true }, // "Ajustar este site": pedido amplo (várias seções / reescrever)
+  plano_site:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low', siteProfissional: true, paginaProduto: true },       // "Analisar meu pedido": plano item a item ANTES de aplicar (sem imagem: o print da referência já vem lido em texto)
   conferencia_site: { modelo: MODELO_LEVE, max: 1500 },                     // "Conferência do pedido": só os itens que o código não consegue conferir (texto, estilo)
   leitura_respostas: { modelo: MODELO_LEVE, max: 6000 },                   // associa a resposta colada do cliente às 18 perguntas
   leitura_produtos:  { modelo: MODELO_COMPLEXO, max: 6000, effort: 'low' }, // lista de produtos da resposta do cliente
@@ -107,18 +118,20 @@ export const TAREFAS = {
   palavras_nicho:   { modelo: MODELO_LEVE, max: 600 },                      // palavras-chave da Biblioteca de Anúncios do nicho (o operador edita)
   pesquisa_nicho:   { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // UMA pesquisa web por análise (nicho + destino + Brasil + ano), com cache de 7 dias no app
   resumo_documento: { modelo: MODELO_COMPLEXO, max: 2500, effort: 'low' },  // documento de referência resumido UMA vez (não é relido a cada análise)
-  recomendacao_anuncio: { modelo: MODELO_COMPLEXO, max: 8000, effort: 'medium', metodologia: true, trafego: true, oferta: true }, // "Analisar e recomendar" (sem busca: usa a pesquisa em cache)
+  recomendacao_anuncio: { modelo: MODELO_COMPLEXO, max: 8000, effort: 'medium', metodologia: true, trafego: true, oferta: true, decisoes: true }, // "Analisar e recomendar" (sem busca: usa a pesquisa em cache)
   leitura_resultados: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', imagens: true }, // prints do Gerenciador de Anúncios -> números para revisão (nunca dado pessoal)
-  otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true, trafego: true, oferta: true }, // "Plano de otimização" WhatsApp x Site
+  otimizacao_anuncio: { modelo: MODELO_COMPLEXO, max: 6000, effort: 'medium', metodologia: true, trafego: true, oferta: true, decisoes: true }, // "Plano de otimização" WhatsApp x Site
   // "Especialistas" (src/lib/especialistas.js): consulta a um especialista num MÉTODO sobre um item do cliente; só aconselha.
-  especialista_trafego: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'medium', trafego: true },
-  especialista_copy:    { modelo: MODELO_COMPLEXO, max: 4000, effort: 'medium', metodologia: true, copy: true },
+  especialista_trafego: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'medium', trafego: true, decisoes: true },
+  especialista_copy:    { modelo: MODELO_COMPLEXO, max: 4000, effort: 'medium', metodologia: true, copy: true, politicas: true },
   especialista_oferta:  { modelo: MODELO_COMPLEXO, max: 4000, effort: 'medium', oferta: true },
 };
 
-/** Contexto estável da tarefa + as referências opcionais ligadas nela (`metodologia`, `trafego`, `copy`, `ganchos`, `oferta`), nessa ordem. */
+/** Contexto estável da tarefa + as referências ligadas nela (`metodologia`, `trafego`, `copy`, `ganchos`, `oferta` e as fixas da fase de qualidade), nessa ordem. */
 export const comMetodologia = (t, estavel) => {
-  const refs = [t?.metodologia && METODOLOGIA_VORTEX, t?.trafego && REFERENCIA_TRAFEGO, t?.copy && REFERENCIA_COPY, t?.ganchos && REFERENCIA_GANCHOS, t?.oferta && REFERENCIA_OFERTA].filter(Boolean);
+  const refs = [t?.metodologia && METODOLOGIA_VORTEX, t?.trafego && REFERENCIA_TRAFEGO, t?.copy && REFERENCIA_COPY, t?.ganchos && REFERENCIA_GANCHOS, t?.oferta && REFERENCIA_OFERTA,
+    t?.siteProfissional && REFERENCIA_SITE_PROFISSIONAL, t?.paginaProduto && REFERENCIA_PAGINA_PRODUTO, t?.legal && REFERENCIA_LEGAL,
+    t?.organico && REFERENCIA_ORGANICO, t?.roteiros && REFERENCIA_ROTEIROS, t?.politicas && REFERENCIA_POLITICAS, t?.decisoes && REFERENCIA_DECISOES].filter(Boolean);
   return refs.length ? [estavel, ...refs].filter(Boolean).join('\n\n') : estavel;
 };
 

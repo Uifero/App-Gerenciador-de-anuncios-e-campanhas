@@ -34,7 +34,7 @@ describe('prévia do pacote com cara de loja', () => {
 
   it('usa o logo, a cor, as fotos, os preços e os textos reais do cliente', () => {
     expect(html).toContain('<img src="https://cdn.exemplo/logo.png" alt="Loja Ana" class="logo">');
-    expect(html).toContain('background:#db2777');
+    expect(html).toContain('--acento:#db2777;'); // cor da marca (paleta) como destaque
     expect(html).toContain('https://cdn.exemplo/legging.jpg');
     expect(html).toContain('R$ 129,90'); // preço "de"
     expect(html).toContain('R$ 99,90');  // promocional
@@ -92,7 +92,9 @@ describe('escolhas visuais no molde do pacote', () => {
     expect(h).toContain('<div class="banner com-carrossel"><div class="car car-1"');
     expect(h).toContain('<img src="https://cdn.exemplo/banner.jpg"');
     expect(h).not.toContain('class="car-seta"');
-    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos }))).toContain('<div class="banner"><div class="wrap">');
+    // Sem imagem escolhida: a foto real do produto vira o banner; sem foto nenhuma, fundo neutro (nunca gradiente).
+    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos }))).toMatch(/<div class="banner com-foto" data-banner-produto>[\s\S]*<a class="hero-img" href="#produto-0"><img src="https:\/\/cdn.exemplo\/legging.jpg"/);
+    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos: [{ nome: 'Sem foto', preco: 10, fotos: [] }] }))).toContain('<div class="banner"><div class="wrap">');
   });
 
   it('seções na ordem escolhida e ocultas fora; "Clientes reais" logo depois do banner, com ampliação', () => {

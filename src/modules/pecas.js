@@ -9,6 +9,7 @@ import {
 } from '../lib/pecas.js';
 import { comprimirVideoPeca } from '../lib/video.js';
 import { rotuloModelo } from '../lib/ganchos.js';
+import { pareceAnuncio, configNatural } from '../lib/parece-anuncio.js';
 import { statusAposTrocarArquivo } from './aprovacao.js';
 import { esc, $, on, modal, toast, ocupado, confirmar, tag, dataBR, opcoes, mostrarResultado } from '../core/ui.js';
 
@@ -144,6 +145,19 @@ export function montarGaleria(alvo, ctx) {
   const formatos = [...new Set(pecas.map((p) => p.formatoNome).filter(Boolean))];
   const nomeProduto = (id) => produtos.find((p) => p.id === id)?.nome || '';
 
+  // "Parece anúncio?" da peça (lib/parece-anuncio.js): texto do criativo + o visual guardado na peça (template, logo).
+  const TEMPLATE_NOME = { destaque: 'Foto em tela cheia', cartao: 'Foto + painel de cor', colagem: 'Colagem', texto: 'Só texto' };
+  const pareceHtml = (p) => {
+    const c = criativos.find((x) => x.id === p.criativoId) || {};
+    const pa = pareceAnuncio({ ...c, hook: p.texto?.hook || c.hook, cta: p.texto?.cta || c.cta }, { cliente, peca: p });
+    const visuais = pa.motivos.filter((m) => m.onde === 'peca');
+    const novo = configNatural(p.config || {});
+    return `<details class="mt-1 text-sm" data-parece-peca="${esc(p.id)}" data-nota="${pa.nota}"><summary class="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-1">Parece anúncio? ${tag(`${pa.faixa[1]} · ${pa.nota}`, pa.faixa[2])}</summary>
+      ${pa.motivos.length ? `<ul class="mt-1 space-y-1 text-xs">${pa.motivos.map((m) => `<li><b>${esc(m.texto)}</b> ${esc(m.sugestao)}</li>`).join('')}</ul>` : '<p class="text-xs text-emerald-800">Cara de post.</p>'}
+      ${visuais.length ? `<div class="mt-1 grid gap-1 text-xs" data-comparar-visual><p class="rounded bg-slate-100 p-1"><b>Atual:</b> ${esc(TEMPLATE_NOME[p.config?.template] || 'modelo da peça')}${p.config?.temLogo ? `, logo ${p.tipo === 'video' && p.config?.logoNoFim === false ? 'desde o início' : 'na peça'}` : ''}</p>
+        <p class="rounded bg-emerald-50 p-1"><b>Com a mudança:</b> ${esc(TEMPLATE_NOME[novo.template] || 'mesmo modelo')}${p.tipo === 'video' ? ', logo só na última cena' : ''}</p>
+        <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-peca-natural="${esc(p.id)}"><i class="fa-solid fa-leaf"></i> Refazer no Estúdio com a mudança</button></div>` : ''}</details>`;
+  };
   const cartao = (p) => {
     const st = statusDaPeca(p);
     return `<li class="card scroll-mt-36 !p-2 ${comparar.has(p.id) ? 'ring-2 ring-indigo-500' : ''}" data-peca="${esc(p.id)}" data-status="${st}">
@@ -154,6 +168,7 @@ export function montarGaleria(alvo, ctx) {
       <p class="mt-1 line-clamp-2 text-sm font-medium">${esc(p.criativoNome || 'Criativo')}</p>
       <p class="hint !mt-0">${esc(nomeProduto(p.produtoId) || 'sem produto')} · ${dataBR(p.criadoEm)} · ${formatarBytes(p.tamanho)}</p>
       ${p.avisoCompressao ? `<p class="mt-1 text-xs text-amber-700" data-aviso-compressao>${esc(p.avisoCompressao)}</p>` : ''}
+      ${pareceHtml(p)}
       <div class="mt-2 space-y-1">${botoesStatus(p)}
         <label class="flex min-h-[44px] items-center gap-2 text-sm"><input type="checkbox" class="h-5 w-5" data-comparar="${esc(p.id)}" ${comparar.has(p.id) ? 'checked' : ''}> Comparar</label>
         ${st === 'usar' ? `<div class="flex flex-wrap gap-1"><button type="button" class="btn-ghost btn-sm min-h-[44px] flex-1" data-baixar-peca="${esc(p.id)}"><i class="fa-solid fa-download"></i> Baixar</button>
@@ -197,6 +212,13 @@ export function montarGaleria(alvo, ctx) {
   on(alvo, 'click', '[data-baixar-peca]', (b) => ocupado(b, () => baixarPeca(acharPeca(b.dataset.baixarPeca))));
   on(alvo, 'click', '[data-aprovar-peca]', (b) => enviarAprovacao([acharPeca(b.dataset.aprovarPeca)]));
   on(alvo, 'click', '[data-especialista-peca]', (b) => ctx.aoPedirEspecialista?.(acharPeca(b.dataset.especialistaPeca)));
+  on(alvo, 'click', '[data-peca-natural]', (b) => ocupado(b, async () => {
+    const p = acharPeca(b.dataset.pecaNatural), c = criativos.find((x) => x.id === p?.criativoId);
+    if (!c) return toast('O criativo desta peça foi excluído: não dá para refazer.', 'erro');
+    const { abrirEstudio } = await import('./estudio.js'); // import tardio: o Estúdio também usa este módulo
+    abrirEstudio(c, cliente, { produtos, materiais: [] }, { tipo: p.tipo, formato: p.formato, config: configNatural(p.config || {}), baseadaEm: p.id,
+      aoFinalizar: (nova) => { pecas.unshift(nova); desenhar(); ctx.aoMudar?.(); } });
+  }));
   const excluir = async (lista) => {
     const plano = planoExclusaoPecas(lista, criativos);
     if (!plano.apagar.length && !plano.manter.length) return toast('Só dá para excluir peça marcada como "Descartar".', 'erro');

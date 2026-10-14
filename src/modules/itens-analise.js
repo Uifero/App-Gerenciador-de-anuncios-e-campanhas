@@ -59,7 +59,20 @@ export function itemHtml(it, { aceitavel = true, jaAplicado = false } = {}) {
         ${corpoDados(it)}
         ${it.porque ? `<p class="text-sm" data-porque><b>Por quê:</b> ${esc(it.porque)}</p>` : '<p class="text-sm text-slate-500" data-porque><b>Por quê:</b> a IA não explicou.</p>'}
         ${fontesHtml(it)}${esperadoHtml(it)}
+        ${it.mudaSe ? `<p class="text-xs text-slate-600" data-muda-se><b>Mudaria a decisão:</b> ${esc(it.mudaSe)}</p>` : ''}
         ${(it.avisos || []).length ? `<ul class="text-xs text-amber-800">${it.avisos.map((a) => `<li><i class="fa-solid fa-triangle-exclamation"></i> ${esc(a)}</li>`).join('')}</ul>` : ''}</div></div></li>`;
+}
+
+/** "Dá para decidir?" (lib/recomendacao.js decisaoFinal): fica no topo da análise, antes de qualquer item. */
+export function decisaoHtml(d) {
+  if (!d) return '';
+  return `<div class="mt-2 rounded-lg border-2 ${d.suficiente ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-400 bg-amber-50 text-amber-800'} p-2 text-sm" data-decisao="${d.suficiente ? 'suficiente' : 'insuficiente'}" role="status">
+    <p class="font-semibold"><i class="fa-solid ${d.suficiente ? 'fa-scale-balanced' : 'fa-hourglass-half'}" aria-hidden="true"></i> ${esc(d.titulo)}</p>
+    ${d.resumo ? `<p class="text-xs">${esc(d.resumo)}</p>` : ''}
+    ${d.aguardar ? `<p class="mt-1"><b>O que esperar:</b> ${esc(d.aguardar)}</p>` : ''}
+    ${!d.suficiente ? '<p class="mt-1 text-xs">Até lá, só valem as recomendações que não dependem do resultado (rastreamento, estrutura de teste, criativos novos). Não declare vencedor nem escale.</p>' : ''}
+    ${d.iaDiscordou ? '<p class="mt-1 text-xs">A IA achou que dava para decidir; o app conta os dados e não deixa.</p>' : ''}
+    ${d.mudaSe ? `<p class="mt-1 text-xs"><b>O que mudaria a decisão:</b> ${esc(d.mudaSe)}</p>` : ''}</div>`;
 }
 
 /** O que a IA tinha em mãos (contado pelo app). */

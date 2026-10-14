@@ -6,7 +6,7 @@
 // O fluxo em andamento fica em cliente.fluxoCriativos (só as escolhas e as ideias ainda não salvas); a ideia marcada
 // vira criativo ao produzir, e daí em diante o texto é lido do criativo (fonte única).
 import { db, COL } from '../core/storage.js';
-import { gerarCriativos } from '../core/ia.js';
+import { gerarCriativos, refinarCriativo } from '../core/ia.js';
 import { obterConfig } from './configuracoes.js';
 import { abrirEstudio } from './estudio.js';
 import { montarEspecialistas, abrirEspecialistas } from './especialistas.js';
@@ -24,7 +24,9 @@ import {
 } from '../lib/etapas-criativos.js';
 import { comoAnunciaDe } from '../lib/anuncio.js';
 import { motivoSaude, achadosSaude, ehProdutoSaude, AVISO_META_SAUDE, MOTIVO_ANUNCIO_SITE, textosDoSiteNoAnuncio, trocarPelaSegura } from '../lib/saude.js';
-import { versaoNova } from '../lib/aplicar-especialista.js';
+import { versaoNova, propostaDeMudanca } from '../lib/aplicar-especialista.js';
+import { pareceAnuncio, instrucaoNatural, nomeRoteiro } from '../lib/parece-anuncio.js';
+import { avisosPolitica } from '../lib/politicas-anuncio.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, rotuloModelo, motivoGancho } from '../lib/ganchos.js';
 import { NARRATIVAS, ETAPAS_FUNIL } from '../lib/narrativas.js';
 import { FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS } from '../lib/constantes.js';
@@ -185,17 +187,30 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
     const seguras = doSite.filter((l) => l.segura);
     return [saude && `<div class="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-700" data-bloqueio-ideia="saude"><p><i class="fa-solid fa-triangle-exclamation"></i> ${doSite.length ? `${esc(MOTIVO_ANUNCIO_SITE)} ` : ''}Bloqueado para aprovar (Meta): ${esc(achadosSaude(texto).join(', '))}. ${seguras.length ? `Versão segura: ${seguras.map((l) => `"${esc(l.segura)}"`).join('; ')}.` : 'Refaça a ideia ou ajuste o texto.'}</p>${seguras.length ? `<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-ideia="${esc(i.id)}"><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>` : ''}</div>`,
       gancho && `<p class="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-700" data-bloqueio-ideia="gancho"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(gancho)}.</p>`,
+      ...avisosPolitica(texto).map((a) => `<p class="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-aviso-politica="${esc(a.id)}"><i class="fa-solid fa-circle-exclamation"></i> Política do Meta: ${esc(a.texto)} ${esc(a.troca)}</p>`),
       ...(i.avisosGancho || []).filter((x) => x !== gancho && !String(x).startsWith('sobrou colchete')).map((x) => `<p class="text-xs text-amber-800">${esc(x)}</p>`)].filter(Boolean).join('');
+  };
+  // "Parece anúncio?" (lib/parece-anuncio.js): nota, motivos e sugestões; "Aplicar as sugestões" reescreve só o texto e
+  // mostra Atual × Com a mudança (saúde e colchete conferidos antes de salvar).
+  const pareceAnuncioHtml = (i) => {
+    const pa = pareceAnuncio(textoIdeia(i), { cliente });
+    const deTexto = pa.motivos.filter((m) => m.onde === 'texto').length;
+    return `<details class="mt-2 rounded-lg border border-slate-200 p-2" data-parece-anuncio="${esc(i.id)}" data-nota="${pa.nota}"><summary class="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-2 text-sm font-medium">Parece anúncio? ${tag(`${pa.faixa[1]} · ${pa.nota}/100`, pa.faixa[2])}</summary>
+      ${pa.motivos.length ? `<ul class="mt-1 space-y-1 text-sm">${pa.motivos.map((m) => `<li data-motivo="${esc(m.id)}"><b>${esc(m.texto)}</b><br><span class="text-xs text-slate-600">${esc(m.sugestao)}</span></li>`).join('')}</ul>
+        ${deTexto ? `<button type="button" class="btn-ia btn-sm mt-2 min-h-[44px]" data-aplicar-natural="${esc(i.id)}"><i class="fa-solid fa-wand-magic-sparkles"></i> Aplicar as sugestões no texto</button>` : ''}`
+        : '<p class="mt-1 text-sm text-emerald-800"><i class="fa-solid fa-circle-check"></i> Cara de post: sem palavra de venda, marca no fim, texto curto.</p>'}
+      <div data-proposta-natural="${esc(i.id)}"></div></details>`;
   };
   const cartaoIdeia = (i) => {
     const t = textoIdeia(i), f = formatoDaIdeia(i);
     return `<li class="card !p-3 ${i.marcada ? 'ring-2 ring-indigo-500' : ''}" data-ideia="${esc(i.id)}">
       <label class="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" class="h-5 w-5" data-marcar-ideia="${esc(i.id)}" ${i.marcada ? 'checked' : ''}> Produzir esta ideia</label>
       <p class="mt-1 font-semibold leading-snug">“${esc(t.hook)}”</p>
-      <div class="mt-1 flex flex-wrap gap-1">${tag(f.tipo === 'video' ? 'Reels 9:16 (vídeo)' : 'Feed 4:5 (imagem)', 'tag-info')}${t.modeloGancho ? tag(rotuloModelo(t.modeloGancho)) : ''}${i.angulo ? tag(i.angulo) : ''}${i.criativoId ? tag('já é criativo', 'tag-ok') : ''}</div>
+      <div class="mt-1 flex flex-wrap gap-1">${tag(f.tipo === 'video' ? 'Reels 9:16 (vídeo)' : 'Feed 4:5 (imagem)', 'tag-info')}${t.modeloGancho ? tag(rotuloModelo(t.modeloGancho)) : ''}${i.roteiro ? tag(`roteiro: ${nomeRoteiro(i.roteiro)}`) : ''}${i.angulo ? tag(i.angulo) : ''}${i.criativoId ? tag('já é criativo', 'tag-ok') : ''}</div>
       <p class="mt-2 line-clamp-4 whitespace-pre-wrap text-sm text-slate-700" data-roteiro-curto>${esc(t.copy)}</p>
       ${t.cta ? `<p class="mt-1 text-sm"><b>CTA:</b> ${esc(t.cta)}</p>` : ''}
       <div class="mt-2 space-y-1">${blocosIdeia(i)}</div>
+      ${pareceAnuncioHtml(i)}
       <div class="mt-2 flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm min-h-[44px]" data-refazer-ideia="${esc(i.id)}"><i class="fa-solid fa-rotate"></i> Refazer esta ideia</button>
         <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-especialista-ideia="${esc(i.id)}"><i class="fa-solid fa-user-tie"></i> Pedir opinião a um especialista</button>
         <button type="button" class="btn-ghost btn-sm min-h-[44px] text-rose-600" data-excluir-ideia="${esc(i.id)}" aria-label="Excluir esta ideia"><i class="fa-solid fa-trash"></i></button></div>
@@ -269,6 +284,36 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
       else await salvarFluxo({ ideias: fluxo.ideias.map((x) => (x.id === i.id ? { ...x, ...novo } : x)) });
       redesenhar();
       mostrarResultado(lista.querySelector(`[data-ideia="${CSS.escape(i.id)}"]`), 'Versão segura aplicada nesta ideia.');
+    }));
+    const propostas = new Map();
+    on(alvo, 'click', '[data-aplicar-natural]', (b) => ocupado(b, async () => {
+      const i = fluxo.ideias.find((x) => x.id === b.dataset.aplicarNatural); if (!i) return;
+      const t = textoIdeia(i), zona = lista.querySelector(`[data-proposta-natural="${CSS.escape(i.id)}"]`);
+      zona.innerHTML = '<p class="caption mt-2" role="status"><i class="fa-solid fa-spinner fa-spin"></i> Reescrevendo só o que deixa com cara de anúncio…</p>';
+      let prop;
+      try { prop = propostaDeMudanca(t, await refinarCriativo({ cliente, criativo: t, instrucao: instrucaoNatural(pareceAnuncio(t, { cliente })) }), cliente); }
+      catch (e) { zona.innerHTML = `<p class="mt-2 rounded border border-rose-300 bg-rose-50 p-2 text-sm text-rose-700" role="alert">Não consegui reescrever: ${esc(e.message || e)}. Nada foi mudado.</p>`; return; }
+      propostas.set(i.id, prop);
+      const ROT = { hook: 'Gancho', copy: 'Texto / roteiro', cta: 'CTA' };
+      const depois = pareceAnuncio({ ...t, ...prop.depois }, { cliente });
+      zona.innerHTML = `<div class="mt-2 space-y-2 rounded-lg border border-violet-200 p-2" data-proposta-texto-natural>
+        <p class="text-sm font-semibold">Atual × Com a mudança <span class="font-normal">(nota ${pareceAnuncio(t, { cliente }).nota} → ${depois.nota})</span></p>
+        ${prop.campos.length ? prop.campos.map((k) => `<div class="grid gap-2 sm:grid-cols-2"><div class="rounded border border-slate-200 bg-slate-50 p-2"><p class="text-xs font-semibold text-slate-600">${ROT[k]} · Atual</p><p class="whitespace-pre-wrap text-sm">${esc(prop.antes[k])}</p></div>
+          <div class="rounded border border-emerald-300 bg-emerald-50/60 p-2"><p class="text-xs font-semibold text-emerald-800">${ROT[k]} · Com a mudança</p><p class="whitespace-pre-wrap text-sm">${esc(prop.depois[k])}</p></div></div>`).join('') : '<p class="text-sm text-amber-800">A IA não mudou nada no texto.</p>'}
+        ${prop.explicacao ? `<p class="hint">IA: ${esc(prop.explicacao)}</p>` : ''}
+        ${prop.bloqueio ? `<p class="rounded border border-rose-300 bg-rose-50 p-2 text-sm text-rose-700" role="alert">${esc(prop.bloqueio)} Nada foi salvo.</p>` : ''}
+        <div class="flex flex-wrap gap-2">${prop.campos.length && !prop.bloqueio ? `<button type="button" class="btn-primary btn-sm min-h-[44px]" data-aceitar-natural="${esc(i.id)}"><i class="fa-solid fa-check"></i> Aceitar</button>` : ''}<button type="button" class="btn-ghost btn-sm min-h-[44px]" data-descartar-natural="${esc(i.id)}">Descartar</button></div></div>`;
+      mostrarResultado(zona.firstElementChild, 'Confira "Atual × Com a mudança".');
+    }));
+    on(alvo, 'click', '[data-descartar-natural]', (b) => { propostas.delete(b.dataset.descartarNatural); const z = lista.querySelector(`[data-proposta-natural="${CSS.escape(b.dataset.descartarNatural)}"]`); if (z) z.innerHTML = '<p class="hint">Descartada: nada foi mudado.</p>'; });
+    on(alvo, 'click', '[data-aceitar-natural]', (b) => ocupado(b, async () => {
+      const i = fluxo.ideias.find((x) => x.id === b.dataset.aceitarNatural), prop = propostas.get(b.dataset.aceitarNatural); if (!i || !prop || prop.bloqueio) return;
+      const c = criativoDaIdeia(i);
+      if (c) { const patch = versaoNova(c, prop.depois, 'Mais natural ("Parece anúncio?")'); await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch); }
+      else await salvarFluxo({ ideias: fluxo.ideias.map((x) => (x.id === i.id ? { ...x, ...prop.depois } : x)) });
+      propostas.delete(i.id); redesenhar();
+      const card = lista.querySelector(`[data-ideia="${CSS.escape(i.id)}"]`); card?.querySelector('[data-parece-anuncio]')?.setAttribute('open', '');
+      mostrarResultado(card, `Mudança aplicada${c ? ' (nova versão do criativo)' : ''}. Nota agora: ${pareceAnuncio(textoIdeia(fluxo.ideias.find((x) => x.id === i.id) || i), { cliente }).nota}/100.`);
     }));
     on(alvo, 'click', '[data-refazer-ideia]', (b) => ocupado(b, async () => {
       const i = fluxo.ideias.find((x) => x.id === b.dataset.refazerIdeia); if (!i) return;

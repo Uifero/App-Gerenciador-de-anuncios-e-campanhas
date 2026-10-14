@@ -15,6 +15,7 @@ import { produtosComFotos } from '../lib/fotos-site.js';
 import { etiquetaSite } from '../lib/aprovacao-site.js';
 import { montarAreaAnuncio } from './area-anuncio.js';
 import { motivoSaude } from '../lib/saude.js';
+import { checklistPublicar, textoChecklistPublicar } from '../lib/checklist-publicar.js';
 import {
   esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, moeda, toast, modal, ocupado, lerForm, opcoes, copiar,
   listaDeLinhas, num, confirmar,
@@ -382,6 +383,20 @@ function abrirRascunho(c, ctx) {
 }
 
 // ---------- detalhe ----------
+/** "Checklist para publicar" (lib/checklist-publicar.js): nomes, UTMs, Pixel, exclusões, orçamento, posicionamentos, programação e o que não mexer. */
+function publicarHtml(c, cliente, criativos) {
+  const secoes = checklistPublicar({ campanha: c, cliente, criativos });
+  return `<div class="mt-4 card" data-checklist-publicar><div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h4 class="text-sm font-semibold"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Checklist para publicar</h4>
+      <button type="button" class="btn-primary btn-sm min-h-[44px]" data-copiar-tudo-publicar><i class="fa-solid fa-copy"></i> Copiar tudo</button></div>
+    <p class="hint mb-2">Confira antes de montar esta campanha no Gerenciador de Anúncios do Meta. O app não publica nada no Meta: você monta lá com estes nomes e links.</p>
+    <div class="space-y-2">${secoes.map((s, si) => `<details class="rounded-lg border border-slate-200 p-2" ${si < 2 ? 'open' : ''} data-secao-publicar="${esc(s.id)}"><summary class="min-h-[32px] cursor-pointer text-sm font-semibold">${esc(s.titulo)}</summary>
+      <ul class="mt-1 space-y-1">${s.itens.map((it, ii) => `<li class="flex items-start justify-between gap-2 rounded bg-slate-50 p-2 text-sm"><div class="min-w-0"><p class="text-xs text-slate-500">${esc(it.rotulo)}</p><p class="break-words${it.copiar ? ' font-mono text-xs' : ''}">${esc(it.valor)}</p></div>
+        ${it.copiar ? `<button type="button" class="btn-ghost btn-sm min-h-[44px] shrink-0" data-copiar-item-publicar="${si}-${ii}" aria-label="Copiar ${esc(it.rotulo)}"><i class="fa-solid fa-copy"></i> Copiar</button>` : ''}</li>`).join('')}</ul></details>`).join('')}</div>
+    <details class="mt-2 text-sm"><summary class="cursor-pointer text-slate-600">Passos da estrutura (ordem para montar)</summary>
+      <div class="mt-1 flex justify-end"><button type="button" class="btn-ghost btn-sm" data-copiar><i class="fa-solid fa-copy"></i> Copiar passos</button></div>
+      <ol class="list-decimal space-y-1 pl-5">${checklistFinal(c, cliente, criativos).map((t) => `<li>${esc(t)}</li>`).join('')}</ol></details></div>`;
+}
+
 function detalhe(c, cliente, criativos, cfg, recarregar) {
   const m = modal(c.nome, '<div id="d"></div>', { largo: true });
   const alvo = $('#d', m.el);
@@ -420,10 +435,7 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
       ${disponiveis.length ? `<div class="mt-2 flex gap-2"><select class="input" data-add>${'<option value="">Adicionar criativo aprovado…</option>' + disponiveis.map((x) => `<option value="${x.id}">${esc(x.nome)}</option>`).join('')}</select></div>`
         : '<p class="hint mt-2">Só criativos aprovados (checklist completo) podem ser vinculados.</p>'}</div>
 
-    <div class="mt-4 card"><div class="mb-2 flex items-center justify-between"><h4 class="text-sm font-semibold">Checklist para o Gerenciador de Anúncios do Meta</h4>
-      <button class="btn-primary btn-sm" data-copiar><i class="fa-solid fa-copy"></i> Copiar checklist</button></div>
-      <p class="hint mb-2">Passo a passo para criar esta campanha no Gerenciador de Anúncios do Meta (business.facebook.com), igual à estrutura acima. Copie para seguir lá.</p>
-      <ol class="list-decimal space-y-1 pl-5 text-sm">${checklistFinal(c, cliente, criativos).map((t) => `<li>${esc(t)}</li>`).join('')}</ol></div>
+    ${publicarHtml(c, cliente, criativos)}
 
     <div class="mt-4 flex flex-wrap items-end justify-between gap-2"><div><label class="label">Status da campanha</label>
       <select class="input" data-status>${opcoes(STATUS_CAMPANHA, c.status)}</select></div>
@@ -449,6 +461,8 @@ function detalhe(c, cliente, criativos, cfg, recarregar) {
   });
   on(alvo, 'click', '[data-pausar]', async (b) => { await definirStatus(doCli(b.dataset.pausar), 'pausado'); desenhar(); recarregar(); });
   on(alvo, 'click', '[data-copiar]', () => copiar(textoChecklist(c, cliente, criativos)));
+  on(alvo, 'click', '[data-copiar-tudo-publicar]', () => copiar(textoChecklistPublicar(checklistPublicar({ campanha: c, cliente, criativos }), c.nome)));
+  on(alvo, 'click', '[data-copiar-item-publicar]', (b) => { const [si, ii] = b.dataset.copiarItemPublicar.split('-').map(Number); const it = checklistPublicar({ campanha: c, cliente, criativos })[si]?.itens[ii]; if (it) copiar(it.valor); });
   on(alvo, 'change', '[data-url-destino]', (i) => salvar({ urlDestino: i.value.trim() || null }));
   on(alvo, 'change', '[data-status]', (s) => salvar({ status: s.value }));
   on(alvo, 'click', '[data-apagar]', async () => {

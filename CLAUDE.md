@@ -29,6 +29,7 @@ Sites e prévias de loja são feitos primeiro para o celular (390x844): menu ☰
 
 ## Referências e squads de marketing (Xquads)
 - O conhecimento de tráfego, copy e oferta que a IA do app usa fica em `server/referencias/` (`metodologia-vortex.js`, `trafego.js`, `copy.js`, `oferta.js`), ligado por flag em `TAREFAS`; o cartão de cada uma aparece em Playbooks. Mudou o texto de uma referência? Atualize o cartão em `src/modules/playbooks.js`.
+- Referências fixas de qualidade (`site-profissional`, `pagina-produto`, `requisitos-legais`, `roteiros-video`, `estilo-organico`, `politicas-nicho`, `decisoes-trafego`): cartão em Playbooks e em Documentos de referência sai sozinho de `src/lib/referencias-fixas.js` (lê o mesmo texto). As conferências locais usam a mesma lista: clichês em `lib/cara-de-ia.js`, nota em `lib/parece-anuncio.js`, mínimo de dados em `lib/dados-minimos.js`; mudou um, mude o outro. Cada uma até ~650 tokens (teste em `server/index.test.js`).
 - Ao criar ou mudar regra de negócio de tráfego, copy ou oferta (alertas, critérios, textos de prompt), consulte antes o squad correspondente (skills globais `traffic-masters`, `copy-squad`, `hormozi-squad`) e traga só o que passar pelas regras do app: nada de número/benchmark em US$, urgência, garantia, bônus ou preço inventados, e a política do Meta para saúde vem antes.
 - Referência nova vai resumida com palavras nossas (curta, ~600 tokens), nunca a persona inteira do agente.
 

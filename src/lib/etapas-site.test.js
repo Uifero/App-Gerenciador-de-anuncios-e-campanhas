@@ -7,9 +7,11 @@ import { depoimentosVivos } from './prova-social.js';
 import { comTextosDoPacote } from './csv.js';
 
 const marcaCompleta = { negocio: 'garrafas', usp: 'gelada 24h', tomDeVoz: 'direto', objecoes: 'E se vazar?', linguagemDor: 'água quente', provasSociais: 'Nota 4,9 no Google' };
-const clienteOk = { id: 'c1', nome: 'Loja', marca: marcaCompleta, rastreamento: { metaPixelId: '123456789012345' }, logoArquivo: { url: 'https://x/logo.png' } };
+const dadosLoja = { razaoSocial: 'Loja Exemplo Ltda', cnpj: '11.222.333/0001-81', endereco: 'Rua Um, 100, São Paulo/SP', email: 'oi@loja.com' };
+const clienteOk = { id: 'c1', nome: 'Loja', marca: marcaCompleta, rastreamento: { metaPixelId: '123456789012345' }, logoArquivo: { url: 'https://x/logo.png' }, dadosLoja };
 const prod = (id, extra = {}) => ({ id, nome: `Produto ${id}`, preco: 10, fotos: [{ url: `https://x/${id}.jpg` }], ...extra });
-const siteOk = { modo: 'pacote_plataforma', plataforma: 'shopify', tema: 'dawn', pacote: { banners: [{ titulo: 'Oi' }] }, linkPublicado: 'https://loja.com' };
+const politicas = { trocas: 'Você pode desistir em até 7 dias do recebimento. Troca de tamanho em 30 dias, frete por nossa conta.', privacidade: 'Usamos seus dados (nome, endereço e contato) só para entregar o pedido e falar com você; não vendemos dados.' };
+const siteOk = { modo: 'pacote_plataforma', plataforma: 'shopify', tema: 'dawn', pacote: { banners: [{ titulo: 'Oi' }] }, linkPublicado: 'https://loja.com', conteudo: { politicas } };
 const status = (ctx) => statusEtapas(ctx).map((x) => x.status);
 
 describe('status dos passos', () => {
@@ -41,7 +43,14 @@ describe('status dos passos', () => {
   });
   it('checklist final: logo, preços, foto principal, prints, Pixel, plataforma e publicado', () => {
     const c = statusEtapas({ cliente: clienteOk, produtos: [prod('p1')], site: { ...siteOk, linkPublicado: '' } })[5];
-    expect(c.checklist.map((x) => [x.id, x.ok])).toEqual([['plataforma', true], ['logo', true], ['precos', true], ['fotos', true], ['prints', true], ['pixel', true], ['publicado', false]]);
+    expect(c.checklist.filter((x) => !x.legal).map((x) => [x.id, x.ok])).toEqual([['plataforma', true], ['logo', true], ['precos', true], ['fotos', true], ['prints', true], ['pixel', true], ['publicado', false]]);
+  });
+  it('checklist final inclui os requisitos legais; sem CNPJ, endereço e arrependimento o passo 6 fica com "falta algo"', () => {
+    const ok = statusEtapas({ cliente: clienteOk, produtos: [prod('p1')], site: siteOk })[5];
+    expect(ok.checklist.filter((x) => x.legal).every((x) => x.ok)).toBe(true);
+    const sem = statusEtapas({ cliente: { ...clienteOk, dadosLoja: {} }, produtos: [prod('p1')], site: { ...siteOk, conteudo: { politicas: { trocas: 'Troca em 30 dias.' } } } })[5];
+    expect(sem.status).toBe('falta');
+    expect(sem.faltas.map((f) => f.texto).join(' ')).toMatch(/Falta o CNPJ[\s\S]*Falta o endereço[\s\S]*arrependimento/);
   });
 });
 

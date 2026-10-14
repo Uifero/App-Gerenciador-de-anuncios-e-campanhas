@@ -7,6 +7,38 @@ import { REFERENCIA_COPY } from './referencias/copy.js';
 import { REFERENCIA_OFERTA } from './referencias/oferta.js';
 import { REFERENCIA_GANCHOS, GANCHOS } from './referencias/ganchos.js';
 import { FRAMEWORKS } from '../src/lib/constantes.js';
+import { REFERENCIAS_FIXAS } from '../src/lib/referencias-fixas.js';
+
+// As referências fixas da fase de qualidade entram depois das de antes; os testes antigos conferem a ordem sem elas.
+const FIXAS = REFERENCIAS_FIXAS.map((r) => r.texto);
+const com = (t, e) => FIXAS.reduce((x, fx) => (typeof x !== 'string' ? x : x.split(`\n\n${fx}`).join('').split(fx).join('')), comMetodologia(t, e));
+
+describe('referências fixas da fase de qualidade', () => {
+  const com2 = (n) => comMetodologia(TAREFAS[n], 'PERFIL');
+  const onde = (flag) => Object.entries(TAREFAS).filter(([, t]) => t[flag]).map(([n]) => n).sort();
+  it('cada referência só nas tarefas que a usam', () => {
+    expect(onde('siteProfissional')).toEqual(['ajuste_site_amplo', 'pacote', 'plano_site', 'site']);
+    expect(onde('paginaProduto')).toEqual(['pacote', 'plano_site', 'site']);
+    expect(onde('legal')).toEqual(['pacote', 'site']);
+    expect(onde('organico')).toEqual(['criativos', 'imagem', 'refino']);
+    expect(onde('roteiros')).toEqual(['criativos', 'narracao']);
+    expect(onde('politicas')).toEqual(['criativos', 'especialista_copy', 'hooks', 'refino']);
+    expect(onde('decisoes')).toEqual(['diagnostico', 'especialista_trafego', 'insights', 'otimizacao_anuncio', 'recomendacao_anuncio']);
+  });
+  it('entram no contexto das tarefas certas e ficam fora das outras (checklist, leitura de print, FAQ)', () => {
+    const [site, pagina, legal, roteiros, organico, politicas, decisoes] = ['site-profissional', 'pagina-produto', 'requisitos-legais', 'roteiros-video', 'estilo-organico', 'politicas-nicho', 'decisoes-trafego'].map((id) => REFERENCIAS_FIXAS.find((r) => r.id === id).texto);
+    for (const r of [site, pagina, legal]) expect(com2('pacote')).toContain(r);
+    for (const r of [organico, roteiros, politicas]) expect(com2('criativos')).toContain(r);
+    expect(com2('recomendacao_anuncio')).toContain(decisoes);
+    for (const n of ['checklist', 'leitura_resultados', 'faq', 'ajuste_site']) for (const r of FIXAS) expect(com2(n)).not.toContain(r);
+  });
+  it('compactas (até ~650 tokens cada) e sem nome de pessoa real nem benchmark em US$', () => {
+    for (const r of REFERENCIAS_FIXAS) {
+      expect(r.tokens, r.id).toBeLessThanOrEqual(650);
+      expect(r.texto).not.toMatch(/US\$|\$\s?\d/);
+    }
+  });
+});
 
 describe('TAREFAS', () => {
   it('toda tarefa tem modelo e limite de tokens de saída', () => {
@@ -31,28 +63,28 @@ describe('TAREFAS', () => {
 
   it('metodologia (referência opcional) só em criativos, campanha e site; nas outras o contexto fica igual', () => {
     expect(Object.entries(TAREFAS).filter(([, t]) => t.metodologia).map(([n]) => n).sort()).toEqual(['campanha', 'criativos', 'discussao_campanha', 'especialista_copy', 'otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
-    expect(comMetodologia(TAREFAS.site, 'PERFIL').startsWith(`PERFIL
+    expect(com(TAREFAS.site, 'PERFIL').startsWith(`PERFIL
 
 ${METODOLOGIA_VORTEX}`)).toBe(true);
-    expect(comMetodologia(TAREFAS.checklist, 'PERFIL')).toBe('PERFIL');
-    expect(comMetodologia(TAREFAS.checklist, undefined)).toBeUndefined();
+    expect(com(TAREFAS.checklist, 'PERFIL')).toBe('PERFIL');
+    expect(com(TAREFAS.checklist, undefined)).toBeUndefined();
     expect(METODOLOGIA_VORTEX).toMatch(/uma referência entre outras/i);
     expect(METODOLOGIA_VORTEX.length).toBeLessThan(1600); // curta: ~400 tokens
   });
 
   it('referência de tráfego só nas tarefas de campanha, análise e diagnóstico; vem depois da metodologia', () => {
     expect(Object.entries(TAREFAS).filter(([, t]) => t.trafego).map(([n]) => n).sort()).toEqual(['campanha', 'diagnostico', 'discussao_campanha', 'especialista_trafego', 'insights', 'otimizacao_anuncio', 'recomendacao_anuncio']);
-    expect(comMetodologia(TAREFAS.campanha, 'PERFIL')).toBe(`PERFIL
+    expect(com(TAREFAS.campanha, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}
 
 ${REFERENCIA_TRAFEGO}`);
-    expect(comMetodologia(TAREFAS.insights, 'PERFIL')).toBe(`PERFIL
+    expect(com(TAREFAS.insights, 'PERFIL')).toBe(`PERFIL
 
 ${REFERENCIA_TRAFEGO}`);
-    expect(comMetodologia(TAREFAS.insights, undefined)).toBe(REFERENCIA_TRAFEGO);
-    expect(comMetodologia(TAREFAS.criativos, 'PERFIL')).not.toContain(REFERENCIA_TRAFEGO); // criativo e site ficam só com a Vortex
-    expect(comMetodologia(TAREFAS.leitura_resultados, 'PERFIL')).toBe('PERFIL'); // leitura de print só extrai número
+    expect(com(TAREFAS.insights, undefined)).toBe(REFERENCIA_TRAFEGO);
+    expect(com(TAREFAS.criativos, 'PERFIL')).not.toContain(REFERENCIA_TRAFEGO); // criativo e site ficam só com a Vortex
+    expect(com(TAREFAS.leitura_resultados, 'PERFIL')).toBe('PERFIL'); // leitura de print só extrai número
   });
 
   it('referência de tráfego: curta, opcional e sem benchmark de resultado para a IA citar', () => {
@@ -65,21 +97,21 @@ ${REFERENCIA_TRAFEGO}`);
 
   it('referência de copy só em criativos, hooks e refino; vem depois da metodologia; site e checklist ficam de fora', () => {
     expect(Object.entries(TAREFAS).filter(([, t]) => t.copy).map(([n]) => n).sort()).toEqual(['criativos', 'especialista_copy', 'hooks', 'refino']);
-    expect(comMetodologia(TAREFAS.criativos, 'PERFIL')).toBe(`PERFIL
+    expect(com(TAREFAS.criativos, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}
 
 ${REFERENCIA_COPY}
 
 ${REFERENCIA_GANCHOS}`);
-    expect(comMetodologia(TAREFAS.hooks, 'PERFIL')).toBe(`PERFIL
+    expect(com(TAREFAS.hooks, 'PERFIL')).toBe(`PERFIL
 
 ${REFERENCIA_COPY}
 
 ${REFERENCIA_GANCHOS}`);
-    expect(comMetodologia(TAREFAS.refino, undefined)).toBe(REFERENCIA_COPY);
-    expect(comMetodologia(TAREFAS.site, 'PERFIL')).not.toContain(REFERENCIA_COPY);
-    expect(comMetodologia(TAREFAS.campanha, 'PERFIL')).not.toContain(REFERENCIA_COPY);
+    expect(com(TAREFAS.refino, undefined)).toBe(REFERENCIA_COPY);
+    expect(com(TAREFAS.site, 'PERFIL')).not.toContain(REFERENCIA_COPY);
+    expect(com(TAREFAS.campanha, 'PERFIL')).not.toContain(REFERENCIA_COPY);
   });
 
   it('modelos de gancho só em criativos e hooks, com a lista inteira numerada e as regras de uso', () => {
@@ -92,8 +124,8 @@ ${REFERENCIA_GANCHOS}`);
     expect(REFERENCIA_GANCHOS).toMatch(/nunca o mesmo número duas vezes/);
     expect(REFERENCIA_GANCHOS).toContain("(*) NUNCA vira resultado no corpo");
     expect(REFERENCIA_GANCHOS).toMatch(/nunca passa por cima das REGRAS CRÍTICAS/);
-    expect(comMetodologia(TAREFAS.refino, 'PERFIL')).not.toContain(REFERENCIA_GANCHOS);
-    expect(comMetodologia(TAREFAS.site, 'PERFIL')).not.toContain(REFERENCIA_GANCHOS);
+    expect(com(TAREFAS.refino, 'PERFIL')).not.toContain(REFERENCIA_GANCHOS);
+    expect(com(TAREFAS.site, 'PERFIL')).not.toContain(REFERENCIA_GANCHOS);
   });
 
   it('referência de copy: curta, opcional, subordinada às regras críticas e sem urgência fabricada', () => {
@@ -111,19 +143,19 @@ ${REFERENCIA_GANCHOS}`);
 
   it('referência de oferta só no site, em "Analisar e recomendar" e no plano de otimização; sempre por último', () => {
     expect(Object.entries(TAREFAS).filter(([, t]) => t.oferta).map(([n]) => n).sort()).toEqual(['especialista_oferta', 'otimizacao_anuncio', 'recomendacao_anuncio', 'site']);
-    expect(comMetodologia(TAREFAS.site, 'PERFIL')).toBe(`PERFIL
+    expect(com(TAREFAS.site, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}
 
 ${REFERENCIA_OFERTA}`);
-    expect(comMetodologia(TAREFAS.recomendacao_anuncio, 'PERFIL')).toBe(`PERFIL
+    expect(com(TAREFAS.recomendacao_anuncio, 'PERFIL')).toBe(`PERFIL
 
 ${METODOLOGIA_VORTEX}
 
 ${REFERENCIA_TRAFEGO}
 
 ${REFERENCIA_OFERTA}`);
-    for (const n of ['criativos', 'hooks', 'campanha', 'insights', 'ajuste_site', 'faq']) expect(comMetodologia(TAREFAS[n], 'PERFIL')).not.toContain(REFERENCIA_OFERTA);
+    for (const n of ['criativos', 'hooks', 'campanha', 'insights', 'ajuste_site', 'faq']) expect(com(TAREFAS[n], 'PERFIL')).not.toContain(REFERENCIA_OFERTA);
   });
 
   it('referência de oferta: não cria preço, garantia nem bônus para o público; sugestão só para o gestor', () => {

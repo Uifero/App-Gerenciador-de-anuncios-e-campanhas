@@ -295,7 +295,7 @@ async function clonarVideo(m) {
  *         narracao (File|null: começa junto com a 1ª cena), volumeNarracao (padrão 1), volumeMusica (usado só com narração; padrão 0.2) }
  * Devolve { blob, ext, mime, duracao }.
  */
-export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corTexto = '#ffffff', logo = null, musica = null, narracao = null, volumeNarracao = 1, volumeMusica = 0.2, largura = 1080, altura = 1920, aoProgresso = () => {}, sinal }) {
+export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corTexto = '#ffffff', logo = null, logoNoFim = false, musica = null, narracao = null, volumeNarracao = 1, volumeMusica = 0.2, largura = 1080, altura = 1920, aoProgresso = () => {}, sinal }) {
   const fmt = formatoDeVideo();
   if (!fmt) throw new Error('Este navegador não grava vídeo. Use o Chrome ou o Edge atualizado.');
   if (!cenas.length) throw new Error('Não há cenas para gravar.');
@@ -383,7 +383,8 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
     } else {
       blocoTexto(ctx, { texto: cena.texto, x: mx, y: baseLegenda, largura: largura - mx * 2, alturaMax: Math.min(altura * 0.3, baseLegenda - zs.y - altura * 0.08), tamMax: largura * 0.085, tamMin: largura * 0.045, cor: corTexto, alinhar: 'center', ancora: 'base', alpha: aparece, dy: (1 - aparece) * altura * 0.02 });
     }
-    logotipo(ctx, logo, mx, zs.y, largura * 0.22, altura * 0.06);
+    // logoNoFim (estilo orgânico): a marca só aparece na última cena, como num post de pessoa real.
+    if (!logoNoFim || i === cenas.length - 1) logotipo(ctx, logo, mx, zs.y, largura * 0.22, altura * 0.06);
     ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(0, 0, largura * (t / total), 8); // barra de progresso do vídeo
   };
 

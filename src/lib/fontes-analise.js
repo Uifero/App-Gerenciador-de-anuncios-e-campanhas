@@ -170,5 +170,5 @@ export function conferirItem(it = {}, ctx = {}) {
   const resultadoEsperado = (re.metrica || min != null || max != null) ? {
     metrica: txt(re.metrica).slice(0, 80), min, max, unidade: txt(re.unidade).slice(0, 12), confianca: rConf, dependeDe: txt(re.dependeDe).slice(0, 300),
   } : null;
-  return { porque: txt(it.porque).slice(0, 1200), fontes, semFonte, confianca, resultadoEsperado, avisos };
+  return { porque: txt(it.porque).slice(0, 1200), fontes, semFonte, confianca, resultadoEsperado, avisos, mudaSe: txt(it.mudaSe).slice(0, 300) };
 }

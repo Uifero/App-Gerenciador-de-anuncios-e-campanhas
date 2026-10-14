@@ -17,6 +17,7 @@ import { paisDoCliente, chavePais, simboloDoCliente, simbolosDaMoeda } from '../
 import { PLATAFORMAS_ANUNCIO } from '../lib/constantes.js';
 import { fonteDiagnostico, linhasFonteDiagnostico } from '../lib/conexoes.js';
 import { etiquetaSite } from '../lib/aprovacao-site.js';
+import { leituraDosDados, textoLeituraDados } from '../lib/dados-minimos.js';
 import { $, esc, on, modal, toast, ocupado, opcoes, dataBR, lerForm, num, campoArquivo, mostrarResultado } from '../core/ui.js';
 
 export const MAX_ANEXOS = 6;
@@ -335,6 +336,8 @@ export async function abrirDiagnostico(cliente, { aoFechar } = {}) {
     const dados = { plataforma: v.plataforma, orcamentoDiario: num(v.orcamentoDiario), cpaAtual: num(v.cpaAtual), roasAtual: num(v.roasAtual), publicos: v.publicos, criativosRodando: v.criativosRodando, ofertas: v.ofertas,
       bibliotecaAnuncios: String(v.bibliotecaAnuncios || '').trim(), pais, moeda: simbolo, marcacoes: anexos.map((a) => a.rotulo),
       ofertaPerfil: fonte.oferta || '', fonteCadastro: linhasFonteDiagnostico(fonte) };
+    // Há dado para decidir? (lib/dados-minimos.js) Com pouco dado, o diagnóstico começa por "Dados insuficientes para decidir".
+    dados.leituraDados = textoLeituraDados(leituraDosDados({ resultados: await db.listar(COL.resultados, { clienteId: cliente.id }).catch(() => []), cliente }));
     // O link/nome da Biblioteca fica no cliente para vir preenchido no próximo diagnóstico.
     if (dados.bibliotecaAnuncios !== (cliente.bibliotecaAnuncios || '')) {
       await db.atualizar(COL.clientes, cliente.id, { bibliotecaAnuncios: dados.bibliotecaAnuncios }, { silencioso: true }).catch((e) => console.warn(e));

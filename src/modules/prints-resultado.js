@@ -11,7 +11,7 @@ import { normalizarLeituraPrints, avisoPeriodos, printDuplicado, vincularLinha, 
 import { compararDestinos, faixa, textoPeriodo, nomeDestino } from '../lib/destinos.js';
 import { acoesParaTarefas } from '../lib/recomendacao.js';
 import { planoDeOtimizacao } from './analise-anuncio.js';
-import { itemHtml, fontesUsadasHtml } from './itens-analise.js';
+import { itemHtml, fontesUsadasHtml, decisaoHtml } from './itens-analise.js';
 import { esc, $, on, toast, ocupado, modal, campoArquivo, dataBR, tag, mostrarResultado, confirmar } from '../core/ui.js';
 
 export const ORIGEM_PRINT_RESULTADO = 'print_resultado';
@@ -223,6 +223,7 @@ export async function montarPrintsResultado(el, { cliente, aoMudar = () => {} })
     const ov = r.ondeVerba;
     $('[data-plano-resultado]', el).innerHTML = `<div class="mt-3" data-plano="${esc(a.id)}"><p class="text-xs text-slate-500">Plano de ${dataBR(a.criadoEm)} · ${a.origem === 'ia' ? 'com IA' : 'sem IA (regras do app)'}</p>
       ${r.resumo ? `<p class="font-medium">${esc(r.resumo)}</p>` : ''}
+      ${decisaoHtml(r.decisao)}
       ${r.comparacao?.avisoPeriodo ? `<p class="mt-1 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(r.comparacao.avisoPeriodo)}</p>` : ''}
       ${r.comparacao?.mensagem ? `<p class="mt-1 text-sm text-amber-800">${esc(r.comparacao.mensagem)}</p>` : ''}
       <div class="mt-2 grid gap-3 lg:grid-cols-2">${['whatsapp', 'site'].map((area) => `<div data-parte-plano="${area}"><h5 class="font-semibold">${area === 'whatsapp' ? '<i class="fa-brands fa-whatsapp text-emerald-600"></i> WhatsApp' : '<i class="fa-solid fa-store text-indigo-600"></i> Site'}</h5>

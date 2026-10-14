@@ -12,6 +12,8 @@ import { linhaGanchos, conferirGanchos, numeroModelo } from '../lib/ganchos.js';
 import { TAREFA_DA_AREA, normalizarConsulta } from '../lib/especialistas.js';
 import { TIPOS_ACAO, CAMPOS_FALTA } from '../lib/aplicar-especialista.js';
 import { juntarItensSoltos } from '../lib/prints-resultado.js';
+import { ROTEIROS } from '../lib/parece-anuncio.js';
+import { textoLeituraDados } from '../lib/dados-minimos.js';
 import { obterConfig } from '../modules/configuracoes.js';
 import { verificarOrcamento, registrarUso } from '../modules/custo.js';
 
@@ -257,7 +259,7 @@ export async function gerarCriativos({ cliente, briefing, modelo, framework, for
     REGRA_INSTAGRAM,
     linhaGanchos({ fixo: modeloGancho, quantidade: n, cliente }),
     base && `Ponto de partida — anúncio de referência de mercado (adapte o ÂNGULO ao cliente, sem copiar o texto): ${base.titulo || ''}\n${base.texto || ''}\nAnálise: ${JSON.stringify(base.analise || {})}`,
-    `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação), "narrativa" (só se a variação seguir uma das narrativas da referência de metodologia: ${NARRATIVAS.map((x) => x.id).join('|')}; senão null), "modeloGancho" (número do modelo da biblioteca de ganchos de onde veio o hook; null se não veio de nenhum).`,
+    `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação), "narrativa" (só se a variação seguir uma das narrativas da referência de metodologia: ${NARRATIVAS.map((x) => x.id).join('|')}; senão null), "modeloGancho" (número do modelo da biblioteca de ganchos de onde veio o hook; null se não veio de nenhum), "roteiro" (só em vídeo: o id da estrutura da referência de roteiros que você usou, um de ${ROTEIROS.map(([k]) => k).join('|')}; null em imagem).`,
     idiomaLinha(cliente),
     SO_JSON,
   ].filter(Boolean).join('\n');
@@ -271,6 +273,7 @@ function normalizarCriativo(c) {
     nome: c.nome || c.hook?.slice(0, 60) || 'Criativo', hook: c.hook || '', angulo: c.angulo || '', gatilho: c.gatilho || '',
     framework: c.framework || 'livre', formato: c.formato || 'video_curto', copy: c.copy || '', cta: c.cta || '', porque: c.porque || '',
     modeloGancho: numeroModelo(c.modeloGancho),
+    roteiro: ROTEIROS.some(([k]) => k === c.roteiro) ? c.roteiro : null,
   };
 }
 
@@ -825,7 +828,7 @@ export async function gerarTextosPacote({ cliente, produtos, plataforma, base = 
   const system = `Você prepara lojas para ${plataforma}.`;
   const pedido = `Produtos: ${produtos.map((p) => `${p.nome} (${p.categoria || 'sem categoria'})${p.descricao ? `: ${String(p.descricao).slice(0, 400)}` : ''}${p.formula ? ` | fórmula: ${String(p.formula).slice(0, 300)}` : ''}${p.beneficios ? ` | benefícios: ${String(p.beneficios).slice(0, 300)}` : ''}`).join('; ') || 'a definir'}.${linhaBase(base)}${base?.cores?.length ? ` Paleta já usada: ${base.cores.join(', ')} (comece a paletaSugerida por ela).` : ''}${semPreferencias ? '' : contextoPreferencias(cliente)}${linhaImagens(materiais)}${obrigatorios}
 ${CELULAR_PRIMEIRO}
-Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex],"tipografia","secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}], ${PEDIDO_VISUAL('banner, provas, produtos, confianca, depoimentos, sobre, galeria, faq')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
+Saída JSON: {"banners": [{"titulo","subtitulo","cta","uso" (ex.: "Banner principal desktop 1920x700")}], "briefingTema": {"estilo","paletaSugerida": [hex] (a cor da marca primeiro; nada de roxo/azul se não for da marca),"tipografia": "" (o app define as fontes),"secoesHome": [string],"observacoes"}, "textosPagina": {"sobre","faq": [{"p","r"}]}, "descricoesProdutos": [{"nome","descricao","seoTitulo","seoDescricao"}], ${PEDIDO_VISUAL('banner, provas, produtos, confianca, depoimentos, sobre, galeria, faq')}}. ${idiomaLinha(cliente)} ${SO_JSON}`;
   return (await gerarJSON({ tarefa: 'pacote', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
@@ -1093,7 +1096,7 @@ CPA atual: ${dados.cpaAtual ? moeda + ' ' + dados.cpaAtual : 'não informado'}
 ROAS atual: ${dados.roasAtual || 'não informado'}
 Criativos que já estão rodando (ângulo, formato, tempo no ar): ${dados.criativosRodando || 'não informado'}
 Ofertas/promoções ativas: ${dados.ofertas || 'não informado'}
-${dados.fonteCadastro ? `\nDO CADASTRO DO CLIENTE (lido da fonte, vale mais que o digitado acima se divergir):\n${dados.fonteCadastro}\n` : ''}
+${dados.fonteCadastro ? `\nDO CADASTRO DO CLIENTE (lido da fonte, vale mais que o digitado acima se divergir):\n${dados.fonteCadastro}\n` : ''}${dados.leituraDados ? `\n${dados.leituraDados}\nSe a leitura disser insuficiente, comece as recomendações por "Dados insuficientes para decidir" e diga o que esperar.\n` : ''}
 PADRÕES JÁ DETECTADOS (calculados sem IA, direto dos resultados registrados — média ponderada pelo gasto; USE para embasar, não invente outro padrão):
 Deste cliente:
 ${resumirGrupos(padroesLocais)}
@@ -1246,7 +1249,10 @@ Resuma em português do Brasil: "resumo" (até 1.200 caracteres, as regras e nú
   };
 }
 
-const FORMATO_ITEM = '"porque": string (raciocínio ligado aos DADOS deste cliente), "fontes": {"documentos":[{"id","parte"}],"web":[{"url"}],"anuncios":[{"id"}],"resultadosCliente":[{"periodo","campanha","destino"}],"resultadosNicho":[{"descricao"}],"politica":[{"descricao"}]}, "confianca": "alta"|"media"|"baixa", "resultadoEsperado": {"metrica","min","max","unidade","confianca","dependeDe"}';
+const FORMATO_ITEM = '"porque": string (raciocínio ligado aos DADOS deste cliente), "fontes": {"documentos":[{"id","parte"}],"web":[{"url"}],"anuncios":[{"id"}],"resultadosCliente":[{"periodo","campanha","destino"}],"resultadosNicho":[{"descricao"}],"politica":[{"descricao"}]}, "confianca": "alta"|"media"|"baixa", "resultadoEsperado": {"metrica","min","max","unidade","confianca","dependeDe"}, "mudaSe": string (o dado ou resultado que faria mudar esta decisão)';
+/** "decisao" (há dado para decidir?), igual na recomendação e na otimização; o app confere com lib/dados-minimos.js. */
+const FORMATO_DECISAO = '"decisao": {"suficiente": true|false (siga a LEITURA DOS DADOS do app), "aguardar": string (o que esperar antes de decidir; "" se suficiente), "mudaSe": string (o que faria mudar a decisão geral)}';
+const linhaLeitura = (l) => (l ? `\n${textoLeituraDados(l)}\n` : '');
 const REGRAS_ANALISE = `REGRAS:
 - Tudo DENTRO DO NICHO do cliente: não use anúncio, pesquisa nem resultado de outro nicho. Se o nicho não tiver dado, diga isso.
 - Cada item: "porque" ligado aos dados deste cliente; "fontes" só com ids/urls da lista FONTES DISPONÍVEIS (lista vazia = sem fonte; o app marca "baseado só no raciocínio da IA" e baixa a confiança).
@@ -1259,7 +1265,7 @@ const REGRAS_ANALISE = `REGRAS:
  * métricas por destino, escala e perguntas. `fontes` = texto de lib/recomendacao.js blocoFontes (o app confere as
  * citações depois). `anterior` = { data, resumo } da recomendação anterior (para explicar o que mudou).
  */
-export async function recomendarAnuncio({ cliente, fontes, cadastro = '', produtos = [], criativos = [], avisos = [], perguntas = [], anterior = null }) {
+export async function recomendarAnuncio({ cliente, fontes, cadastro = '', produtos = [], criativos = [], avisos = [], perguntas = [], anterior = null, leitura = null }) {
   const system = 'Você é gestor de tráfego Meta Ads sênior. Recomenda como testar e escalar com base em dados, cita a fonte de cada decisão e admite quando não há base.';
   const objetivos = 'vendas | engajamento | cadastros | trafego | reconhecimento';
   const locais = 'site (Site) | apps_mensagem (Apps de mensagem, WhatsApp) | site_e_apps (Site e apps de mensagem) | formulario (Formulários instantâneos)';
@@ -1273,7 +1279,7 @@ PERGUNTAS QUE O APP JÁ VAI FAZER (não repita): ${perguntas.map((p) => p.texto)
 ${anterior ? `\nRECOMENDAÇÃO ANTERIOR (${anterior.data}): ${anterior.resumo}\nSe algo mudou, explique em "mudancas" o que mudou e POR QUÊ (ex.: resultado novo registrado).` : ''}
 
 ${fontes}
-
+${linhaLeitura(leitura)}
 Recomende para ESTE cliente:
 1. destino: "whatsapp", "site" ou "teste" (teste entre os dois, com a divisão da verba em %);
 2. estrutura: objetivo (chave: ${objetivos}) e local de conversão (chave: ${locais}). Use SÓ essas chaves; se não tiver certeza, diga no "porque" para conferir no Gerenciador de Anúncios. Quantos conjuntos, orçamento diário total e por conjunto (pela verba mensal do cliente; sem verba, deixe null e pergunte);
@@ -1284,7 +1290,7 @@ Recomende para ESTE cliente:
 
 ${REGRAS_ANALISE}
 
-Saída JSON: {"resumo": string,
+Saída JSON: {"resumo": string, ${FORMATO_DECISAO},
  "destino": {"escolha", "divisao": {"whatsapp": n, "site": n} | null, ${FORMATO_ITEM}},
  "estrutura": {"objetivo", "localConversao", "conjuntos": n, "orcamentoDiario": n|null, "orcamentoPorConjunto": n|null, "duracaoDias": n, "conjuntosDetalhe": [{"nome","destino","localConversao","orcamentoDiario","publico"}], "publicos": [string], ${FORMATO_ITEM}},
  "criativos": [{"angulo","formato","narrativa","produto","cta","destino","quantidade","descricao","inspiracao": [id], ${FORMATO_ITEM}}],
@@ -1320,14 +1326,14 @@ Print de CONVERSA ou com dado pessoal: "linhas": [] (não transcreva nada dele).
  * "Plano de otimização": duas partes (WhatsApp e Site), até 5 ações cada, e "onde colocar a próxima verba" pelo custo
  * por venda. `fontes` = blocoFontes (inclui a comparação WhatsApp x Site do mesmo período).
  */
-export async function planejarOtimizacao({ cliente, fontes, cadastro = '' }) {
+export async function planejarOtimizacao({ cliente, fontes, cadastro = '', leitura = null }) {
   const system = 'Você é gestor de tráfego sênior focado em lucro. Lê os números de WhatsApp e site, aponta o que mudar com prioridade e cita a fonte de cada decisão.';
   const tipos = 'criativo | angulo | publico | orcamento | objetivo | landing_page | pagina_produto | oferta | tempo_resposta | roteiro_whatsapp | registro';
   const pedido = `CLIENTE: nicho "${cliente.nicho}"${cliente.subnicho ? `, subnicho "${cliente.subnicho}"` : ''}, país ${paisDoCliente(cliente)}.
 DO CADASTRO: ${cadastro || '(nada)'}
 
 ${fontes}
-
+${linhaLeitura(leitura)}
 Monte o PLANO DE OTIMIZAÇÃO em duas partes, "whatsapp" e "site", cada uma com ATÉ 5 ações em ordem de prioridade (1 = primeiro). Cada ação:
 {"prioridade": n, "numero": o que o número mostra (cite o número), "mudar": o que mudar (ação concreta), "tipo": ${tipos}, "medir": como medir no próximo período, "passoSite": 4 (ajuste de página/texto do site) | 6 (tarefa da loja: frete, checkout, pixel) | null, ${FORMATO_ITEM}}
 WhatsApp: considere tempo de resposta e roteiro do atendimento, além de criativo/público/verba. Site: página de destino, página do produto, oferta, além de criativo/público/verba.
@@ -1335,7 +1341,7 @@ WhatsApp: considere tempo de resposta e roteiro do atendimento, além de criativ
 
 ${REGRAS_ANALISE}
 
-Saída JSON: {"resumo": string, "whatsapp": [ação], "site": [ação], "ondeVerba": {...}, "conflitos": [string]}. Textos em português do Brasil. ${SO_JSON}`;
+Saída JSON: {"resumo": string, ${FORMATO_DECISAO}, "whatsapp": [ação], "site": [ação], "ondeVerba": {...}, "conflitos": [string]}. Textos em português do Brasil. ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa: 'otimizacao_anuncio', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return dados || {};
 }
