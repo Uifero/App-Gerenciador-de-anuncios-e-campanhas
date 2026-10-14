@@ -44,7 +44,12 @@ export function pareceAnuncio(item = {}, { cliente = {}, peca = null } = {}) {
   if (exclam >= 2 || emojis > 1 || UM_EMOJI.test(hook)) add('enfeite', 10, `${exclam ? `${exclam} exclamação(ões)` : ''}${exclam && emojis ? ' e ' : ''}${emojis ? `${emojis} emoji(s)` : ''}${UM_EMOJI.test(hook) ? ' (emoji no gancho)' : ''}.`, 'No máximo 1 emoji e nenhum no gancho; troque as exclamações por ponto.');
   const caixaAlta = palavras(`${hook} ${cta}`).filter((w) => w.length > 2 && /[A-ZÀ-Ý]/.test(w) && w === w.toUpperCase()).length;
   if (caixaAlta >= 3) add('caixa-alta', 10, 'Palavras em CAIXA ALTA no gancho/CTA.', 'Escreva normal: caixa alta grita "anúncio".');
-  if (peca) {
+  if (peca && cfg.animacao) {
+    // Peça da Biblioteca de animações (lib/animacoes.js): o estilo do preset e as palavras de cada tela.
+    if (cfg.estilo === 'anuncio') add('animacao-anuncio', 15, 'Animação em estilo anúncio (motion graphic de vitrine).', 'Para parecer post, prefira "Foto com zoom lento + legenda falada", "Carrossel de fotos" ou "Texto em ritmo de fala".', 'peca');
+    const cheias = (cfg.cenas || []).filter((c) => c.tipo !== 'item' && palavras(c.texto).length > 8).length;
+    if (cheias) add('texto-tela', 10, `${cheias} tela(s) da animação com mais de 8 palavras.`, 'Divida a fala em mais cenas, com poucas palavras cada.', 'peca');
+  } else if (peca) {
     if (['cartao', 'texto'].includes(cfg.template)) add('moldura', 20, cfg.template === 'texto' ? 'Peça só de texto, sem foto real.' : 'Painel de cor em volta da foto (moldura de anúncio).', 'Use "Foto em tela cheia" com uma foto real do produto em uso.', 'peca');
     if (cfg.temLogo && peca.tipo === 'video' && cfg.logoNoFim === false) add('logo-cedo', 15, 'Logo aparece desde o primeiro segundo do vídeo.', 'Marque "Logo só na última cena" no Estúdio.', 'peca');
     if (cfg.temLogo && peca.tipo !== 'video') add('logo-imagem', 10, 'Logo na imagem.', 'Post real raramente tem logo: tire ou deixe só no perfil.', 'peca');

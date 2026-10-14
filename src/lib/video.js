@@ -503,3 +503,32 @@ export async function misturarNarracao({ arquivo, narracao, volumeNarracao = 1, 
     await limpar(ffmpeg, [nomeVideo, nomeAudio, 'saida.mp4']);
   }
 }
+
+// ---------------- GIF a partir de quadros (Biblioteca de animações) ----------------
+
+/**
+ * Argumentos do GIF: quadros PNG numerados (q000.png...) -> paleta própria (até 128 cores) -> GIF em loop infinito.
+ * Paleta gerada do próprio vídeo (palettegen) para as cores da marca não "granularem"; dither bayer leve.
+ */
+export function argsGif(fps, saida = 'anim.gif') {
+  return ['-framerate', String(fps), '-i', 'q%03d.png', '-filter_complex', '[0:v]split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle',
+    '-loop', '0', saida];
+}
+
+/** Monta o GIF com o ffmpeg.wasm. quadros = [Uint8Array PNG]. Devolve um Blob image/gif. */
+export async function gifDeQuadros({ quadros, fps = 12, aoProgresso }) {
+  const ffmpeg = await carregarFFmpeg();
+  const nomes = quadros.map((_, i) => `q${String(i).padStart(3, '0')}.png`);
+  const onProg = aoProgresso ? ({ progress }) => aoProgresso(Math.max(0, Math.min(1, progress))) : null;
+  if (onProg) ffmpeg.on('progress', onProg);
+  try {
+    for (const [i, q] of quadros.entries()) await ffmpeg.writeFile(nomes[i], q);
+    const codigo = await ffmpeg.exec(argsGif(fps));
+    if (codigo !== 0) throw new Error('o ffmpeg não conseguiu montar o GIF');
+    const dados = await ffmpeg.readFile('anim.gif');
+    return new Blob([dados], { type: 'image/gif' });
+  } finally {
+    if (onProg) ffmpeg.off('progress', onProg);
+    await limpar(ffmpeg, [...nomes, 'anim.gif']);
+  }
+}

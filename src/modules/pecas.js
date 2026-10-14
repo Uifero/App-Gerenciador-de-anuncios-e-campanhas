@@ -26,7 +26,7 @@ function canvasMini(fonte, w, h) {
 }
 /** Miniatura pequena (JPEG ~270 px) gravada no próprio registro: a Galeria abre sem baixar as peças. */
 export async function gerarMiniatura(blob, tipo) {
-  if (tipo === 'imagem') {
+  if (tipo === 'imagem' || tipo === 'gif') { // GIF: o primeiro quadro
     const bmp = await createImageBitmap(blob);
     try { return canvasMini(bmp, bmp.width, bmp.height); } finally { bmp.close?.(); }
   }
@@ -65,7 +65,7 @@ export async function salvarPeca(cliente, criativo, peca, { aoEtapa = () => {} }
   const reg = registroPeca({ cliente, criativo, tipo: peca.tipo, formato: peca.formato, ext, tamanho: blob.size, duracao: peca.duracao ?? null, miniatura, config: peca.config || {}, comprimido, baseadaEm: peca.baseadaEm || null, especialista: peca.especialista || null });
   const caminho = caminhoPeca(cliente.id, id, reg.nomeArquivo);
   aoEtapa('Enviando…', 0);
-  const r = await enviarArquivoComProgresso(caminho, blob, { tipo: peca.tipo === 'video' ? 'video/mp4' : 'image/jpeg', nomeDownload: reg.nomeArquivo, aoProgresso: (p) => aoEtapa('Enviando…', p) });
+  const r = await enviarArquivoComProgresso(caminho, blob, { tipo: peca.tipo === 'video' ? 'video/mp4' : peca.tipo === 'gif' ? 'image/gif' : 'image/jpeg', nomeDownload: reg.nomeArquivo, aoProgresso: (p) => aoEtapa('Enviando…', p) });
   try {
     const salvo = await db.criar(COL.pecas, { ...reg, url: r.url, path: r.path, ...(avisoCompressao ? { avisoCompressao } : {}) }, id);
     avisarPecas(cliente.id);
@@ -154,7 +154,8 @@ export function montarGaleria(alvo, ctx) {
     const novo = configNatural(p.config || {});
     return `<details class="mt-1 text-sm" data-parece-peca="${esc(p.id)}" data-nota="${pa.nota}"><summary class="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-1">Parece anúncio? ${tag(`${pa.faixa[1]} · ${pa.nota}`, pa.faixa[2])}</summary>
       ${pa.motivos.length ? `<ul class="mt-1 space-y-1 text-xs">${pa.motivos.map((m) => `<li><b>${esc(m.texto)}</b> ${esc(m.sugestao)}</li>`).join('')}</ul>` : '<p class="text-xs text-emerald-800">Cara de post.</p>'}
-      ${visuais.length ? `<div class="mt-1 grid gap-1 text-xs" data-comparar-visual><p class="rounded bg-slate-100 p-1"><b>Atual:</b> ${esc(TEMPLATE_NOME[p.config?.template] || 'modelo da peça')}${p.config?.temLogo ? `, logo ${p.tipo === 'video' && p.config?.logoNoFim === false ? 'desde o início' : 'na peça'}` : ''}</p>
+      ${visuais.length && p.config?.animacao ? `<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-peca-animacao="${esc(p.id)}"><i class="fa-solid fa-clapperboard"></i> Refazer com outra animação</button>`
+        : visuais.length ? `<div class="mt-1 grid gap-1 text-xs" data-comparar-visual><p class="rounded bg-slate-100 p-1"><b>Atual:</b> ${esc(TEMPLATE_NOME[p.config?.template] || 'modelo da peça')}${p.config?.temLogo ? `, logo ${p.tipo === 'video' && p.config?.logoNoFim === false ? 'desde o início' : 'na peça'}` : ''}</p>
         <p class="rounded bg-emerald-50 p-1"><b>Com a mudança:</b> ${esc(TEMPLATE_NOME[novo.template] || 'mesmo modelo')}${p.tipo === 'video' ? ', logo só na última cena' : ''}</p>
         <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-peca-natural="${esc(p.id)}"><i class="fa-solid fa-leaf"></i> Refazer no Estúdio com a mudança</button></div>` : ''}</details>`;
   };
@@ -164,7 +165,7 @@ export function montarGaleria(alvo, ctx) {
       <button type="button" class="relative block w-full overflow-hidden rounded-lg bg-slate-100 ${proporcao(p)}" data-abrir-peca="${esc(p.id)}" aria-label="Abrir em tamanho real: ${esc(p.formatoNome)} de ${esc(p.criativoNome)}">
         ${p.miniatura ? `<img src="${esc(p.miniatura)}" alt="" class="h-full w-full object-cover" loading="lazy">` : `<span class="flex h-full items-center justify-center text-slate-400"><i class="fa-solid fa-${p.tipo === 'video' ? 'film' : 'image'} text-2xl"></i></span>`}
         ${p.tipo === 'video' ? '<span class="absolute inset-0 flex items-center justify-center"><i class="fa-solid fa-circle-play text-4xl text-white drop-shadow"></i></span>' : ''}</button>
-      <div class="mt-2 flex flex-wrap items-center gap-1 text-xs">${tag(rotStatus(st), STATUS_PECA_COR[st])}${tag(p.formatoNome || p.formato)}${p.tipo === 'video' ? tag(`vídeo${p.duracao ? ` ${Math.round(p.duracao)} s` : ''}`) : ''}${p.modeloGancho ? tag(rotuloModelo(p.modeloGancho)) : ''}${p.baseadaEm ? tag('nova versão', 'tag-info') : ''}</div>
+      <div class="mt-2 flex flex-wrap items-center gap-1 text-xs">${tag(rotStatus(st), STATUS_PECA_COR[st])}${tag(p.formatoNome || p.formato)}${p.tipo === 'video' ? tag(`vídeo${p.duracao ? ` ${Math.round(p.duracao)} s` : ''}`) : p.tipo === 'gif' ? tag('GIF') : ''}${p.config?.animacao ? tag('animação', 'tag-info') : ''}${p.modeloGancho ? tag(rotuloModelo(p.modeloGancho)) : ''}${p.baseadaEm ? tag('nova versão', 'tag-info') : ''}</div>
       <p class="mt-1 line-clamp-2 text-sm font-medium">${esc(p.criativoNome || 'Criativo')}</p>
       <p class="hint !mt-0">${esc(nomeProduto(p.produtoId) || 'sem produto')} · ${dataBR(p.criadoEm)} · ${formatarBytes(p.tamanho)}</p>
       ${p.avisoCompressao ? `<p class="mt-1 text-xs text-amber-700" data-aviso-compressao>${esc(p.avisoCompressao)}</p>` : ''}
@@ -212,6 +213,12 @@ export function montarGaleria(alvo, ctx) {
   on(alvo, 'click', '[data-baixar-peca]', (b) => ocupado(b, () => baixarPeca(acharPeca(b.dataset.baixarPeca))));
   on(alvo, 'click', '[data-aprovar-peca]', (b) => enviarAprovacao([acharPeca(b.dataset.aprovarPeca)]));
   on(alvo, 'click', '[data-especialista-peca]', (b) => ctx.aoPedirEspecialista?.(acharPeca(b.dataset.especialistaPeca)));
+  on(alvo, 'click', '[data-peca-animacao]', (b) => ocupado(b, async () => {
+    const p = acharPeca(b.dataset.pecaAnimacao), c = criativos.find((x) => x.id === p?.criativoId);
+    if (!c) return toast('O criativo desta peça foi excluído: não dá para refazer.', 'erro');
+    const { abrirBibliotecaAnimacoes } = await import('./animacoes.js');
+    await abrirBibliotecaAnimacoes(c, cliente, { produtos }, { aoFinalizar: (nova) => { pecas.unshift(nova); desenhar(); ctx.aoMudar?.(); } });
+  }));
   on(alvo, 'click', '[data-peca-natural]', (b) => ocupado(b, async () => {
     const p = acharPeca(b.dataset.pecaNatural), c = criativos.find((x) => x.id === p?.criativoId);
     if (!c) return toast('O criativo desta peça foi excluído: não dá para refazer.', 'erro');

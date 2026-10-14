@@ -38,7 +38,7 @@ import { blocoAnaliseHtml, ligarAnalise, planoAplicado, conferenciaHtml, conferi
 import { aplicarTextosNoEstado, alegacoesMantidas, alegacoesParaCliente } from '../lib/textos-site.js';
 import { ehProdutoSaude } from '../lib/saude.js';
 import { resumoBlocosSite } from './ajuste-site.js';
-import { designHtml, ligarDesign, caraDeIaHtml, ligarCaraDeIa, legalHtml, ligarLegal } from './qualidade-site.js';
+import { designHtml, ligarDesign, caraDeIaHtml, ligarCaraDeIa, legalHtml, ligarLegal, animacoesHtml, ligarAnimacoes } from './qualidade-site.js';
 import { pedidoClichesIa } from '../lib/cara-de-ia.js';
 
 /** { materialId: usos } (rascunho do "Ajustar este site") -> patches para comUsos. */
@@ -297,7 +297,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   // ---------- partes comuns ----------
   const matsCom = (usosFotos) => (usosFotos ? comUsos(materiais, patchesDe(usosFotos)) : materiais);
   // Sempre o estado ACEITO (conteúdo + cores + layout dos ajustes); uma mudança proposta em aberto nunca entra no download.
-  const htmlDe = (e, extra = {}) => { const mats = matsCom(e.usosFotos); return gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site?.linkPublicado || '', provas: semRepetirDepoimentos(printsDoCliente(mats), e.conteudo?.depoimentos), materiais: mats, design: site?.design || null, ...extra }); };
+  const htmlDe = (e, extra = {}) => { const mats = matsCom(e.usosFotos); return gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site?.linkPublicado || '', provas: semRepetirDepoimentos(printsDoCliente(mats), e.conteudo?.depoimentos), materiais: mats, design: site?.design || null, animacoes: site?.animacoes || null, ...extra }); };
   const previaPacote = (pacote, usosFotos) => { const mats = matsCom(usosFotos); return gerarPreviaLojaHTML(dadosDoPacote({ cliente, site: { ...site, pacote }, produtos, provas: printsDoCliente(mats), materiais: mats })); };
   const html = (extra) => htmlDe({ conteudo: site.conteudo, config: site.config, layout: site.layout }, extra);
   const dadosPacote = () => dadosDoPacote({ cliente, site, produtos, provas: printsDoCliente(materiais), materiais });
@@ -487,6 +487,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm" data-mostrar-previa-loja aria-expanded="true" aria-controls="area-previa-loja"><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button>${custom ? '<button type="button" class="btn-ghost btn-sm" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button>' : ''}</div>
           <div class="mt-2" id="area-previa-loja" data-area-previa-loja>${custom ? '<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe>' : previaLojaHtml({ telaCheia: true })}</div>
           ${designHtml(cliente, site)}
+          ${animacoesHtml(cliente, site)}
           ${ajustesRapidosHtml()}
           ${resultadoFotosTextoHtml(site.fotosTexto)}${conferenciaHtml(site)}${caraDeIaHtml({ cliente, site, modo: modoV, produtos: produtosComF() })}</div>` : ''}</div>
       <details class="card mt-4" data-conteudo-manual ${!gerado && plat ? '' : ''}><summary class="cursor-pointer font-semibold">Editar os textos à mão (sem IA)</summary>
@@ -510,6 +511,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       if (custom) { const ifr = $('[data-previa-custom]', alvo); if (ifr) ifr.srcdoc = html(); } else ligarPreviaLoja(alvo, gerarPreviaLojaHTML(dadosPacote()));
       ligarAjustesRapidos();
       ligarDesign(alvo, { cliente, getSite: () => site, salvarSite, recarregar });
+      ligarAnimacoes(alvo, { cliente, getSite: () => site, salvarSite, recarregar });
       ligarCaraDeIa(alvo, { cliente, getSite: () => site, modo: modoV, produtos: produtosComF(), salvarEVersionar, corrigirComIa: corrigirClichesIa, recarregar });
       if (mostrarDepoisDeGerar.has(cliente.id)) { mostrarDepoisDeGerar.delete(cliente.id); mostrarResultado($('[data-area-resultado]', alvo), 'Pronto: site gerado. A prévia está aqui; ajuste à vontade e depois vá para "Aprovar".'); }
     }

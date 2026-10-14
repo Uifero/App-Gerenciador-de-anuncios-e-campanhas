@@ -8,6 +8,7 @@ import { db, COL } from '../core/storage.js';
 import { esc, $, on, ocupado, toast, mostrarResultado, tag } from '../core/ui.js';
 import { designDoSite, parPorId, textoPar, corDominante } from '../lib/design-site.js';
 import { verificarCaraDeIa, corrigirLocal, pedidoClichesIa } from '../lib/cara-de-ia.js';
+import { ANIMACOES_SITE, normalizarAnimacoes, prazoDaOferta } from '../lib/animacoes-site.js';
 import { checklistLegal, CAMPOS_DADOS_LOJA, normalizarDadosLoja, TRECHO_ARREPENDIMENTO, tipoDocumento } from '../lib/legal-loja.js';
 
 /** Cores do logo (lidas uma vez num canvas pequeno). Falha calada: sem permissão de leitura (CORS), fica sem. */
@@ -117,5 +118,29 @@ export function ligarLegal(el, ctx) {
     await ctx.salvarEVersionar({ conteudo: { ...c, politicas: { ...(c.politicas || {}), trocas } } }, 'Política de trocas: direito de arrependimento (7 dias)');
     ctx.recarregar();
     setTimeout(() => mostrarResultado('[data-legal]', 'Trecho do arrependimento acrescentado à política de trocas. Revise com o cliente.'), 50);
+  }));
+}
+
+// ---------- passo 4: animações do site (lib/animacoes-site.js) ----------
+export function animacoesHtml(cliente, site) {
+  const prazo = prazoDaOferta(cliente), a = normalizarAnimacoes(site?.animacoes, { prazo });
+  const custom = site?.modo === 'custom';
+  return `<fieldset class="mt-4 rounded-lg border border-slate-200 p-3" data-animacoes-site><legend class="px-1 text-sm font-semibold">Animações do site</legend>
+    <p class="caption">Efeitos leves, só com CSS: aparecem na prévia e no link de aprovação${custom ? ' e vão no site baixado' : '; no passo 6 viram instruções para o tema'}. Quem pede "menos movimento" no celular vê a página parada, e nada esconde o botão de compra.</p>
+    <div class="mt-2 grid gap-2 sm:grid-cols-2">${ANIMACOES_SITE.map((x) => {
+      const bloqueio = x.id === 'contador' && !prazo.fim ? prazo.motivo : '';
+      return `<label class="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-lg border border-slate-200 p-2 ${bloqueio ? 'opacity-80' : ''}" data-opcao-anim="${x.id}">
+        <input type="checkbox" class="mt-1 h-4 w-4" data-anim-site="${x.id}" ${a[x.id] ? 'checked' : ''} ${bloqueio ? 'disabled aria-describedby="motivo-contador"' : ''}>
+        <span class="min-w-0"><span class="block text-sm font-medium">${esc(x.nome)}</span><span class="block text-xs text-slate-600">${esc(x.legenda)}</span>
+          ${bloqueio ? `<span class="mt-1 block text-xs text-amber-800" id="motivo-contador" data-motivo-contador>${esc(bloqueio)}</span>` : x.id === 'contador' ? `<span class="mt-1 block text-xs text-emerald-800">${esc(prazo.texto)} (da oferta ativa do perfil).</span>` : ''}</span></label>`;
+    }).join('')}</div></fieldset>`;
+}
+export function ligarAnimacoes(el, { cliente, getSite, salvarSite, recarregar }) {
+  on(el, 'change', '[data-anim-site]', (c) => ocupado(c, async () => {
+    const site = getSite();
+    const atual = normalizarAnimacoes(site?.animacoes, { prazo: prazoDaOferta(cliente) });
+    await salvarSite({ animacoes: { ...atual, [c.dataset.animSite]: c.checked } });
+    toast(`${ANIMACOES_SITE.find((x) => x.id === c.dataset.animSite).nome}: ${c.checked ? 'ligado' : 'desligado'}.`);
+    recarregar();
   }));
 }

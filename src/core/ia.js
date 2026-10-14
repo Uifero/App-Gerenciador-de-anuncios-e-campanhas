@@ -1153,6 +1153,24 @@ Saída JSON: um objeto cujas chaves são exatamente as acima e cada valor é {"o
   return (await gerarJSON({ tarefa: 'checklist', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] })).dados;
 }
 
+// ---------- Biblioteca de animações (lib/animacoes.js) ----------
+/**
+ * Preenche um preset de animação a partir da ideia/criativo e do produto: só os textos, a ordem e o tempo de cada cena.
+ * Preço e frete NÃO vêm da IA (o app põe os do cadastro na cena de oferta). Equivalente sem IA: planoInicial (o
+ * preenchimento automático que já abre no editor). O app confere saúde, colchete e duração depois (conferirPlano).
+ */
+export async function preencherAnimacao({ cliente, criativo = {}, produto = {}, preset, base }) {
+  const system = 'Você escreve os textos na tela de animações curtas (motion graphics) para Instagram, vistas no celular e sem som. Frases curtas, faladas, em primeira pessoa quando couber.';
+  const pedido = `ANIMAÇÃO: "${preset.nome}" (${preset.descricao}) · estilo ${preset.estilo === 'organico' ? 'orgânico (parece post)' : 'anúncio'}
+IDEIA DO CRIATIVO: gancho "${criativo.hook || ''}" · texto/roteiro: ${String(criativo.copy || '').slice(0, 1200)} · CTA "${criativo.cta || ''}"
+PRODUTO (dados do cadastro, os únicos que existem): "${produto.nome || ''}"${produto.formula ? ` · composição: ${String(produto.formula).slice(0, 300)}` : ''}${produto.beneficios ? ` · benefícios cadastrados: ${String(produto.beneficios).slice(0, 300)}` : ''}
+PLANO ATUAL (tipos e ordem que o app montou): ${JSON.stringify((base.cenas || []).map((c) => ({ tipo: c.tipo, texto: c.texto, dur: c.dur })))}
+Reescreva as cenas: mantenha os mesmos tipos e a ordem (pode juntar ou dividir cenas de "fala"), no máximo ${8} cenas, até ${8} palavras por tela, "dur" em segundos (0.8 a 6, no ritmo de quem fala: ~0.4 s por palavra + 0.6), total até ${preset.gif ? 6 : 20} s. Cena "item": um item da composição ou dos benefícios cadastrados, igual ao cadastro (não invente item). Cena "oferta": só o nome do produto (o preço e o frete o app põe). NUNCA escreva preço, desconto, %, prazo, número ou depoimento que não esteja acima.
+Saída JSON: {"cenas": [{"tipo","texto","dur"}]} ${idiomaLinha(cliente)} ${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'animacao', cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }], maxTokens: 900 });
+  return dados || {};
+}
+
 // ---------- roteiro de narração (Estúdio > Narração) ----------
 /**
  * Escreve a FALA de cada cena da linha do tempo do vídeo (mesma ordem e quantidade), com tom e ritmo, cabendo no

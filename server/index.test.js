@@ -20,7 +20,7 @@ describe('referências fixas da fase de qualidade', () => {
     expect(onde('siteProfissional')).toEqual(['ajuste_site_amplo', 'pacote', 'plano_site', 'site']);
     expect(onde('paginaProduto')).toEqual(['pacote', 'plano_site', 'site']);
     expect(onde('legal')).toEqual(['pacote', 'site']);
-    expect(onde('organico')).toEqual(['criativos', 'imagem', 'refino']);
+    expect(onde('organico')).toEqual(['animacao', 'criativos', 'imagem', 'refino']);
     expect(onde('roteiros')).toEqual(['criativos', 'narracao']);
     expect(onde('politicas')).toEqual(['criativos', 'especialista_copy', 'hooks', 'refino']);
     expect(onde('decisoes')).toEqual(['diagnostico', 'especialista_trafego', 'insights', 'otimizacao_anuncio', 'recomendacao_anuncio']);

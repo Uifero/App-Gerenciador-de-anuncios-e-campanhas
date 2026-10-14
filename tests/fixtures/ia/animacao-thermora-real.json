@@ -1,0 +1,18 @@
+{
+  "gravadoEm": "2026-10-14T16:54:44.432Z",
+  "tarefa": "animacao",
+  "provedor": "cli",
+  "modelo": "claude-haiku-4-5",
+  "uso": {
+    "entrada": 2,
+    "saida": 1398,
+    "cacheEscrita": 12721,
+    "cacheLeitura": 0,
+    "buscasWeb": 0,
+    "custoUsd": 0,
+    "modelo": "claude-haiku-4-5",
+    "provedor": "cli"
+  },
+  "observacao": "Biblioteca de animações: preencher o preset \"Foto com zoom lento + legenda falada\" pela ideia \"Rotina\" da Thermora (Thermora Caps).",
+  "texto": "{\"cenas\": [{\"tipo\":\"fala\",\"texto\":\"Minha manhã antes do trabalho\",\"dur\":2.6},{\"tipo\":\"fala\",\"texto\":\"Eu tomo uma cápsula com o café\",\"dur\":3.4},{\"tipo\":\"fala\",\"texto\":\"e saio.\",\"dur\":1.4},{\"tipo\":\"cta\",\"texto\":\"Comprar no site\",\"dur\":1.8}]}"
+}

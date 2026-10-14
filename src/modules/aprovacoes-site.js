@@ -39,7 +39,7 @@ const versaoDoLink = (site, anteriores, conteudo) => {
 /** `materiais` = Materiais do cliente com o "Usar em" das fotos (banner, fotos dos produtos, Sobre, Galeria). */
 export function conteudoDoLink(cliente, site, produtos, provas = [], materiais = []) {
   const custom = site?.modo === 'custom';
-  if (custom) return { html: gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(provas, site.conteudo?.depoimentos), materiais, design: site.design || null }), texto: '', previa: '' };
+  if (custom) return { html: gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(provas, site.conteudo?.depoimentos), materiais, design: site.design || null, animacoes: site.animacoes || null }), texto: '', previa: '' };
   return { html: '', texto: pacoteTexto(site.pacote || {}), previa: gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos, provas, materiais })) };
 }
 

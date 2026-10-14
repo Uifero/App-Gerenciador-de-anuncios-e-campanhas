@@ -100,6 +100,7 @@ export const TAREFAS = {
   insights:    { modelo: MODELO_COMPLEXO, max: 3000,  effort: 'low', trafego: true, decisoes: true },
   diagnostico: { modelo: MODELO_COMPLEXO, max: 8000,  effort: 'medium', imagens: true, web: true, trafego: true, decisoes: true }, // busca web: benchmarks e práticas do nicho
   narracao:    { modelo: MODELO_LEVE,     max: 2500, roteiros: true },
+  animacao:    { modelo: MODELO_LEVE,     max: 1500, organico: true }, // "Biblioteca de animações": textos e tempo de cada cena de um preset (o app põe preço/frete)
   faq:         { modelo: MODELO_LEVE,     max: 2500 }, // FAQ do site a partir das objeções
   leitura_site: { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low' },            // interpreta o texto extraído do site do cliente
   leitura_web:  { modelo: MODELO_COMPLEXO, max: 4000, effort: 'low', web: true }, // site do cliente que bloqueia leitura direta (busca web)

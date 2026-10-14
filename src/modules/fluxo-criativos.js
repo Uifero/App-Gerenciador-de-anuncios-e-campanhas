@@ -352,7 +352,8 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
           <p class="font-semibold leading-snug">“${esc(t.hook)}”</p>
           <p class="hint !mt-0.5">${ps.length ? `${ps.length} peça(s) finalizada(s)` : 'Nenhuma peça finalizada ainda'}${t.modeloGancho ? ` · ${esc(rotuloModelo(t.modeloGancho))}` : ''}</p>
           ${ps.length ? `<div class="mt-2 flex gap-1 overflow-x-auto">${ps.slice(0, 6).map((p) => `<img src="${esc(p.miniatura || '')}" alt="Peça ${esc(p.formatoNome)}" class="h-16 w-12 shrink-0 rounded object-cover">`).join('')}</div>` : ''}
-          <div class="mt-2 flex flex-wrap gap-2">${btn(f.tipo)}${btn(f.tipo === 'video' ? 'imagem' : 'video')}</div>
+          <div class="mt-2 flex flex-wrap gap-2">${btn(f.tipo)}${btn(f.tipo === 'video' ? 'imagem' : 'video')}
+            <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-animacao-ideia="${esc(i.id)}"><i class="fa-solid fa-clapperboard"></i> Animação pronta (biblioteca)</button></div>
           ${i.criativoId ? `<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-abrir-criativo="${esc(i.criativoId)}"><i class="fa-solid fa-pen"></i> Abrir o criativo (texto, checklist, versões)</button>` : ''}</li>`;
       }).join('')}</ul>
       ${maisOpcoes(botoesGerais)}`
@@ -362,6 +363,12 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
       const c = await garantirCriativo(i);
       const tipo = b.dataset.tipo, f = tipo === 'video' ? { tipo, formato: '1080x1920' } : { tipo, formato: '1080x1350' };
       abrirEstudio(c, cliente, fonte, { ...f, aoFinalizar: (p) => { pecas.unshift(p); atualizarStatus(); const li = $(`[data-produzir-ideia="${CSS.escape(i.id)}"] .hint`, alvo); if (li) li.textContent = `${pecasDe({ ...i, criativoId: c.id }).length} peça(s) finalizada(s)`; } });
+    }));
+    on(alvo, 'click', '[data-animacao-ideia]', (b) => ocupado(b, async () => {
+      const i = fluxo.ideias.find((x) => x.id === b.dataset.animacaoIdeia); if (!i) return;
+      const c = await garantirCriativo(i);
+      const { abrirBibliotecaAnimacoes } = await import('./animacoes.js');
+      await abrirBibliotecaAnimacoes(c, cliente, fonte, { aoFinalizar: (p) => { pecas.unshift(p); atualizarStatus(); const li = $(`[data-produzir-ideia="${CSS.escape(i.id)}"] .hint`, alvo); if (li) li.textContent = `${pecasDe({ ...i, criativoId: c.id }).length} peça(s) finalizada(s)`; } });
     }));
     on(alvo, 'click', '[data-abrir-criativo]', (b) => { const c = criativos.find((x) => x.id === b.dataset.abrirCriativo); if (c) abrirCriativo(c, cliente, cfg, recarregar, fonte); });
   }

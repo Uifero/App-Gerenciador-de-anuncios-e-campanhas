@@ -55,6 +55,22 @@ describe('sistema visual por cliente', () => {
   });
 });
 
+describe('vitrines do site personalizado com desenhos diferentes', () => {
+  const prods = [{ id: 'a', nome: 'A', preco: 100, precoPromocional: 80, destaque: true, fotos: [{ url: 'https://x/a.jpg' }] }, { id: 'b', nome: 'B', preco: 50, fotos: [{ url: 'https://x/b.jpg' }] }];
+  it('Mais vendidos em faixa, Sale em lista e Catálogo em grade; a estrutura de blocos não muda', () => {
+    const h = gerarSiteHTML({ cliente: moda, produtos: prods, conteudo: { heroTitulo: 'Oi' } });
+    expect(h).toContain('class="grid g-vendidos" data-vitrine="vendidos"');
+    expect(h).toContain('class="grid g-sale" data-vitrine="sale"');
+    expect(h).toContain('class="grid g-catalogo" data-vitrine="catalogo"');
+    expect(h).toMatch(/.g-vendidos{display:flex[^}]*overflow-x:auto/);
+    expect(h).toMatch(/.g-sale .card{display:grid;grid-template-columns:112px 1fr/);
+  });
+  it('colunas escolhidas pelo operador vencem o desenho padrão', () => {
+    const h = gerarSiteHTML({ cliente: moda, produtos: prods, conteudo: { heroTitulo: 'Oi' }, layout: { variacoes: { catalogo: { colunas: 3 } } } });
+    expect(h).toContain('class="grid cols3" data-vitrine="catalogo"');
+  });
+});
+
 describe('"Cara de IA": lista proibida', () => {
   const site = (conteudo) => ({ modo: 'custom', conteudo });
   it('acha os clichês da lista, travessão, exclamação em série, emoji em título e parede de texto', () => {

@@ -14,6 +14,7 @@ import { depoimentosVivos } from './prova-social.js';
 import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
 import { comDestaques } from './textos-site.js';
 import { designDoSite, cssVariaveis, textoPar } from './design-site.js';
+import { normalizarAnimacoes, prazoDaOferta, cssAnimacoes, classesBody, htmlContador, instrucoesTema } from './animacoes-site.js';
 
 const txt = (v) => String(v ?? '').trim();
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -58,6 +59,9 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
     tipografia: textoPar(design.par),
     // Identificação da loja no rodapé (lib/legal-loja.js): só o que o operador preencheu, nunca inventado.
     dadosLoja: cliente.dadosLoja || {},
+    // Animações do site (lib/animacoes-site.js): o contador só existe com prazo real na oferta ativa.
+    prazo: prazoDaOferta(cliente),
+    animacoes: normalizarAnimacoes(site.animacoes, { prazo: prazoDaOferta(cliente) }),
     banner: banners[0] || { titulo: txt(c.heroTitulo), subtitulo: txt(c.heroSubtitulo), cta: txt(c.heroCta) },
     banners,
     secoesHome: (p.briefingTema?.secoesHome || []).map(txt).filter(Boolean),
@@ -144,6 +148,7 @@ export function gruposPlataforma(d) {
   const g = (id, titulo, caminho, itens) => ({ id, titulo, caminho, itens: itens.filter(Boolean) });
   // Arquivos já recortados do .zip "Imagens por lugar" (lib/medidas-site.js): qual arquivo vai em cada posição.
   const plano = arquivosPorPasta(d), med = d.medidas || medidasDe(d.plataforma, d.tema);
+  const animTema = instrucoesTema(d.animacoes, d.plataforma, d.tema); // [Onde, ...efeitos, Atenção]
   const deFoto = (f) => `${f.codigo ? `${f.codigo} — ` : ''}${f.nome || 'imagem'}`;
   const listaArquivos = (lugar, pasta, lista = [], produto = false) => {
     const arqs = plano.filter((a) => a.lugar === lugar && (!pasta || a.caminho.startsWith(`${pasta}/`)));
@@ -171,6 +176,7 @@ export function gruposPlataforma(d) {
     g('paginas', 'Páginas institucionais', cam.paginas, [item('Página "Sobre"', d.sobre), item('Página "Perguntas frequentes"', d.faq.map((f) => `${f.p}\n${f.r}`).join('\n\n'))]),
     g('politicas', 'Políticas', cam.politicas, [item('Trocas e devoluções', d.politicas.trocas), item('Envio', d.politicas.envio), item('Privacidade', d.politicas.privacidade)]),
     g('dados-loja', 'Identificação da loja (rodapé)', cam.dados, [item('Nome empresarial', d.dadosLoja?.razaoSocial), item('CNPJ', d.dadosLoja?.cnpj), item('Endereço', d.dadosLoja?.endereco), item('E-mail', d.dadosLoja?.email), item('Telefone / WhatsApp', d.dadosLoja?.telefone)]),
+    g('animacoes', 'Animações (como na prévia, pelo tema)', animTema[0]?.valor || '', animTema.slice(1).map((x) => item(x.rotulo, x.valor))),
     g('cores', 'Cores e tipografia', cam.cores, [item('Paleta (cor principal primeiro)', d.paleta.join(', ') || d.cor), item('Tipografia', d.tipografia)]),
     // Escolhas feitas na prévia (painel "Site gerado" / "Ajustar este site"): o que fazer no tema para a loja ficar igual.
     g('visual-banner', (d.visual.slides || []).length > 1 ? `Imagens do banner: carrossel com ${d.visual.slides.length} slides, nesta ordem` : 'Imagem do banner (escolhida na prévia)', cam.banner, (d.visual.slides || []).length
@@ -211,6 +217,7 @@ export function gerarPreviaLojaHTML(d) {
   const ident = linhasDadosLoja(d.dadosLoja);
   const rodape = `<footer><div class="wrap"><div>${marca}${ident.length ? `<p class="ident" data-dados-loja>${ident.map(esc).join('<br>')}</p>` : ''}</div><div><b>Institucional</b>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Perguntas frequentes</a>' : ''}${d.politicas.trocas ? '<span>Trocas e devoluções</span>' : ''}${d.politicas.envio ? '<span>Envio</span>' : ''}${d.politicas.privacidade ? '<span>Privacidade</span>' : ''}</div><div><b>Compra segura</b><span>Pagamento e frete configurados na plataforma</span>${d.recursos?.pagamentos?.length ? `<span class="pags" data-pagamentos-rodape>${d.recursos.pagamentos.map((k) => `<span>${esc(NOME_PAG[k] || k)}</span>`).join('')}</span>` : ''}</div></div><p class="aviso">${esc(LEGENDA_PREVIA_PACOTE)}</p></footer>`;
   const R = d.recursos || normalizarRecursos();
+  const contador = d.animacoes?.contador ? htmlContador(d.prazo) : ''; // só com prazo real (lib/animacoes-site.js)
   const pags = R.pagamentos.length ? `<div class="pags" data-pagamentos>${R.pagamentos.map((k) => `<span>${esc(NOME_PAG[k] || k)}</span>`).join('')}</div>` : '';
   const avisoFrete = R.freteGratis ? `Frete grátis acima de ${esc(reais(R.freteGratis.valor))}` : '';
   const trocaCurta = d.politicas.trocas ? 'Troca e devolução conforme a política da loja' : '';
@@ -226,7 +233,7 @@ export function gerarPreviaLojaHTML(d) {
   };
   const paginasProduto = d.produtos.map((x, i) => `<section id="produto-${i}" class="pagina"><div class="wrap"><a href="#produtos" class="voltar">&larr; Voltar aos produtos</a>
     <div class="pdp"><div class="galeria">${foto(x, 'principal')}${x.fotos.length > 1 ? `<div class="miniaturas">${miniaturas(x).map((u, k) => `<img src="${esc(u)}" alt="" width="64" height="64" loading="lazy"${pos(x.arquivos?.[k + 1])}>`).join('')}</div>` : ''}</div>
-    <div class="pdp-info"><h1>${esc(x.nome)}</h1><p class="preco">${preco(x)}</p>
+    <div class="pdp-info"><h1>${esc(x.nome)}</h1><p class="preco">${preco(x)}</p>${contador}
       ${x.variacoes.map((v) => `<div class="var"><span>${esc(v.nome)}</span><div>${v.valores.map((val) => `<span class="chip">${esc(val)}</span>`).join('')}</div></div>`).join('')}
       <button type="button" class="comprar${R.botaoGrande ? ' grande' : ''}" disabled data-compra-desativada>${esc(TEXTO_COMPRA_DESATIVADA)}</button>${avisoFrete || trocaCurta ? `<p class="frete-pdp" data-frete-pdp>${[avisoFrete, trocaCurta].filter(Boolean).join(' · ')}</p>` : ''}${pags}
       ${x.descricao ? `<div class="desc">${esc(x.descricao).replace(/\n/g, '<br>')}</div>` : ''}${secoesProduto(x)}${compreJunto(x, i)}</div></div></div>
@@ -235,7 +242,7 @@ export function gerarPreviaLojaHTML(d) {
   const V = d.visual;
   const med = d.medidas || medidasDe(d.plataforma, d.tema);
   const slides = V.slides || [];
-  const textoBanner = `<h1>${esc(d.banner.titulo || d.nomeLoja)}</h1>${d.banner.subtitulo ? `<p>${esc(d.banner.subtitulo)}</p>` : ''}${d.banner.cta ? `<a href="#produtos" class="cta">${esc(d.banner.cta)}</a>` : ''}`;
+  const textoBanner = `<h1>${esc(d.banner.titulo || d.nomeLoja)}</h1>${d.banner.subtitulo ? `<p>${esc(d.banner.subtitulo)}</p>` : ''}${contador}${d.banner.cta ? `<a href="#produtos" class="cta">${esc(d.banner.cta)}</a>` : ''}`;
   // Sem foto escolhida para o banner: a foto real do primeiro produto que tiver foto (nunca um fundo de gradiente).
   const iHero = d.produtos.findIndex((x) => x.fotos[0]);
   const lightbox = d.provas.map((p, i) => `<div id="print-${i}" class="lightbox"><a href="#clientes-reais" class="fechar" aria-label="Fechar">×</a><img src="${esc(p.url)}" alt="Print de cliente real"></div>`).join('');
@@ -302,6 +309,7 @@ footer .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr
 .banner.com-carrossel{padding:0;background:#111}.car-texto h1{margin:0 0 8px;font-size:clamp(28px,6vw,var(--h1));color:#fff;max-width:18ch}.car-texto p{margin:0 0 18px;color:#fff}
 a:focus-visible,summary:focus-visible,label:focus-visible{outline:2px solid ${corTexto};outline-offset:2px}
 ${slides.length ? carrosselCss({ n: slides.length, id: 'bn' }) : ''}
+${cssAnimacoes(d.animacoes, { acento: cor })}
 @media(max-width:640px){header .wrap{flex-wrap:wrap;gap:8px;min-height:56px;padding:0 16px}.hamb{display:flex;align-items:center;justify-content:center;width:44px;height:44px;margin-left:-10px;cursor:pointer;color:${C.texto}}
 .marca{flex:1;min-width:0}.nome{font-size:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.logo{max-height:36px}
 nav{display:none;order:3;flex-basis:100%;flex-direction:column;gap:0;padding-bottom:6px}.menu-toggle:checked~nav{display:flex}nav a{padding:12px 2px;border-top:1px solid ${C.borda};font-size:16px}
@@ -312,5 +320,5 @@ nav{display:none;order:3;flex-basis:100%;flex-direction:column;gap:0;padding-bot
 .bc-preco{font-size:16px}.bc-botao{flex:1;max-width:60%;min-height:48px;display:flex;align-items:center;justify-content:center;text-align:center;border-radius:var(--raio);background:${cor};color:${sobreCor};opacity:.7;font-weight:700;font-size:14px;padding:0 10px}
 .pagina:not(:target) .barra-compra{display:none}}`;
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
-<base href="about:srcdoc"><title>${esc(d.nomeLoja)} — prévia</title><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="${esc(D.fontesUrl)}"><style>${css}</style></head><body>${cabecalho}${paginasProduto}${home}${rodape}${lightbox}</body></html>`;
+<base href="about:srcdoc"><title>${esc(d.nomeLoja)} — prévia</title><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="${esc(D.fontesUrl)}"><style>${css}</style></head><body${d.animacoes && classesBody(d.animacoes) ? ` class="${classesBody(d.animacoes)}"` : ''}>${cabecalho}${paginasProduto}${home}${rodape}${lightbox}</body></html>`;
 }

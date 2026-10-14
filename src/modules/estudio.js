@@ -159,7 +159,8 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
       <p class="hint my-1">Depois escolha um dos caminhos: <b>editor avançado</b> (corta o vídeo de verdade, queima texto/legenda, ajusta volume e proporção) ou <b>base com gancho e CTA</b> (monta as cenas aqui embaixo). Dicas: <b>gancho nos 3 primeiros segundos</b> (texto grande), <b>cortes</b> nas partes paradas (uma cena = um trecho, com "início no vídeo"), <b>legendas</b> (muita gente assiste sem som), <b>velocidade</b> 1.1x a 1.25x para dar ritmo, <b>CTA no final</b>, formato 9:16 e música baixa por cima.</p>
       <div class="flex flex-wrap items-end gap-2"><div><label class="label">Vídeo</label><select class="input" data-base-video-sel></select></div>
         <button class="btn-primary btn-sm" data-abrir-editor><i class="fa-solid fa-scissors"></i> Editar no editor avançado</button>
-        <button class="btn-ghost btn-sm" data-base-video><i class="fa-solid fa-wand-magic-sparkles"></i> Montar base com gancho e CTA</button></div>
+        <button class="btn-ghost btn-sm" data-base-video><i class="fa-solid fa-wand-magic-sparkles"></i> Montar base com gancho e CTA</button>
+        <button type="button" class="btn-ghost btn-sm" data-biblioteca-anim><i class="fa-solid fa-clapperboard"></i> Biblioteca de animações</button></div>
     </div>
     <div data-cenas class="space-y-2"></div>
     <button class="btn-ghost btn-sm mt-2" data-add-cena><i class="fa-solid fa-plus"></i> Adicionar cena</button>
@@ -455,6 +456,10 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     el.className = `mt-2 rounded-lg border p-2 text-sm ${cor}`; el.innerHTML = html; return el;
   };
   on(raiz, 'change', '[data-logo-no-fim]', (c) => { est.logoNoFim = c.checked; });
+  on(raiz, 'click', '[data-biblioteca-anim]', (b) => ocupado(b, async () => {
+    const { abrirBibliotecaAnimacoes } = await import('./animacoes.js'); // só carrega quando abrir
+    await abrirBibliotecaAnimacoes(criativo, cliente, fonte || {}, { aoFinalizar: (p) => opts.aoFinalizar?.(p) });
+  }));
   const configPeca = () => ({ template: est.template, cor: est.cor, corTexto: est.corTexto, logoNoFim: est.logoNoFim, temLogo: Boolean(est.logo), hook: $('[data-hook]', raiz).value, cta: $('[data-cta]', raiz).value,
     cenas: est.cenas.map((c) => ({ texto: c.texto || '', dur: c.dur, tipo: c.tipo })) });
   const finalizar = async (qual, peca) => {
