@@ -3,6 +3,7 @@
 // A parte de roteiro (extrairCenas) é pura e testável; o resto só roda no navegador.
 
 import { FORMATOS_INSTAGRAM, zonaSegura } from './formatos-instagram.js';
+import { cenasDoCriativo, duracaoDoTempo, textoNaTela } from './cenas.js';
 
 /** Formatos do Instagram no celular: 9:16 e 4:5 primeiro; 1:1 só quando pedirem (lib/formatos-instagram.js). */
 export const FORMATOS_IMAGEM = FORMATOS_INSTAGRAM;
@@ -28,32 +29,15 @@ export function partirTexto(t, max = 90) {
   return out;
 }
 
-/** "0-3s" -> 3; "10-18s" -> 8; sem número -> 3. Limitado entre 1,5 e 12 s. */
-function duracaoDe(txt) {
-  const n = (v) => Number(String(v).replace(',', '.'));
-  const m = String(txt || '').match(/(\d+(?:[.,]\d+)?)\s*(?:-|–|a|até)\s*(\d+(?:[.,]\d+)?)/i);
-  const d = m ? n(m[2]) - n(m[1]) : 3;
-  return Math.min(12, Math.max(1.5, d > 0 ? d : 3));
-}
-
 /**
- * Lê o roteiro ("Cena 1 (0-3s): ... Voz: "..." / Texto na tela: ...") e devolve a linha do tempo do vídeo:
- * [{ texto, dur, tipo: 'cena' | 'cta' }]. Legenda da cena = "Texto na tela" > "Voz" > (vazia: só a imagem).
- * Sem cenas no texto, usa hook + frases da copy. Termina sempre com o CTA. Total limitado a 30 s.
+ * Linha do tempo do vídeo a partir do criativo: [{ tempo, mostrar, texto, fala, dur, tipo: 'cena' | 'cta' }].
+ * As cenas vêm de criativo.cenas (ou do roteiro antigo "CENA 1 (0-3s) — ...", lido por lib/cenas.js sem mudar o texto):
+ * na tela vai SÓ o "Texto na tela" (vazio = nenhum texto); a direção ("O que mostrar") fica para o operador.
+ * Sem cenas, usa hook + frases da copy (texto de legenda, não roteiro). Termina sempre com o CTA. Total até 30 s.
  */
-export function extrairCenas({ hook = '', copy = '', cta = '' }) {
-  const cenas = [];
-  const texto = String(copy || '');
-  const marcas = [...texto.matchAll(/Cena\s*\d+\s*(?:\(([^)]*)\))?\s*[:\-–]/gi)];
-  marcas.forEach((m, i) => {
-    const corpo = texto.slice(m.index + m[0].length, i + 1 < marcas.length ? marcas[i + 1].index : undefined);
-    const dur = duracaoDe(m[1]);
-    const tela = corpo.match(/Texto\s+na\s+tela\s*:\s*([\s\S]*?)(?=\bVoz\s*:|$)/i)?.[1];
-    const voz = corpo.match(/\bVoz\s*:\s*([\s\S]*)$/i)?.[1];
-    const legenda = limpar(tela) || limpar(voz);
-    const pedacos = legenda ? partirTexto(legenda) : [''];
-    pedacos.forEach((p) => cenas.push({ texto: p, dur: Math.max(1.5, dur / pedacos.length), tipo: 'cena' }));
-  });
+export function extrairCenas(criativo = {}) {
+  const { hook = '', copy = '', cta = '' } = criativo;
+  const cenas = cenasDoCriativo(criativo).cenas.map((c) => ({ tempo: c.tempo, mostrar: c.mostrar, texto: c.texto, fala: c.fala, dur: duracaoDoTempo(c.tempo), tipo: 'cena' }));
   if (!cenas.length) {
     if (limpar(hook)) cenas.push({ texto: limpar(hook), dur: 3, tipo: 'cena' });
     partirTexto(limpar(copy)).filter(Boolean).slice(0, 6).forEach((p) => cenas.push({ texto: p, dur: Math.min(5, Math.max(2, p.length / 14)), tipo: 'cena' }));
@@ -277,8 +261,11 @@ export function formatoDeVideo() {
   return mime ? { mime, ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm' } : null;
 }
 
-/** Imagem ou vídeo que uma cena usa: o escolhido nela (cena.midia) ou, sem escolha, os materiais em rodízio. */
-export const midiaDaCena = (cena, i, midias) => cena.midia || (midias.length ? midias[i % midias.length] : null);
+/**
+ * Imagem ou vídeo que uma cena usa: o resolvido pelo Estúdio (cena.midia, lib/cenas.js fotoDaCena). Cena com "Falta
+ * foto" (cena.falta) fica sem imagem (fundo neutro), nunca com outra foto; sem nada resolvido, os materiais em rodízio.
+ */
+export const midiaDaCena = (cena, i, midias) => (cena.falta ? null : cena.midia || (midias.length ? midias[i % midias.length] : null));
 
 /** Reabre o vídeo em um elemento novo: um <video> só pode ser ligado uma vez ao áudio, e cada gravação precisa do seu. */
 async function clonarVideo(m) {
@@ -379,9 +366,9 @@ export async function gravarVideo({ cenas, midias = [], cor = '#4f46e5', corText
 
     const aparece = Math.min(1, tLocal / 0.3), mx = largura * 0.08;
     if (cena.tipo === 'cta') {
-      pilula(ctx, { texto: cena.texto, x: largura / 2, yBase: Math.min(altura * 0.62, baseLegenda), tam: largura * 0.058, fundo: cor, tinta: tintaSobre(cor), centro: true, alpha: aparece, larguraMax: largura - mx * 2 });
+      pilula(ctx, { texto: textoNaTela(cena), x: largura / 2, yBase: Math.min(altura * 0.62, baseLegenda), tam: largura * 0.058, fundo: cor, tinta: tintaSobre(cor), centro: true, alpha: aparece, larguraMax: largura - mx * 2 });
     } else {
-      blocoTexto(ctx, { texto: cena.texto, x: mx, y: baseLegenda, largura: largura - mx * 2, alturaMax: Math.min(altura * 0.3, baseLegenda - zs.y - altura * 0.08), tamMax: largura * 0.085, tamMin: largura * 0.045, cor: corTexto, alinhar: 'center', ancora: 'base', alpha: aparece, dy: (1 - aparece) * altura * 0.02 });
+      blocoTexto(ctx, { texto: textoNaTela(cena), x: mx, y: baseLegenda, largura: largura - mx * 2, alturaMax: Math.min(altura * 0.3, baseLegenda - zs.y - altura * 0.08), tamMax: largura * 0.085, tamMin: largura * 0.045, cor: corTexto, alinhar: 'center', ancora: 'base', alpha: aparece, dy: (1 - aparece) * altura * 0.02 });
     }
     // logoNoFim (estilo orgânico): a marca só aparece na última cena, como num post de pessoa real.
     if (!logoNoFim || i === cenas.length - 1) logotipo(ctx, logo, mx, zs.y, largura * 0.22, altura * 0.06);

@@ -10,7 +10,8 @@
 import { fotosDoProduto } from './fotos-site.js';
 import { rastreamentoDe } from './rastreamento.js';
 import { plataformaDoSite, nomeTema } from './etapas-site.js';
-import { ehProdutoSaude, achadosSaude, AVISO_META_SAUDE } from './saude.js';
+import { ehProdutoSaude, achadosSaude } from './saude.js';
+import { imagemResultadoCorpo, NOTA_IMAGEM_CORPO } from './cenas.js';
 import { tipoMaterial } from './prova-social.js';
 import { slug } from './csv.js';
 
@@ -80,16 +81,16 @@ export function avisosCampanha({ cliente = {}, site = null, etiquetaAprov = null
 /**
  * Prints que podem virar imagem de criativo. Regras: só a cópia borrada (nunca o original); autorização confirmada
  * (sem ela, `pedirAutorizacao`); cliente de saúde/emagrecimento: print que mostra resultado no corpo (kg, cm, antes e
- * depois) é bloqueado pela política do Meta. Devolve [{ material, url, usavel, pedirAutorizacao, motivo }].
+ * depois) NÃO é bloqueado (alegação de saúde em criativo é só aviso): vem com `riscoMeta` (nota do selo "Risco Meta").
+ * Devolve [{ material, url, usavel, pedirAutorizacao, motivo, riscoMeta }].
  */
 export function printsParaCriativo({ cliente = {}, produtos = [], materiais = [] } = {}) {
   const saude = ehProdutoSaude(cliente, produtos);
   return materiais.filter((m) => tipoMaterial(m) === 'prova_social' && m.url).map((m) => {
     const texto = [m.descricao, m.citacao, m.resumo, m.fonteProva, m.nomeOriginal].map(txt).join(' ');
-    const achados = saude ? achadosSaude(texto) : [];
-    if (achados.length) return { material: m, url: '', usavel: false, bloqueadoSaude: true, motivo: `${AVISO_META_SAUDE} (este print mostra: ${achados.join(', ')}). No site ele pode continuar.` };
-    if (!m.borrada?.url) return { material: m, url: '', usavel: false, motivo: 'Borre nome, número e rosto antes (aba Site/Loja, passo 2): em criativo só entra a cópia borrada.' };
-    return { material: m, url: m.borrada.url, usavel: true, pedirAutorizacao: !m.autorizado, motivo: m.autorizado ? '' : 'Precisa confirmar a autorização do cliente antes de usar.' };
+    const riscoMeta = saude && (achadosSaude(texto).length || imagemResultadoCorpo(texto)) ? NOTA_IMAGEM_CORPO : '';
+    if (!m.borrada?.url) return { material: m, url: '', usavel: false, riscoMeta, motivo: 'Borre nome, número e rosto antes (aba Site/Loja, passo 2): em criativo só entra a cópia borrada.' };
+    return { material: m, url: m.borrada.url, usavel: true, riscoMeta, pedirAutorizacao: !m.autorizado, motivo: m.autorizado ? '' : 'Precisa confirmar a autorização do cliente antes de usar.' };
   });
 }
 

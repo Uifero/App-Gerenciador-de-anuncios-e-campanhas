@@ -17,6 +17,7 @@ import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
 import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../lib/narrativas.js';
 import { abrirMateriais } from './materiais-cliente.js';
 import { AVISO_META_SAUDE, ehProdutoSaude, alertaSaude, seloRiscoMeta, textoDoCriativo, trocarPelaSegura } from '../lib/saude.js';
+import { normalizarCenas, cenasDoCriativo } from '../lib/cenas.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, ganchoPorNumero, rotuloModelo, descricaoModelo, motivoGancho } from '../lib/ganchos.js';
 import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
@@ -359,7 +360,7 @@ export async function salvarNovo(cliente, x, ctx = {}) {
     clienteId: cliente.id, nome: x.nome, hook: x.hook, copy: x.copy, cta: x.cta || '', angulo, gatilho,
     framework, formato, idioma: cliente.marca?.idioma || 'pt-BR', ...(x.narrativa ? { narrativa: x.narrativa } : {}), ...(x.modeloGancho ? { modeloGancho: x.modeloGancho } : {}),
     status: 'rascunho', checklist: {}, versoes: [snap], referenciaId: ctx.referenciaId || null, modeloUsado: ctx.modelo || null,
-    origem: ctx.referenciaId || ctx.modelo || x.porque ? 'ia' : 'manual', produtoId: ctx.produtoId || null,
+    origem: ctx.referenciaId || ctx.modelo || x.porque ? 'ia' : 'manual', produtoId: ctx.produtoId || null, ...(normalizarCenas(x.cenas).length ? { cenas: normalizarCenas(x.cenas) } : {}),
     arquivoUrl: null, arquivoPath: null, arquivoNome: null, emUsoDesde: null, provaSocial: false,
   });
 }
@@ -395,6 +396,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
     ${motivoGancho(c, cliente) ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-gancho><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${esc(motivoGancho(c, cliente))}. Ajuste antes de aprovar.</div>` : ''}
     ${origemGancho(c)}
     ${produtoHtml()}
+    ${roteiroHtml()}
     <form id="fe" class="space-y-3" data-aviso-sair>
       <p class="caption">Edite direto (sem IA) e salve como nova versão, ou peça um ajuste ao chat abaixo.</p>
       <div><label class="label">Hook</label><input class="input" name="hook" value="${esc(c.hook)}"></div>
@@ -445,6 +447,16 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
     </details>`;
   };
   // Produto ligado: nome, preço, foto principal e oferta ativa lidos da fonte (aba Produtos, Materiais, perfil de marca).
+  // Roteiro em cenas (criativo.cenas, ou lido do roteiro antigo no texto): direção em cinza, "só para você".
+  function roteiroHtml() {
+    const { cenas, origem } = cenasDoCriativo(c);
+    if (!cenas.length) return '';
+    return `<details class="mb-3 rounded-lg border border-slate-200 p-2" data-roteiro-cenas><summary class="flex min-h-[44px] cursor-pointer items-center text-sm font-semibold"><i class="fa-solid fa-film mr-1"></i> Roteiro por cenas (${cenas.length})${origem === 'roteiro' ? ' <span class="ml-1 font-normal text-slate-500">· lido do texto</span>' : ''}</summary>
+      <ol class="mt-1 space-y-2 text-sm">${cenas.map((x, i) => `<li class="rounded bg-slate-50 p-2" data-cena-roteiro="${i}"><p class="text-xs font-semibold text-slate-600">Cena ${i + 1}${x.tempo ? ` · ${esc(x.tempo)}` : ''}</p>
+        <p><b>Texto na tela:</b> ${x.texto ? `“${esc(x.texto)}”` : '<span class="text-slate-500">(nenhum)</span>'}</p>
+        ${x.mostrar ? `<p class="text-xs text-slate-500"><b>O que mostrar (só para você):</b> ${esc(x.mostrar)}</p>` : ''}${x.fala ? `<p class="text-xs text-slate-600"><b>Fala:</b> ${esc(x.fala)}</p>` : ''}</li>`).join('')}</ol>
+      <p class="hint">Para editar as cenas e as fotos de cada uma, abra o Estúdio.</p></details>`;
+  }
   function produtoHtml() {
     const d = dadosProduto();
     const opts = (fonte.produtos || []).map((p) => `<option value="${esc(p.id)}" ${p.id === c.produtoId ? 'selected' : ''}>${esc(p.nome)}</option>`).join('');

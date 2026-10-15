@@ -12,7 +12,7 @@ import { rotuloModelo } from '../lib/ganchos.js';
 import { pareceAnuncio, configNatural } from '../lib/parece-anuncio.js';
 import { statusAposTrocarArquivo } from './aprovacao.js';
 import { esc, $, on, modal, toast, ocupado, confirmar, tag, dataBR, opcoes, mostrarResultado } from '../core/ui.js';
-import { seloRiscoMeta, textoDoCriativo } from '../lib/saude.js';
+import { alertaSaude, seloComNota, juntarAlertas, textoDoCriativo } from '../lib/saude.js';
 
 const avisarPecas = (clienteId) => { try { document.dispatchEvent(new CustomEvent('gcc:pecas', { detail: { clienteId } })); } catch { /* fora do navegador */ } };
 
@@ -160,10 +160,12 @@ export function montarGaleria(alvo, ctx) {
         <p class="rounded bg-emerald-50 p-1"><b>Com a mudança:</b> ${esc(TEMPLATE_NOME[novo.template] || 'mesmo modelo')}${p.tipo === 'video' ? ', logo só na última cena' : ''}</p>
         <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-peca-natural="${esc(p.id)}"><i class="fa-solid fa-leaf"></i> Refazer no Estúdio com a mudança</button></div>` : ''}</details>`;
   };
-  // "Risco Meta" (só informação): texto atual do criativo + o texto gravado na peça. Some quando o texto fica limpo.
+  // "Risco Meta" (só informação): texto atual do criativo + o texto gravado na peça + imagem de resultado no corpo usada
+  // nela (config.riscoImagem). O do texto some quando o texto fica limpo.
   const riscoMeta = (p) => {
     const c = criativos.find((x) => x.id === p.criativoId) || {};
-    const selo = seloRiscoMeta(textoDoCriativo({ ...c, hook: p.texto?.hook || c.hook, cta: p.texto?.cta || c.cta }), cliente);
+    const a = juntarAlertas(alertaSaude(textoDoCriativo({ ...c, hook: p.texto?.hook || c.hook, cta: p.texto?.cta || c.cta }), cliente), p.config?.riscoImagem ? { nota: p.config.riscoImagem } : null);
+    const selo = a ? seloComNota(a.nota) : '';
     return selo ? `<div class="mt-1">${selo}</div>` : '';
   };
   const cartao = (p) => {

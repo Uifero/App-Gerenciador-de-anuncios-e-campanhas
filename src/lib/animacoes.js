@@ -84,7 +84,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
  */
 export function planoInicial(presetId, { criativo = {}, produto = {}, cliente = {}, recursos = null, formato = '1080x1920', nFotos = 1 } = {}) {
   const p = presetPorId(presetId) || PRESETS[0];
-  const base = extrairCenas({ hook: criativo.hook, copy: criativo.copy, cta: criativo.cta }).filter((c) => txt(c.texto));
+  const base = extrairCenas({ hook: criativo.hook, copy: criativo.copy, cta: criativo.cta, cenas: criativo.cenas }).filter((c) => txt(c.texto));
   const falas = base.filter((c) => c.tipo !== 'cta').map((c) => c.texto);
   const cta = txt(criativo.cta);
   const preco = precoDe(produto), frete = freteDe({ cliente, recursos });

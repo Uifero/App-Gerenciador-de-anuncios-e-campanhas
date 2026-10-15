@@ -100,12 +100,11 @@ describe('prints de prova social em criativos', () => {
     expect(y.usavel).toBe(false);
     expect(y.motivo).toMatch(/só entra a cópia borrada/);
   });
-  it('cliente de saúde: print "perdi 3 kg" bloqueado com o aviso; outro cliente pode', () => {
+  it('cliente de saúde: print "perdi 3 kg" pode ser usado, com o aviso "Risco Meta" (nunca bloqueia); outro cliente sem aviso', () => {
     const print = borrado({ descricao: 'Cliente diz: perdi 3 kg em um mês', autorizado: true });
     const [s] = printsParaCriativo({ cliente: { nicho: 'suplemento para emagrecer' }, materiais: [print] });
-    expect(s).toMatchObject({ usavel: false, bloqueadoSaude: true });
-    expect(s.motivo).toMatch(/Política do Meta.*3 kg/);
-    expect(printsParaCriativo({ cliente: { nicho: 'moda fitness', marca: { produtoSaude: false } }, materiais: [print] })[0].usavel).toBe(true);
+    expect(s).toMatchObject({ usavel: true, riscoMeta: 'Imagem de resultado no corpo: o Meta costuma reprovar em suplemento.' });
+    expect(printsParaCriativo({ cliente: { nicho: 'moda fitness', marca: { produtoSaude: false } }, materiais: [print] })[0]).toMatchObject({ usavel: true, riscoMeta: '' });
   });
 });
 

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const bancos = {};
 const COL_FAKE = { clientes: 'clientes', criativos: 'criativos', respostas: 'respostas', config: 'config', hooks: 'hooks', referencias: 'referencias', campanhas: 'campanhas', resultados: 'resultados',
   produtos: 'produtos', sites: 'sites', usoApi: 'usoApi', materiais: 'materiais', aprovacoes: 'aprovacoes', diagnosticos: 'diagnosticos', diagnosticoImagens: 'diagnosticoImagens', playbooks: 'playbooks',
-  analises: 'analises', tarefas: 'tarefas', printsResultado: 'printsResultado', documentos: 'documentos', pesquisas: 'pesquisas' };
+  analises: 'analises', tarefas: 'tarefas', printsResultado: 'printsResultado', documentos: 'documentos', pesquisas: 'pesquisas', pecas: 'pecas' };
 
 vi.mock('../core/storage.js', () => ({
   COL: COL_FAKE,
@@ -82,5 +82,20 @@ describe('montarBackup — dados da análise de anúncio', () => {
     expect(b.colecoes.clientes[0].comoAnuncia.texto).toBe('vende no whats');
     const tudo = await montarBackup();
     expect(tudo.contagens).toMatchObject({ analises: 2, documentos: 2 });
+  });
+});
+
+describe('roteiro em cenas no backup', () => {
+  it('criativo.cenas (tempo, mostrar, texto, fala) e a peça com cenas/riscoImagem saem no backup e voltam na restauração', async () => {
+    const cenas = [{ tempo: '0-3s', mostrar: 'Bancada com potes', texto: 'Quantos potes você tem aí?', fala: '' }];
+    bancos.criativos = new Map([['cr1', { clienteId: 'c1', nome: 'Potes', cenas }]]);
+    bancos.pecas = new Map([['p1', { clienteId: 'c1', criativoId: 'cr1', config: { cenas: [{ texto: 'Quantos potes você tem aí?', mostrar: 'Bancada com potes', fala: '', dur: 3, tipo: 'cena' }], riscoImagem: 'Imagem de resultado no corpo: o Meta costuma reprovar em suplemento.' } }]]);
+    const b = await montarBackup({ id: 'c1', nome: 'Thermora' });
+    expect(b.colecoes.criativos[0].cenas).toEqual(cenas);
+    expect(b.colecoes.pecas[0].config).toMatchObject({ riscoImagem: expect.stringContaining('resultado no corpo') });
+    for (const k of Object.keys(bancos)) delete bancos[k];
+    await restaurarBackup(JSON.parse(JSON.stringify(b)));
+    expect(bancos.criativos.get('cr1').cenas).toEqual(cenas);
+    expect(bancos.pecas.get('p1').config.cenas[0].mostrar).toBe('Bancada com potes');
   });
 });

@@ -14,7 +14,7 @@ import { tokenAtual } from '../core/auth.js';
 import { db, COL } from '../core/storage.js';
 import { sugerirPromptsVisuais } from '../core/ia.js';
 import {
-  FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, desenharGuiaZona, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
+  FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, extrairCenas, desenharPeca, canvasParaPng, desenharGuiaZona, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
 import { foraDaZona, nomeFormato, zonaSegura } from '../lib/formatos-instagram.js';
 import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo, mostrarResultado, confirmar, avisarRiscoMeta } from '../core/ui.js';
@@ -28,7 +28,8 @@ import { abrirBiblioteca } from './modelos-prompt.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { tipoMaterial } from '../lib/prova-social.js';
 import { produtoDoCriativo, printsParaCriativo } from '../lib/conexoes.js';
-import { alertaSaude, seloRiscoMeta, trocarPelaSegura, textosDoSiteNoAnuncio } from '../lib/saude.js';
+import { alertaSaude, seloRiscoMeta, seloComNota, juntarAlertas, ehProdutoSaude, trocarPelaSegura, textosDoSiteNoAnuncio } from '../lib/saude.js';
+import { fotoDaCena, rotuloDoMaterial, imagemResultadoCorpo, NOTA_IMAGEM_CORPO, cenasDoCriativo, contarPalavras, PALAVRAS_TELA } from '../lib/cenas.js';
 import { excluirMateriais } from './excluir-material.js';
 import { salvarPeca } from './pecas.js';
 import { formatarBytes } from '../lib/pecas.js';
@@ -58,7 +59,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
   const pref = lerPref(cliente.id);
   const base = opts.config || {};
   const est = {
-    midias: [], logo: null, musica: null, cenas: extrairCenas(criativo), cor: base.cor || pref.cor || '#4f46e5', corTexto: base.corTexto || pref.corTexto || '#ffffff',
+    midias: [], logo: null, musica: null, cenas: extrairCenas(criativo), origemCenas: cenasDoCriativo(criativo).origem, cor: base.cor || pref.cor || '#4f46e5', corTexto: base.corTexto || pref.corTexto || '#ffffff',
     template: base.template || 'destaque', formato: opts.tipo === 'imagem' && opts.formato ? opts.formato : '1080x1350', guiaZona: true,
     formatoVideo: opts.tipo === 'video' && opts.formato ? opts.formato : '1080x1920', urlVideo: null, ctrl: null,
     logoNoFim: base.logoNoFim !== false, // estilo orgânico: a marca aparece tarde e de leve ("Parece anúncio?", lib/parece-anuncio.js)
@@ -162,8 +163,11 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
         <button class="btn-ghost btn-sm" data-base-video><i class="fa-solid fa-wand-magic-sparkles"></i> Montar base com gancho e CTA</button>
         <button type="button" class="btn-ghost btn-sm" data-biblioteca-anim><i class="fa-solid fa-clapperboard"></i> Biblioteca de animações</button></div>
     </div>
+    <div data-origem-cenas></div>
     <div data-cenas class="space-y-2"></div>
-    <button class="btn-ghost btn-sm mt-2" data-add-cena><i class="fa-solid fa-plus"></i> Adicionar cena</button>
+    <div class="mt-2 flex flex-wrap gap-2"><button class="btn-ghost btn-sm min-h-[44px]" data-add-cena><i class="fa-solid fa-plus"></i> Adicionar cena</button>
+      <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-salvar-roteiro><i class="fa-solid fa-floppy-disk"></i> Salvar roteiro no criativo</button></div>
+    <div class="mt-2 hidden rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-sm text-emerald-800" role="status" data-roteiro-salvo></div>
     <div class="mt-3 flex flex-wrap items-end gap-3">
       <div><label class="label">Formato</label><select class="input" data-formato-video>${opcoes(FORMATOS_IMAGEM, est.formatoVideo)}</select></div>
       <label class="flex min-h-[44px] items-center gap-2 text-sm" title="Post de pessoa real não abre com logo: a marca aparece no fim, de leve"><input type="checkbox" class="h-4 w-4" data-logo-no-fim ${est.logoNoFim ? 'checked' : ''}> Logo só na última cena (mais natural)</label>
@@ -222,11 +226,20 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
   // Texto do site mantido pelo operador ganha a versão segura como troca opcional.
   const textosPeca = () => [$('[data-hook]', raiz).value, $('[data-cta]', raiz).value, ...est.cenas.map((c) => c.texto || '')].join(' \n ');
   const motivoPeca = () => alertaSaude(textosPeca(), cliente);
+  // Foto/vídeo de cada cena (lib/cenas.js): escolha manual > a que combina com "O que mostrar" > "Falta foto".
+  const fotoCena = (c, i) => fotoDaCena(c, i, est.midias);
+  const ehSaude = () => ehProdutoSaude(cliente, fonte?.produtos || []);
+  const riscoDaMidia = (m) => Boolean(m && ehSaude() && imagemResultadoCorpo(m.rotulo));
+  // Imagem de resultado no corpo (balança, kg, antes e depois, medidas, roupa larga) na peça: só aviso, nunca bloqueia.
+  const alertaImagem = (qual) => {
+    const usadas = qual === 'video' ? est.cenas.map((c, i) => fotoCena(c, i).midia) : est.template === 'colagem' ? fotos().slice(0, 4) : [cfgPeca().midia];
+    return usadas.some(riscoDaMidia) ? { trechos: [], altoRisco: true, nota: NOTA_IMAGEM_CORPO } : null;
+  };
   const avisarSaude = () => {
     const el = $('[data-aviso-saude-estudio]', raiz); if (!el) return;
-    const m = motivoPeca(), troca = m && textosDoSiteNoAnuncio(textosPeca(), cliente).some((l) => l.alegacao.length && l.segura);
-    el.classList.toggle('hidden', !m);
-    el.innerHTML = m ? `${seloRiscoMeta(textosPeca(), cliente)} <span class="text-xs">Só aviso: a peça pode ser guardada.</span>${troca ? ' <button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-estudio><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>' : ''}` : '';
+    const m = motivoPeca(), img = alertaImagem('video') || alertaImagem('foto'), troca = m && textosDoSiteNoAnuncio(textosPeca(), cliente).some((l) => l.alegacao.length && l.segura);
+    el.classList.toggle('hidden', !m && !img);
+    el.innerHTML = m || img ? `${m ? seloRiscoMeta(textosPeca(), cliente) : seloComNota(img.nota)} <span class="text-xs">Só aviso: a peça pode ser guardada.</span>${troca ? ' <button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-estudio><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>' : ''}` : '';
   };
   let agendado = 0;
   const agendarPrevia = () => { cancelAnimationFrame(agendado); agendado = requestAnimationFrame(previa); };
@@ -250,16 +263,38 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     el.classList.toggle('text-rose-600', t > LIMITE_VIDEO_S + 0.05); el.classList.toggle('font-semibold', t > LIMITE_VIDEO_S + 0.05);
     narr?.cenasMudaram();
   };
+  // Tempo de cada cena sai das durações (um dado só): "0-3s", "3-7s"...
+  const tempos = () => { let t = 0; const n = (v) => String(Math.round(v * 10) / 10).replace('.', ','); return est.cenas.map((c) => { const a = t; t += Number(c.dur) || 0; return `${n(a)}-${n(t)}s`; }); };
   const listarCenas = () => {
-    const velocidades = [0.8, 1, 1.1, 1.25, 1.5, 2];
+    const velocidades = [0.8, 1, 1.1, 1.25, 1.5, 2], tps = tempos();
+    const avisoOrigem = $('[data-origem-cenas]', raiz);
+    if (avisoOrigem) avisoOrigem.innerHTML = est.origemCenas === 'roteiro' ? '<p class="mb-2 rounded border border-indigo-200 bg-indigo-50 p-2 text-xs text-indigo-800" data-cenas-lidas><i class="fa-solid fa-circle-info"></i> Cenas lidas do roteiro do criativo: a direção foi para "O que mostrar" (só para você) e só o "Texto na tela" aparece no vídeo. O texto do criativo não foi mudado. Confira e clique em "Salvar roteiro no criativo".</p>' : '';
     $('[data-cenas]', raiz).innerHTML = est.cenas.map((c, i) => {
-      const m = midiaDaCena({ midia: c.midiaIdx != null ? est.midias[c.midiaIdx] : null }, i, est.midias), video = m?.tipo === 'video';
-      return `<div class="rounded-lg bg-slate-50 p-2"><div class="flex items-start gap-2">
-        <span class="mt-2 w-14 shrink-0 text-xs text-slate-500">${c.tipo === 'cta' ? 'Final' : 'Cena ' + (i + 1)}</span>
-        <textarea class="input" rows="2" data-cena-texto="${i}" placeholder="(sem legenda: só a imagem)">${esc(c.texto)}</textarea>
-        <button class="btn-ghost btn-sm shrink-0" data-cena-rm="${i}" title="Remover cena">×</button></div>
-        <div class="mt-2 flex flex-wrap items-end gap-3 sm:pl-16">
-          ${est.midias.length ? `<label class="text-xs text-slate-500">Imagem/vídeo<select class="input mt-0.5 !w-36" data-cena-midia="${i}"><option value="">auto</option>${est.midias.map((x, k) => `<option value="${k}" ${c.midiaIdx === k ? 'selected' : ''}>${k + 1}. ${esc(x.nome).slice(0, 16)}</option>`).join('')}</select></label>` : ''}
+      const f = fotoCena(c, i), m = f.midia, video = m?.tipo === 'video', id = `cena-${i}`, nPal = contarPalavras(c.texto);
+      const miniatura = m ? (video ? '<span class="flex h-full w-full items-center justify-center bg-slate-200 text-slate-600"><i class="fa-solid fa-film text-xl"></i></span>' : `<img src="${esc(m.url)}" alt="" class="h-full w-full object-cover">`)
+        : `<span class="flex h-full w-full flex-col items-center justify-center gap-1 p-1 text-center text-[11px] leading-tight text-slate-500" data-placeholder-cena><i class="fa-regular fa-image text-lg"></i>${f.como === 'falta' ? 'Falta foto' : 'Sem foto'}</span>`;
+      const fotoLinha = f.como === 'falta'
+        ? `<div class="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-falta-foto="${i}"><p><i class="fa-solid fa-image"></i> Falta foto: ${esc(c.mostrar)}</p>
+            <div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm min-h-[44px]" data-escolher-foto="${i}"><i class="fa-solid fa-images"></i> Escolher foto</button>
+            <label class="btn-ghost btn-sm min-h-[44px] cursor-pointer"><i class="fa-solid fa-upload"></i> Enviar foto<input type="file" accept="image/*,video/*" class="sr-only" data-cena-enviar="${i}"></label></div></div>`
+        : m ? `<p class="text-xs text-slate-500" data-foto-cena="${f.como}">${f.como === 'manual' ? 'Foto escolhida por você' : f.como === 'combina' ? 'Foto que combina com "O que mostrar"' : 'Foto em rodízio (cena sem direção)'}: ${esc(m.nome).slice(0, 40)}</p>` : '';
+      return `<div class="rounded-lg border border-slate-200 bg-slate-50 p-2" data-cena="${i}" data-foto-como="${f.como}">
+        <div class="flex items-center justify-between gap-2"><p class="text-sm font-semibold">${c.tipo === 'cta' ? 'Final (CTA)' : 'Cena ' + (i + 1)} <span class="font-normal text-slate-500">· Tempo ${tps[i]}</span></p>
+          <button type="button" class="btn-ghost btn-sm min-h-[44px] min-w-[44px] shrink-0" data-cena-rm="${i}" aria-label="Remover cena ${i + 1}" title="Remover cena">×</button></div>
+        <div class="mt-1 flex gap-2"><div class="h-28 w-16 shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-100">${miniatura}</div>
+          <div class="min-w-0 flex-1 space-y-2">
+            <div><label class="text-xs font-medium text-slate-700" for="${id}-tela">Texto na tela <span class="font-normal text-slate-500">(o que aparece no vídeo)</span></label>
+              <textarea class="input mt-0.5" rows="2" id="${id}-tela" data-cena-texto="${i}" placeholder="(vazio: nenhum texto na tela)">${esc(c.texto)}</textarea>
+              ${nPal > PALAVRAS_TELA ? `<p class="text-xs text-amber-800" data-muitas-palavras>${nPal} palavras: no celular, até ${PALAVRAS_TELA} por tela.</p>` : ''}</div>
+            ${c.tipo === 'cta' ? '' : `<div><label class="text-xs text-slate-500" for="${id}-mostrar">O que mostrar <span>(só para você, não aparece no vídeo)</span></label>
+              <textarea class="input mt-0.5 !text-slate-500" rows="2" id="${id}-mostrar" data-cena-mostrar="${i}" placeholder="Ex.: mão pegando o pote na bancada">${esc(c.mostrar || '')}</textarea></div>
+            <div><label class="text-xs text-slate-500" for="${id}-fala">Fala/narração (opcional)</label>
+              <input class="input mt-0.5" id="${id}-fala" data-cena-fala="${i}" value="${esc(c.fala || '')}"></div>`}
+            ${fotoLinha}
+            ${riscoDaMidia(m) ? `<div class="text-xs text-amber-800" data-risco-imagem="${i}">${seloComNota(NOTA_IMAGEM_CORPO)}</div>` : ''}
+          </div></div>
+        <div class="mt-2 flex flex-wrap items-end gap-3">
+          ${est.midias.length ? `<label class="text-xs text-slate-500">Imagem/vídeo<select class="input mt-0.5 !w-40" data-cena-midia="${i}"><option value="">${c.tipo === 'cta' || !c.mostrar ? 'auto' : 'auto (pelo "O que mostrar")'}</option>${est.midias.map((x, k) => `<option value="${k}" ${c.midiaIdx === k ? 'selected' : ''}>${k + 1}. ${esc(x.nome).slice(0, 16)}</option>`).join('')}</select></label>` : ''}
           <label class="text-xs text-slate-500">Duração (s)<input type="number" class="input mt-0.5 !w-20" min="1" max="${LIMITE_VIDEO_S}" step="0.5" data-cena-dur="${i}" value="${c.dur}"></label>
           ${video ? `<label class="text-xs text-slate-500" title="Segundo do vídeo de origem em que este trecho começa">Início no vídeo (s)<input type="number" class="input mt-0.5 !w-24" min="0" step="0.5" data-cena-inicio="${i}" value="${c.inicio || 0}"></label>
             <label class="text-xs text-slate-500">Velocidade<select class="input mt-0.5 !w-24" data-cena-vel="${i}">${velocidades.map((v) => `<option value="${v}" ${(c.vel || 1) === v ? 'selected' : ''}>${v}x</option>`).join('')}</select></label>
@@ -268,6 +303,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     }).join('') || '<p class="hint">Sem cenas. Adicione pelo menos uma.</p>';
     mostrarTotal();
     atualizarAnimar();
+    avisarSaude();
     narr?.cenasMudaram(); broll?.cenasMudaram();
   };
   const atualizarBase = () => {
@@ -328,9 +364,10 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
   }));
 
   // Um arquivo com problema não impede os outros: entra o que abriu e o resto aparece no aviso de erro.
-  const adicionarArquivos = async (arqs) => {
+  // rotulos[i]: o que está guardado sobre a foto (nome, descrição, leitura do print), usado para achar a foto de cada cena.
+  const adicionarArquivos = async (arqs, rotulos = []) => {
     const falhas = [];
-    for (const f of arqs) { try { est.midias.push(await carregarMidia(f)); } catch (e) { falhas.push(e.message); } }
+    for (const [i, f] of arqs.entries()) { try { est.midias.push({ ...await carregarMidia(f), rotulo: rotulos[i] || f.name }); } catch (e) { falhas.push(e.message); } }
     listarMidias();
     if (falhas.length) toast(falhas.join('\n'), 'erro');
     return arqs.length - falhas.length;
@@ -365,7 +402,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
         ${x.usavel ? `<img src="${esc(x.url)}" alt="Print borrado" class="h-14 w-14 rounded object-cover">` : '<span class="flex h-14 w-14 items-center justify-center rounded bg-slate-100 text-slate-400"><i class="fa-solid fa-ban"></i></span>'}
         <div class="min-w-0 flex-1 text-xs"><p class="truncate">${esc(x.material.codigo ? `${x.material.codigo} — ` : '')}${esc(x.material.descricao || x.material.nomeOriginal || 'print')}</p>
           ${x.usavel ? `<button type="button" class="btn-ghost btn-sm mt-1" data-usar-print="${esc(x.material.id)}">Usar no criativo${x.pedirAutorizacao ? ' (pede autorização)' : ''}</button>`
-            : `<p class="mt-1 ${x.bloqueadoSaude ? 'font-medium text-rose-700' : 'text-amber-800'}" data-motivo-print>${esc(x.motivo)}</p>`}</div></div>`).join('')}</div></details>`;
+            : `<p class="mt-1 text-amber-800" data-motivo-print>${esc(x.motivo)}</p>`}${x.riscoMeta ? `<div class="mt-1">${seloComNota(x.riscoMeta)}</div>` : ''}</div></div>`).join('')}</div></details>`;
   };
   // Preço e oferta do produto (lidos agora): um clique põe no texto da peça.
   const desenharProduto = () => {
@@ -381,18 +418,20 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     // Criativo com produto: as fotos dele (principal primeiro) já entram na sessão, prontas para a peça.
     const dp = produtoDoCriativo(criativo, { produtos, materiais: salvos, cliente });
     if (primeiraVez && dp && !dp.excluido && dp.fotos.length && !est.midias.length) {
-      const arqs = [];
-      for (const f of dp.fotos.slice(0, 8)) { try { arqs.push(await urlParaArquivo(f.url, `${f.codigo ? f.codigo + '-' : ''}${f.nome || 'foto'}`)); } catch { /* segue */ } }
-      if (arqs.length && await adicionarArquivos(arqs)) toast(`Fotos do produto ${dp.produto.nome} trazidas (a principal é a 1ª e já está como fundo).`, 'info');
+      const arqs = [], rotulos = [];
+      for (const f of dp.fotos.slice(0, 8)) {
+        try { arqs.push(await urlParaArquivo(f.url, `${f.codigo ? f.codigo + '-' : ''}${f.nome || 'foto'}`)); rotulos.push(rotuloDoMaterial(salvos.find((m) => m.id === f.materialId) || f)); } catch { /* segue */ }
+      }
+      if (arqs.length && await adicionarArquivos(arqs, rotulos)) toast(`Fotos do produto ${dp.produto.nome} trazidas (a principal é a 1ª e já está como fundo).`, 'info');
     }
   };
   carregarSalvos(true).catch(() => { /* sem materiais salvos: nada a mostrar */ });
   on(raiz, 'click', '[data-ver-todas]', () => { verTodas = !verTodas; desenharSalvos(); });
   on(raiz, 'click', '[data-usar-salvos]', (b) => ocupado(b, async () => {
-    const arqs = [];
-    for (const m of $('[data-materiais-salvos]', raiz)._lista || []) { try { arqs.push(await urlParaArquivo(m.url, m.nome)); } catch { /* segue com as outras */ } }
+    const arqs = [], rotulos = [];
+    for (const m of $('[data-materiais-salvos]', raiz)._lista || []) { try { arqs.push(await urlParaArquivo(m.url, m.nome)); rotulos.push(rotuloDoMaterial(m)); } catch { /* segue com as outras */ } }
     if (!arqs.length) throw new Error('Não consegui abrir as fotos salvas agora. Tente de novo.');
-    const ok = await adicionarArquivos(arqs); if (ok) toast(`${ok} arquivo(s) adicionado(s) aos materiais.`);
+    const ok = await adicionarArquivos(arqs, rotulos); if (ok) toast(`${ok} arquivo(s) adicionado(s) aos materiais.`);
   }));
   on(raiz, 'click', '[data-excluir-salvo]', (b) => ocupado(b, async () => {
     const x = salvos.find((m) => m.id === b.dataset.excluirSalvo); if (!x) return;
@@ -405,7 +444,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
       if (!(await confirmar('Você tem autorização deste cliente para usar o print dele num anúncio? (Vai a cópia borrada.)', 'Tenho autorização'))) return;
       await db.atualizar(COL.materiais, x.material.id, { autorizado: true, autorizadoEm: new Date().toISOString() }); x.material.autorizado = true;
     }
-    const ok = await adicionarArquivos([await urlParaArquivo(x.url, `print-borrado-${x.material.codigo || 'cliente'}.jpg`)]);
+    const ok = await adicionarArquivos([await urlParaArquivo(x.url, `print-borrado-${x.material.codigo || 'cliente'}.jpg`)], [rotuloDoMaterial(x.material)]);
     if (ok) { toast('Print (cópia borrada) adicionado aos materiais desta peça.'); desenharPrints(); }
   }));
   on(raiz, 'click', '[data-por-texto]', (b) => { const campo = $(`[data-${b.dataset.porTexto}]`, raiz); if (campo) { campo.value = b.dataset.valor; campo.dispatchEvent(new Event('input', { bubbles: true })); toast('Texto colocado na peça.'); } });
@@ -461,12 +500,13 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     await abrirBibliotecaAnimacoes(criativo, cliente, fonte || {}, { aoFinalizar: (p) => opts.aoFinalizar?.(p) });
   }));
   const configPeca = () => ({ template: est.template, cor: est.cor, corTexto: est.corTexto, logoNoFim: est.logoNoFim, temLogo: Boolean(est.logo), hook: $('[data-hook]', raiz).value, cta: $('[data-cta]', raiz).value,
-    cenas: est.cenas.map((c) => ({ texto: c.texto || '', dur: c.dur, tipo: c.tipo })) });
+    cenas: est.cenas.map((c) => ({ texto: c.texto || '', mostrar: c.mostrar || '', fala: c.fala || '', dur: c.dur, tipo: c.tipo })) });
   const finalizar = async (qual, peca) => {
-    const alerta = motivoPeca();
+    const imagem = alertaImagem(qual === 'video' ? 'video' : 'foto');
+    const alerta = juntarAlertas(motivoPeca(), imagem);
     const andamento = (texto, p) => statusFinal(qual, `<i class="fa-solid fa-spinner fa-spin"></i> ${esc(texto)}${p ? ` ${Math.round(p * 100)}%` : ''}<div class="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200"><div class="h-2 bg-indigo-600" style="width:${Math.round((p || 0) * 100)}%"></div></div>`, 'border-indigo-200 bg-indigo-50 text-indigo-800');
     try {
-      const salva = await salvarPeca(cliente, criativo, { ...peca, config: configPeca(), baseadaEm: opts.baseadaEm || null, especialista: opts.especialista || null }, { aoEtapa: andamento });
+      const salva = await salvarPeca(cliente, criativo, { ...peca, config: { ...configPeca(), ...(imagem ? { riscoImagem: imagem.nota } : {}) }, baseadaEm: opts.baseadaEm || null, especialista: opts.especialista || null }, { aoEtapa: andamento });
       const el = statusFinal(qual, `<i class="fa-solid fa-circle-check"></i> Peça guardada na Galeria (${esc(salva.formatoNome)}, ${formatarBytes(salva.tamanho)}${salva.comprimido ? ', comprimida para o Instagram' : ''}).${salva.avisoCompressao ? ` <span class="text-amber-800">${esc(salva.avisoCompressao)}</span>` : ''} Ajuste e finalize de novo para ter outra versão para comparar.`, 'border-emerald-300 bg-emerald-50 text-emerald-800');
       mostrarResultado(el, 'Peça guardada na Galeria.');
       avisarRiscoMeta(alerta);
@@ -563,7 +603,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.erro || 'Falha ao gerar a imagem.');
     const m = await carregarImagemUrl(j.imagem);
-    m.nome = `ia-${est.midias.length + 1}`;
+    m.nome = `ia-${est.midias.length + 1}`; m.rotulo = prompt;
     est.midias.push(m);
     return est.midias.length - 1;
   };
@@ -630,6 +670,31 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
 
   // ---- cenas ----
   on(raiz, 'input', '[data-cena-texto]', (t) => { est.cenas[Number(t.dataset.cenaTexto)].texto = t.value; });
+  on(raiz, 'change', '[data-cena-texto]', () => listarCenas()); // aviso de palavras demais e conferência de saúde
+  on(raiz, 'input', '[data-cena-mostrar]', (t) => { est.cenas[Number(t.dataset.cenaMostrar)].mostrar = t.value; });
+  on(raiz, 'change', '[data-cena-mostrar]', () => listarCenas()); // a foto que combina pode mudar
+  on(raiz, 'input', '[data-cena-fala]', (t) => { est.cenas[Number(t.dataset.cenaFala)].fala = t.value; });
+  // "Falta foto": escolher entre os materiais da sessão (ou trazer dos salvos) ou enviar uma foto só para esta cena.
+  on(raiz, 'click', '[data-escolher-foto]', (b) => {
+    const sel = $(`[data-cena-midia="${b.dataset.escolherFoto}"]`, raiz);
+    if (sel) { sel.focus(); sel.scrollIntoView({ block: 'center' }); toast('Escolha a foto desta cena na lista "Imagem/vídeo".', 'info'); return; }
+    irPara('materiais'); toast('Traga as fotos do cliente para os materiais (ou envie uma) e escolha a desta cena.', 'info');
+  });
+  on(raiz, 'change', '[data-cena-enviar]', (inp) => ocupado(inp, async () => {
+    const i = Number(inp.dataset.cenaEnviar), f = inp.files?.[0]; if (!f) return;
+    if (await adicionarArquivos([f])) { est.cenas[i].midiaIdx = est.midias.length - 1; listarCenas(); mostrarResultado($(`[data-cena="${i}"]`, raiz), 'Foto ligada a esta cena.'); }
+  }));
+  // Roteiro em campos separados no criativo (criativo.cenas): tempo sai das durações; o CTA continua no campo CTA.
+  on(raiz, 'click', '[data-salvar-roteiro]', (b) => ocupado(b, async () => {
+    const tps = tempos();
+    const cenas = est.cenas.map((c, i) => ({ c, tempo: tps[i] })).filter(({ c }) => c.tipo !== 'cta')
+      .map(({ c, tempo }) => ({ tempo, mostrar: String(c.mostrar || '').trim(), texto: String(c.texto || '').trim(), fala: String(c.fala || '').trim() }));
+    await db.atualizar(COL.criativos, criativo.id, { cenas });
+    criativo.cenas = cenas; est.origemCenas = 'criativo'; listarCenas();
+    const st = $('[data-roteiro-salvo]', raiz); st.classList.remove('hidden');
+    st.innerHTML = `<i class="fa-solid fa-circle-check"></i> Roteiro salvo no criativo (${cenas.length} cena(s)). O texto do anúncio continua como estava.`;
+    mostrarResultado(st, 'Roteiro salvo no criativo.');
+  }));
   on(raiz, 'input', '[data-cena-dur]', (t) => {
     est.cenas[Number(t.dataset.cenaDur)].dur = Math.min(12, Math.max(1, Number(t.value) || 1));
     mostrarTotal();
@@ -678,7 +743,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     await ocupado(b, async () => {
       try {
         const r = await gravarVideo({
-          cenas: est.cenas.map((c) => ({ ...c, midia: c.midiaIdx != null ? est.midias[c.midiaIdx] : null })), midias: est.midias, cor: est.cor, corTexto: est.corTexto, logo: est.logo, logoNoFim: est.logoNoFim, musica: est.musica,
+          cenas: est.cenas.map((c, i) => { const f = fotoCena(c, i); return { ...c, midia: f.midia, falta: f.como === 'falta' }; }), midias: est.midias, cor: est.cor, corTexto: est.corTexto, logo: est.logo, logoNoFim: est.logoNoFim, musica: est.musica,
           narracao: narr?.obter()?.arquivo || null, volumeNarracao: narr?.obter()?.volumeNarracao ?? 1, volumeMusica: narr?.obter()?.volumeMusica ?? 0.2,
           largura, altura, sinal: est.ctrl.signal, aoProgresso: (p) => { barra.style.width = `${Math.round(p * 100)}%`; },
         });

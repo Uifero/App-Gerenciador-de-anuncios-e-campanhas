@@ -168,9 +168,18 @@ export const textoDoCriativo = (c) => [c?.hook, c?.copy, c?.cta].filter(Boolean)
 /** Selo "Risco Meta" (só informação): toque mostra os trechos. '' quando não há alegação. */
 export function seloRiscoMeta(texto, cliente) {
   const a = alertaSaude(texto, cliente);
-  if (!a) return '';
+  return a ? seloComNota(a.nota) : '';
+}
+/** O mesmo selo para uma nota pronta (ex.: imagem de resultado no corpo, lib/cenas.js NOTA_IMAGEM_CORPO). */
+export function seloComNota(nota) {
+  if (!nota) return '';
   const e = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  return `<details class="inline-block align-middle" data-risco-meta><summary class="tag tag-warn cursor-pointer list-none py-1" title="Toque para ver os trechos">Risco Meta</summary><span class="mt-1 block rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-risco-trechos>${e(a.nota)}</span></details>`;
+  return `<details class="inline-block align-middle" data-risco-meta><summary class="tag tag-warn cursor-pointer list-none py-1" title="Toque para ver os trechos">Risco Meta</summary><span class="mt-1 block rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-risco-trechos>${e(nota)}</span></details>`;
+}
+/** Junta alertas (texto + imagem) numa nota só, para a nota amarela depois de salvar. */
+export function juntarAlertas(...lista) {
+  const v = lista.filter((a) => a?.nota);
+  return v.length ? { trechos: v.flatMap((a) => a.trechos || []), altoRisco: v.some((a) => a.altoRisco), nota: v.map((a) => a.nota).join(' ') } : null;
 }
 
 // ---------- textos do site reaproveitados em anúncio ----------

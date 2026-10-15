@@ -2,6 +2,7 @@
 // Toda função aqui tem um equivalente manual nos módulos (formulários "sem IA").
 import { tokenAtual } from './auth.js';
 import { IDIOMA_NOME, MODELO_DESCRICAO, CENAS_UNBOXING } from '../lib/constantes.js';
+import { normalizarCenas, PALAVRAS_TELA } from '../lib/cenas.js';
 import { paisDoCliente, infoPais, descreverMercado, simboloDoCliente } from '../lib/pais.js';
 import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloNarrativa } from '../lib/narrativas.js';
 import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
@@ -261,6 +262,8 @@ const SO_JSON = 'Responda APENAS com JSON válido, sem texto antes ou depois, se
 export const CELULAR_PRIMEIRO = 'CELULAR PRIMEIRO: a maioria dos compradores chega pelo anúncio do Instagram, no celular. Escreva para a tela de 390px: títulos curtos, parágrafos curtos (até 2-3 frases), seções que funcionam em uma coluna, benefícios em itens curtos que se leem rolando a tela, e o motivo para comprar logo no começo.';
 
 // ---------- criativos ----------
+/** Roteiro de vídeo em campos separados (lib/cenas.js): a direção nunca vai para a tela. */
+export const INSTRUCAO_CENAS = `só em vídeo; em imagem, []. Array de cenas, total até 30 s, cada uma {"tempo": "0-3s", "mostrar": "o que filmar/mostrar na cena (direção para quem grava; NUNCA aparece no vídeo)", "texto": "texto na tela que quem assiste lê: no máximo ${PALAVRAS_TELA} palavras, jeito de post orgânico do Instagram, sem 'Cena', sem tempo e sem direção; vazio se a cena não tiver texto", "fala": "fala/narração da cena ou vazio"}`;
 /** Descrição estruturada do produto (aba Produtos), além do que já foi escrito no briefing — reforça preço/categoria. */
 /** Produtos reais do catálogo (Produtos; alguns vindos do site do cliente) — só nomes e preços, até 10. */
 export function contextoCatalogo(produtos = []) {
@@ -286,7 +289,7 @@ export async function gerarCriativos({ cliente, briefing, modelo, framework, for
     REGRA_INSTAGRAM,
     linhaGanchos({ fixo: modeloGancho, quantidade: n, cliente }),
     base && `Ponto de partida — anúncio de referência de mercado (adapte o ÂNGULO ao cliente, sem copiar o texto): ${base.titulo || ''}\n${base.texto || ''}\nAnálise: ${JSON.stringify(base.analise || {})}`,
-    `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto completo do anúncio ou roteiro cena a cena), "cta", "porque" (1-2 frases explicando a lógica da variação), "narrativa" (só se a variação seguir uma das narrativas da referência de metodologia: ${NARRATIVAS.map((x) => x.id).join('|')}; senão null), "modeloGancho" (número do modelo da biblioteca de ganchos de onde veio o hook; null se não veio de nenhum), "roteiro" (só em vídeo: o id da estrutura da referência de roteiros que você usou, um de ${ROTEIROS.map(([k]) => k).join('|')}; null em imagem).`,
+    `Formato de saída: array JSON de objetos com: "nome" (legenda curta e descritiva), "hook" (primeira frase/3 primeiros segundos), "angulo" (ângulo/categoria em 1-3 palavras), "gatilho" (gatilho mental usado), "framework", "formato", "copy" (texto do anúncio: a legenda do post; em vídeo NÃO escreva o roteiro aqui), "cenas" (${INSTRUCAO_CENAS}), "cta", "porque" (1-2 frases explicando a lógica da variação), "narrativa" (só se a variação seguir uma das narrativas da referência de metodologia: ${NARRATIVAS.map((x) => x.id).join('|')}; senão null), "modeloGancho" (número do modelo da biblioteca de ganchos de onde veio o hook; null se não veio de nenhum), "roteiro" (só em vídeo: o id da estrutura da referência de roteiros que você usou, um de ${ROTEIROS.map(([k]) => k).join('|')}; null em imagem).`,
     idiomaLinha(cliente),
     SO_JSON,
   ].filter(Boolean).join('\n');
@@ -296,7 +299,9 @@ export async function gerarCriativos({ cliente, briefing, modelo, framework, for
 }
 
 function normalizarCriativo(c) {
+  const cenas = normalizarCenas(c.cenas);
   return {
+    ...(cenas.length ? { cenas } : {}),
     nome: c.nome || c.hook?.slice(0, 60) || 'Criativo', hook: c.hook || '', angulo: c.angulo || '', gatilho: c.gatilho || '',
     framework: c.framework || 'livre', formato: c.formato || 'video_curto', copy: c.copy || '', cta: c.cta || '', porque: c.porque || '',
     modeloGancho: numeroModelo(c.modeloGancho),
