@@ -115,3 +115,29 @@ describe('IA escreve as cenas com campos separados', () => {
     expect(v.copy).not.toMatch(/cena\s*\d/i);
   });
 });
+
+describe('narração usa a fala da cena, nunca a direção', () => {
+  it('fala da cena > texto na tela; cena só com direção fica "(sem fala)"', async () => {
+    const { montarRoteiroNarracao, textoSoFala } = await import('../src/lib/narracao.js');
+    const linhas = montarRoteiroNarracao(extrairCenas(criativoAntigo));
+    expect(linhas[2].fala).toBe('');
+    expect(linhas[3].fala).toBe('Duas cápsulas com o café e pronto.');
+    expect(semDirecao(textoSoFala(linhas))).toBe(true);
+  });
+});
+
+describe('resposta REAL da IA (criativos-cenas-thermora-real.json): campos separados', () => {
+  it('cada cena tem direção e texto na tela curto, sem direção, "CENA" ou tempo', async () => {
+    const { texto } = JSON.parse(readFileSync('tests/fixtures/ia/criativos-cenas-thermora-real.json', 'utf8'));
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200, ok: true, headers: { get: () => 'application/json' }, json: async () => ({ texto }) })));
+    const [v] = await gerarCriativos({ cliente, briefing: 'Reels do Thermora', formato: 'video_curto', quantidade: 1 });
+    expect(v.cenas.length).toBeGreaterThan(2);
+    for (const c of v.cenas) {
+      expect(c.mostrar).not.toBe('');
+      expect(c.texto.split(' ').length).toBeLessThanOrEqual(8);
+      expect(semDirecao(textoNaTela(c))).toBe(true);
+      expect(textoNaTela(c)).toBe(c.texto);
+    }
+    expect(v.copy).not.toMatch(/cena\s*\d/i);
+  });
+});

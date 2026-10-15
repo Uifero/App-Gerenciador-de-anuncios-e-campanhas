@@ -1,6 +1,7 @@
 // Narração do Estúdio: regras puras (sem DOM), testáveis na suíte normal.
 // O roteiro de narração segue a MESMA linha do tempo de cenas do "Gerar vídeo" (uma cena = um trecho de fala),
 // com o tempo de cada trecho, o tom e o ritmo — pronto para colar numa IA de voz externa (ElevenLabs, TTSMaker…).
+import { textoNaTela } from './cenas.js';
 
 /** Fala natural em português: ~2,5 palavras por segundo. Usado para dizer quantas palavras cabem numa cena. */
 export const PALAVRAS_POR_SEGUNDO = 2.5;
@@ -28,14 +29,15 @@ export function tomPadrao(cena, i) {
 
 /**
  * Linhas do roteiro a partir das cenas. `ia` (opcional) traz falas/tons/ritmos escritos pela IA, na mesma ordem;
- * sem ela (ou onde ela faltar), a fala é o texto da própria cena. Cenas sem texto viram "(sem fala)".
+ * sem ela (ou onde ela faltar), a fala é a "Fala/narração" da cena ou, sem ela, o texto na tela (nunca a direção
+ * "O que mostrar"). Cenas sem texto viram "(sem fala)".
  */
 export function montarRoteiroNarracao(cenas = [], ia = null) {
   let t = 0;
   return cenas.map((c, i) => {
     const dur = Number(c.dur) || 0, inicio = t; t += dur;
     const x = ia?.[i] || {};
-    const fala = String(x.fala ?? c.texto ?? '').trim();
+    const fala = String(x.fala ?? (String(c.fala || '').trim() || textoNaTela(c))).trim();
     return {
       n: i + 1, final: c.tipo === 'cta', inicio, fim: t, dur, fala,
       tom: String(x.tom || '').trim() || tomPadrao(c, i),

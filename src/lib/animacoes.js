@@ -7,6 +7,7 @@
 // o desenho de um quadro no tempo t (desenharQuadro, recebe o contexto 2D). A gravação fica em lib/animacoes-render.js.
 import { zonaSegura } from './formatos-instagram.js';
 import { extrairCenas, partirTexto } from './estudio.js';
+import { textoNaTela } from './cenas.js';
 import { alertaSaude, ehProdutoSaude } from './saude.js';
 import { temColchete } from './ganchos.js';
 
@@ -84,7 +85,8 @@ const r1 = (n) => Math.round(n * 10) / 10;
  */
 export function planoInicial(presetId, { criativo = {}, produto = {}, cliente = {}, recursos = null, formato = '1080x1920', nFotos = 1 } = {}) {
   const p = presetPorId(presetId) || PRESETS[0];
-  const base = extrairCenas({ hook: criativo.hook, copy: criativo.copy, cta: criativo.cta, cenas: criativo.cenas }).filter((c) => txt(c.texto));
+  const base = extrairCenas({ hook: criativo.hook, copy: criativo.copy, cta: criativo.cta, cenas: criativo.cenas })
+    .map((c) => ({ ...c, texto: textoNaTela(c) })).filter((c) => txt(c.texto)); // só o texto na tela, nunca a direção
   const falas = base.filter((c) => c.tipo !== 'cta').map((c) => c.texto);
   const cta = txt(criativo.cta);
   const preco = precoDe(produto), frete = freteDe({ cliente, recursos });

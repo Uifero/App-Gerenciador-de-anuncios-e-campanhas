@@ -7,6 +7,7 @@ import {
   montarRoteiroNarracao, textoRoteiro, textoSoFala, normalizarRoteiroIa, ajustarCenasANarracao, tempo, LIMITE_GRAVACAO_S,
 } from '../lib/narracao.js';
 import { htmlFerramentas } from '../lib/ferramentas-ia.js';
+import { cenasDoCriativo } from '../lib/cenas.js';
 import { $, esc, on, toast, ocupado, copiar, campoArquivo } from '../core/ui.js';
 
 const temVozSintetica = () => typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
@@ -32,7 +33,9 @@ const frases = (t) => String(t || '').split(/(?<=[.!?…])\s+|\n+/).map((x) => x
 export function montarNarracao(raiz, { cliente, criativo, cenas, aoAjustarCenas, aoMudar }) {
   const est = { roteiroIa: null, narr: null, gravacao: null, rec: null, falando: false, volNarracao: 1, volMusica: 0.2 };
   const linhas = () => montarRoteiroNarracao(cenas(), est.roteiroIa?.cenas);
-  const falaInicial = () => textoSoFala(linhas()) || [criativo.hook, criativo.copy, criativo.cta].filter(Boolean).join('\n\n');
+  // Sem fala nas cenas: hook + legenda + CTA; o texto de um roteiro em cenas nunca (traz a direção "O que mostrar").
+  const falaInicial = () => textoSoFala(linhas())
+    || [criativo.hook, cenasDoCriativo(criativo).origem ? '' : criativo.copy, criativo.cta].filter(Boolean).join('\n\n');
 
   raiz.innerHTML = `
     <div class="space-y-3">
