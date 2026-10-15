@@ -118,14 +118,42 @@ export const provasEmImagem = (materiais = []) => materiais.filter((m) => tipoMa
 /** Linhas de texto (não vazias) no campo de provas sociais. */
 export const linhasDeProva = (texto) => txt(texto).split('\n').map((l) => l.trim()).filter(Boolean);
 
+// ---------- textos internos: nunca viram conteúdo do site ----------
+// A leitura de um print (resumo da IA, OCR da citação, linha "Cliente relata…") e a leitura do Instagram/site do cliente
+// ("471 seguidores") são ANOTAÇÕES internas para a IA escrever com base em prova real. Não são palavras de cliente: nunca
+// viram depoimento, citação, número, título nem texto do site. No site, o print aparece como IMAGEM e só com o texto que o
+// operador digitou (material.textoDepoimento).
+const RE_SUFIXO_PRINT = /\(do print enviado em [^)]*\)\s*$/i;
+const RE_METRICA_PERFIL = /\b\d[\d.,]*\s*(?:mil\s*)?(?:seguidores|seguindo|a seguir|publica[cç](?:[oõ]es|ao)|posts?|curtidas)\b/i;
+const RE_DESCRICAO_IA = /^\s*(?:a\s+)?(?:cliente|print|imagem|foto|captura|conversa|mensagem)\s+(?:relata|envia|mostra|diz|conta|elogia|comenta|afirma|informa|agradece|aparece)\b/i;
+/** A linha é anotação interna (descrição de print, OCR, métrica de perfil, leitura automática), não palavra de cliente? */
+export function ehTextoInterno(linha, { materiais = [], cliente = null } = {}) {
+  const l = txt(linha); if (!l) return false;
+  if (RE_SUFIXO_PRINT.test(l) || RE_METRICA_PERFIL.test(l) || RE_DESCRICAO_IA.test(l)) return true;
+  const k = chaveTexto(l.replace(RE_SUFIXO_PRINT, ''));
+  if (provasEmImagem(materiais).some((m) => [m.descricao, m.citacao].some((x) => txt(x) && chaveTexto(x) === k))) return true;
+  // Campo preenchido pela leitura do site/Instagram do cliente e ainda não confirmado (cliente.autoPreenchido).
+  const auto = cliente?.autoPreenchido?.provasSociais;
+  return Boolean(auto && auto.origem !== 'resposta');
+}
+/** Texto que o operador digitou para o print (as palavras do cliente, como estão no print). Nunca o OCR nem o resumo da IA. */
+export const textoDigitado = (material) => txt(material?.textoDepoimento);
+/** Chave estável de um depoimento (ocultar/mostrar): o texto; sem texto (só imagem), o material/criativo/mídia. */
+export const chaveDepoimento = (d) => txt(d?.texto) || d?.materialId || d?.criativoId || d?.midiaUrl || '';
+
 // ---------- depoimento do site a partir de um print ----------
-/** Como o print entra nos depoimentos do site: não usar, só o texto reescrito, só o print real, ou os dois. */
-export const EXIBICOES_PROVA = [['', 'Não usar no site'], ['texto', 'Só o texto'], ['print', 'Só o print real'], ['ambos', 'Print + texto']];
-/** Depoimento (conteudo.depoimentos) de um material de prova social, conforme a escolha. null = não usar. */
+/** Como o print entra nos depoimentos do site: não usar, só o texto digitado, só o print real, ou os dois. */
+export const EXIBICOES_PROVA = [['', 'Não usar no site'], ['texto', 'Só o texto digitado'], ['print', 'Só o print real'], ['ambos', 'Print + texto digitado']];
+/**
+ * Depoimento (conteudo.depoimentos) de um material de prova social, conforme a escolha. null = não usar. O texto é só o
+ * que o operador digitou (textoDigitado); sem texto digitado, vai só o print (imagem), sem aspas nem legenda fingindo citação.
+ */
 export function depoimentoDeProva(material, exibir) {
   if (!exibir) return null;
-  return { nome: material.fonteProva || 'Cliente', texto: txt(material.citacao) || txt(material.descricao) || 'Avaliação real de cliente',
-    origem: ORIGEM_PROVA, materialId: material.id, exibir, midiaUrl: exibir === 'texto' ? null : material.url, midiaTipo: exibir === 'texto' ? null : 'imagem' };
+  const texto = textoDigitado(material);
+  const modo = !texto ? 'print' : exibir;
+  return { nome: material.fonteProva || 'Cliente', texto, origem: ORIGEM_PROVA, materialId: material.id, exibir: modo,
+    midiaUrl: modo === 'texto' ? null : material.url, midiaTipo: modo === 'texto' ? null : 'imagem' };
 }
 /** Troca só os depoimentos que vieram de prints (origem prova_social); escritos à mão e de criativos ficam. */
 export const mesclarProvasNoSite = (atuais = [], novos = []) => [...atuais.filter((d) => d.origem !== ORIGEM_PROVA), ...novos.filter(Boolean)];
@@ -149,7 +177,8 @@ const nomeDaLinha = (l) => (FONTES_TEXTO.find(([re]) => re.test(l)) || [, 'Clien
  */
 export function provasEmTexto(cliente, materiais = [], excluirIds = new Set()) {
   const excluidas = new Set(provasEmImagem(materiais).filter((m) => excluirIds.has(m.id)).map((m) => chaveTexto(m.descricao)).filter(Boolean));
-  return linhasDeProva(cliente?.marca?.provasSociais).map(semData).filter((l) => l && !excluidas.has(chaveTexto(l)))
+  // Descrição de print, OCR e métrica lida do perfil ficam de fora: são anotação interna, não palavra de cliente.
+  return linhasDeProva(cliente?.marca?.provasSociais).filter((l) => !ehTextoInterno(l, { materiais, cliente })).map(semData).filter((l) => l && !excluidas.has(chaveTexto(l)))
     .map((l) => ({ nome: nomeDaLinha(l), texto: l, origem: 'prova_texto' }));
 }
 
@@ -180,16 +209,22 @@ export function montarDepoimentos({ cliente, materiais = [], atuais = [], modelo
  */
 export function depoimentosVivos({ cliente, materiais = [], guardados = [], provasOcultas = [] }) {
   const { depoimentos } = montarDepoimentos({ cliente, materiais, atuais: guardados.filter((d) => !ehModelo(d)), modelosIa: guardados.filter(ehModelo), provasOcultas });
-  if (!materiais.length) return depoimentos;
   return depoimentos.map((d) => {
+    // Linha das provas sociais do perfil: é resumo/número do negócio, não fala de cliente. Não vira citação no site.
+    if (d.origem === 'prova_texto') return null;
+    // Criativo: o texto é copy escrita para anúncio, não fala de cliente. No site vai só a mídia dele.
+    if (d.origem === 'criativo') return d.midiaUrl ? { ...d, texto: '' } : null;
     if (d.origem !== ORIGEM_PROVA || !d.materialId) return d;
     const m = materiais.find((x) => x.id === d.materialId);
-    if (!m) return null;
-    return d.midiaUrl ? { ...d, midiaUrl: m.borrada?.url || m.url } : d;
-  }).filter(Boolean);
+    if (!m) return materiais.length ? null : { ...d, texto: '' };
+    // Texto só o digitado pelo operador, lido agora do material; sem ele, só o print (imagem).
+    const texto = textoDigitado(m);
+    const exibir = !texto ? 'print' : d.exibir;
+    return { ...d, texto, exibir, midiaUrl: exibir === 'texto' ? null : m.borrada?.url || m.url, midiaTipo: exibir === 'texto' ? null : 'imagem' };
+  }).filter((d) => d && (txt(d.texto) || d.midiaUrl));
 }
-/** Tem alguma prova real para os depoimentos? (a IA nem escreve modelo quando tem) */
-export const temProvaReal = (args) => !montarDepoimentos({ ...args, modelosIa: [] }).usouModelos;
+/** Tem alguma prova real para os depoimentos? (a IA nem escreve modelo quando tem). Um print guardado já conta. */
+export const temProvaReal = (args) => !montarDepoimentos({ ...args, modelosIa: [] }).usouModelos || provasEmImagem(args?.materiais || []).length > 0 || linhasDeProva(args?.cliente?.marca?.provasSociais).length > 0;
 
 // ---------- resumo do material do site (passos 1 e 2 de "Montar site") ----------
 /**

@@ -95,7 +95,10 @@ describe('pacote (só conteúdo)', () => {
     const r = aplicarOperacoes(e, [{ op: 'texto', campo: 'banner.0.titulo', valor: 'Novo' }, { op: 'mover', secao: 'Depoimentos', antesDe: 'Mais vendidos' }, { op: 'paleta', cores: ['#166534', '#f7fbf5'] },
       { op: 'produto', nome: 'legging', campo: 'seoTitulo', valor: 'Legging que não marca' }], { modo: 'pacote' });
     expect(r.aplicadas).toHaveLength(4);
-    expect(r.estado.pacote.briefingTema.secoesHome).toEqual(['Banner', 'Depoimentos', 'Mais vendidos']);
+    // Uma fonte só: o nome do briefing vira a seção da prévia (a lista sugerida do briefing não é outra ordem).
+    const ordem = r.estado.pacote.visual.ordem;
+    expect(ordem.indexOf('depoimentos')).toBeLessThan(ordem.indexOf('produtos'));
+    expect(r.estado.pacote.briefingTema.secoesHome).toEqual(['Banner', 'Mais vendidos', 'Depoimentos']);
     const csv = csvNuvemshop(comTextosDoPacote([{ nome: 'Legging', preco: 10, descricao: 'cadastro' }], r.estado.pacote), { nome: 'L' });
     expect(csv).toContain('Legging que não marca');
   });

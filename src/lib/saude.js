@@ -49,6 +49,22 @@ export function achadosSaude(texto) {
   return [...new Set([...RE_ACHADOS.flatMap((re) => t.match(re) || []), ...fisico].map((x) => x.toLowerCase().replace(/\s+/g, ' ').trim()))];
 }
 
+// ---------- site: TODO texto que aparece (banner, destaques, depoimentos, citações, títulos, FAQ, descrições) ----------
+// No site o operador pode manter a alegação ("Entendi e quero manter no site"), mas o app sempre avisa. Além do que vale
+// para anúncio, o site avisa resultado no corpo contado por cliente: medidas, emagrecimento, roupa larga, compulsão,
+// inchaço, intestino, "corpo", "resultado". Marca "[PREENCHER: …]" (texto a preencher pelo cliente) nunca conta.
+const RE_PREENCHER = /\[\s*PREENCHER\s*:[^\]]*\]/gi;
+export const semMarcasPreencher = (t) => String(t || '').replace(RE_PREENCHER, ' ');
+const CORPO_SITE = String.raw`\bmedidas?\b|\bemagrec\w*|\broupas? (?:(?:ficou|ficaram|esta|estao|mais) )?(?:larga|largas|folgada|folgadas)\b|\bcompuls\w*|\binchac\w*|\bintestin\w*|\bcorpo\b|\bresultados?\b|\bfoto (?:de )?antes\b|\bantes e depois\b|\bperd(?:i|eu|a|er) (?:de )?peso\b|\bbarriga\b|\bgordura\w*`;
+const RE_CORPO_SITE = new RegExp(CORPO_SITE, 'g');
+/** Achados de saúde num texto do SITE (o que vale para anúncio + resultado no corpo contado por cliente). */
+export function achadosSaudeSite(texto) {
+  const t = semMarcasPreencher(texto);
+  const norm = semAcento(t), orig = [...t];
+  const corpo = [...norm.matchAll(RE_CORPO_SITE)].map((m) => orig.slice(m.index, m.index + m[0].length).join('').toLowerCase().replace(/\s+/g, ' ').trim());
+  return [...new Set([...achadosSaude(t), ...corpo])];
+}
+
 /**
  * Motivo em palavras simples que impede aprovar/enviar o texto num cliente de saúde, ou ''. Diz o que o Meta proíbe
  * (só as categorias encontradas), o trecho e o que pode no lugar.

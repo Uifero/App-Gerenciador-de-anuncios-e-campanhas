@@ -15,6 +15,8 @@ import { dadosDoPacote, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
 import { previaLojaHtml, ligarPreviaLoja } from './previa-loja.js';
 import { printsDoCliente, semRepetirDepoimentos } from '../lib/visual-site.js';
 import { autorizarPrints } from './prints-clientes.js';
+import { pendenciasDoSite, itensDoPlanoAplicado, marcaPreencher } from '../lib/pendencias-site.js';
+import { produtosComFotos } from '../lib/fotos-site.js';
 import { esc, $, on, montar, cabecalho, tag, toast, copiar, ocupado, confirmar, vazio, mostrarResultado } from '../core/ui.js';
 
 const COR = { aprovado: 'tag-ok', ajuste: 'tag-bad', aguardando: 'tag-info', substituido: '', expirado: 'tag-warn', desativado: '' };
@@ -40,7 +42,8 @@ const versaoDoLink = (site, anteriores, conteudo) => {
 export function conteudoDoLink(cliente, site, produtos, provas = [], materiais = []) {
   const custom = site?.modo === 'custom';
   if (custom) return { html: gerarSiteHTML({ cliente, produtos, conteudo: site.conteudo || {}, config: site.config || {}, layout: site.layout || null, url: site.linkPublicado || '', provas: semRepetirDepoimentos(provas, site.conteudo?.depoimentos), materiais, design: site.design || null, animacoes: site.animacoes || null }), texto: '', previa: '' };
-  return { html: '', texto: pacoteTexto(site.pacote || {}), previa: gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos, provas, materiais })) };
+  const d = dadosDoPacote({ cliente, site, produtos, provas, materiais });
+  return { html: '', texto: pacoteTexto(site.pacote || {}, d), previa: gerarPreviaLojaHTML(d) };
 }
 
 /** Versão do site agora (a mesma que o próximo link de aprovação vai mostrar). `links` = links do cliente. */
@@ -57,12 +60,16 @@ export async function gerarLinkSite(cliente, site, produtos) {
   const materiais = await db.listar(COL.materiais, { clienteId: cliente.id });
   const provas = printsDoCliente(materiais);
   const { html, texto, previa } = conteudoDoLink(cliente, site, produtos, provas, materiais);
+  // O que falta o cliente preencher (lugares marcados "Preencher"): vai junto no link, numa lista clara.
+  const modoP = custom ? 'custom' : 'pacote';
+  const pendencias = pendenciasDoSite({ site, modo: modoP, produtos: produtosComFotos(produtos, materiais), itens: itensDoPlanoAplicado(site), descricoes: Object.fromEntries((site.pacote?.descricoesProdutos || []).map((x) => [x.produtoId || String(x.nome || '').toLowerCase(), x.descricao])) })
+    .map(({ produto, titulo, oque, noTema, tipo }) => ({ produto, titulo, oque, noTema, tipo }));
   if ((html || texto).length + previa.length > LIMITE_SNAPSHOT) throw new Error('O site ficou grande demais para o link (fotos coladas dentro do texto?). Use fotos enviadas pela aba Produtos.');
   const anteriores = ordenarLinks(await db.listar(COL.aprovacoes, { clienteId: cliente.id }));
   const token = novoToken();
   const novo = await db.criar(COL.aprovacoes, {
     tipo: 'site', clienteId: cliente.id, clienteNome: cliente.nome, itensIds: ['site'], expiraMs: novaValidade(),
-    modo: custom ? 'custom' : 'pacote', plataforma: custom ? null : site.plataforma || null, versao: versaoDoLink(site, anteriores, html || texto), html, texto, ...(previa ? { previa } : {}),
+    modo: custom ? 'custom' : 'pacote', plataforma: custom ? null : site.plataforma || null, versao: versaoDoLink(site, anteriores, html || texto), html, texto, ...(previa ? { previa } : {}), ...(pendencias.length ? { pendencias } : {}),
   }, token);
   const criadoEm = novo?.criadoEm || new Date().toISOString();
   for (const l of aSubstituir(anteriores, token)) await db.atualizar(COL.aprovacoes, l.id, { substituidoEm: criadoEm, substituidoPorEm: criadoEm, substituidoPor: token });
@@ -174,6 +181,9 @@ export async function viewPublicaSite(app, token, doc) {
       <p class="mt-1 inline-block rounded bg-indigo-50 px-2 py-1 text-sm font-semibold text-indigo-800" data-versao-publica>Versão de ${esc(dataHoraBR(doc.criadoEm))}</p>
       <p class="caption mt-1">Navegue pela prévia abaixo e, no fim da página, clique em <b>Aprovar</b> ou <b>Pedir ajuste</b>.${doc.modo === 'custom' ? '' : doc.previa ? ' Clique num produto para ver a página dele.' : ' Este é o conteúdo (textos e banners) que vai para a sua loja na plataforma.'}</p></header>
     ${ativo ? '' : '<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-aviso-topo><b>Existe uma versão mais nova deste site. Peça o link atualizado.</b></div>'}
+    ${(doc.pendencias || []).length ? `<section class="card mb-4 border-2 border-amber-300" data-falta-preencher><h2 class="text-lg font-semibold">O que falta você preencher (${doc.pendencias.length})</h2>
+      <p class="caption">Estes lugares aparecem na prévia com um quadro tracejado amarelo "Preencher". Na loja, procure o texto [PREENCHER: …] e troque pelo dado real (do rótulo ou do seu cadastro).</p>
+      <ul class="mt-2 space-y-2 text-sm">${doc.pendencias.map((x) => `<li class="rounded border border-dashed border-amber-600 bg-amber-50 p-2 text-amber-800"><b>${esc(x.produto)} › ${esc(x.titulo)}</b><br>${esc(marcaPreencher(x.oque))}<br><span class="text-xs">Onde: ${esc(x.noTema)}</span></li>`).join('')}</ul></section>` : ''}
     ${corpo}
     <section class="card mt-4" data-bloco-resposta>${blocoResposta()}</section>
     <p class="hint mt-3 text-center">Este link é pessoal. Ele permite apenas ver esta prévia e responder sobre ela.</p></div>`;

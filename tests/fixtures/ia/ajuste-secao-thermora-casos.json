@@ -1,0 +1,36 @@
+{
+  "escritaAMao": true,
+  "tarefa": "ajuste_secao",
+  "descricao": "Casos a–d da Thermora (pacote Shopify): 'antes' = o tipo de resposta que a IA deu em produção sem a lista do que dá para mudar (campos confianca.* inventados, texto guardado nas observações do briefing, imagem do banner sem passar pelo 'Usar em'); 'depois' = resposta com a lista de capacidades (destaques, título de seção, elemento). Frases exatas do operador em tests/fixtures/thermora-producao.js.",
+  "a": {
+    "antes": { "tipo": "proposta", "resposta": "Montei os 5 principais motivos na seção de confiança.", "operacoes": [
+      { "op": "texto", "campo": "confianca.titulo", "valor": "5 motivos para escolher a Thermora" },
+      { "op": "texto", "campo": "confianca.motivo1", "valor": "Fórmula com cafeína anidra e chá verde" },
+      { "op": "texto", "campo": "confianca.motivo2", "valor": "Fácil de usar: duas cápsulas por dia" },
+      { "op": "texto", "campo": "confianca.motivo3", "valor": "Entrega para todo o Brasil" },
+      { "op": "texto", "campo": "confianca.motivo4", "valor": "Troca em até 7 dias" },
+      { "op": "texto", "campo": "confianca.motivo5", "valor": "Mais de 5000 clientes atendidas" },
+      { "op": "mover", "bloco": "confianca", "depoisDe": "banner" } ], "naoFeito": [] },
+    "depois": { "tipo": "proposta", "resposta": "Os 5 motivos ficam na seção Destaques, logo depois do banner.", "operacoes": [
+      { "op": "destaque", "acao": "titulo", "grupo": 0, "texto": "5 principais motivos para escolher a Thermora" },
+      { "op": "mover", "bloco": "destaques", "depoisDe": "banner" } ], "naoFeito": [] }
+  },
+  "b": {
+    "antes": { "tipo": "proposta", "resposta": "Anotei a frase nas observações do tema.", "operacoes": [
+      { "op": "texto", "campo": "tema.observacoes", "valor": "Trocar o 5º motivo por 'Mais de 5mil pessoas compraram e aprovaram os produtos' (negrito)." } ], "naoFeito": [] },
+    "depois": { "tipo": "proposta", "resposta": "Troquei o 5º motivo e deixei o começo em negrito.", "operacoes": [
+      { "op": "destaque", "acao": "linha", "grupo": 0, "indice": 4, "texto": "**Mais de 5mil pessoas** compraram e aprovaram os produtos" } ], "naoFeito": [] }
+  },
+  "c": {
+    "antes": { "tipo": "proposta", "resposta": "Aproximei os motivos e coloquei a foto no banner.", "operacoes": [
+      { "op": "imagem", "bloco": "banner", "materialId": "m27" },
+      { "op": "texto", "campo": "confianca.motivo1", "valor": "Fórmula com cafeína anidra e chá verde" } ], "naoFeito": [] },
+    "depois": { "tipo": "proposta", "resposta": "Os 5 motivos sobem para logo depois do banner.", "operacoes": [
+      { "op": "mover", "bloco": "destaques", "depoisDe": "banner" } ], "naoFeito": [] }
+  },
+  "d": {
+    "antes": { "tipo": "recusa", "resposta": "Não há operação para remover apenas o texto e manter as imagens.", "operacoes": [], "naoFeito": ["não há operação para remover apenas o texto e manter as imagens"] },
+    "depois": { "tipo": "proposta", "resposta": "Tirei os textos de 'Quem já comprou'; as imagens continuam.", "operacoes": [
+      { "op": "elemento", "id": "depoimentos.textos", "acao": "ocultar" } ], "naoFeito": [] }
+  }
+}

@@ -4,12 +4,12 @@ import { normalizarVisual, printsDoCliente, printsSemAutorizacao, imagensParaBan
 describe('escolhas visuais do pacote', () => {
   it('padrão: fotos preenchendo, sem banner; "Clientes reais" logo depois do banner', () => {
     const v = normalizarVisual(undefined);
-    expect(v).toEqual({ ordem: ORDEM_LOJA, ocultas: [], ajusteFotos: 'cover', banner: null });
-    expect(v.ordem.slice(0, 2)).toEqual(['banner', 'provas']);
+    expect(v).toEqual({ ordem: ORDEM_LOJA, ocultas: [], ajusteFotos: 'cover', banner: null, titulos: {}, elementos: {}, depoimentosOcultos: [] });
+    expect(v.ordem.slice(0, 3)).toEqual(['banner', 'destaques', 'provas']); // "Destaques" (textos do plano) muda de lugar como as outras
   });
   it('ordem salva antes de existir "Clientes reais" ganha a seção depois do banner, sem mexer no resto', () => {
     const v = normalizarVisual({ ordem: ['produtos', 'banner', 'confianca', 'depoimentos', 'sobre', 'faq', 'xxx'], ocultas: ['faq', 'yyy'], ajusteFotos: 'contain', banner: { url: 'u.jpg', materialId: 'm1' } });
-    expect(v.ordem).toEqual(['produtos', 'banner', 'provas', 'confianca', 'depoimentos', 'sobre', 'galeria', 'faq']);
+    expect(v.ordem).toEqual(['produtos', 'banner', 'destaques', 'provas', 'confianca', 'depoimentos', 'sobre', 'galeria', 'faq']);
     expect(v.ocultas).toEqual(['faq']);
     expect(v.ajusteFotos).toBe('contain');
     expect(v.banner).toEqual({ materialId: 'm1', url: 'u.jpg', nome: 'imagem' });

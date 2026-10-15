@@ -63,14 +63,17 @@ describe('materiais e depoimentos', () => {
     expect(contarMateriais(lista)).toEqual({ foto: 1, video: 1, logo: 1, prova_social: 2, referencia: 0, interno: 0 });
   });
 
-  it('print vira depoimento conforme a escolha; "não usar" some; escritos à mão e de criativos ficam', () => {
-    const m = { id: 'm1', url: 'https://x/p.jpg', citacao: 'Chegou rápido', fonteProva: 'Avaliação no Google' };
+  it('print vira depoimento conforme a escolha; texto só o DIGITADO (nunca OCR nem resumo da IA); escritos à mão e de criativos ficam', () => {
+    const m = { id: 'm1', url: 'https://x/p.jpg', citacao: 'Chegou rápido', descricao: 'Cliente elogia a entrega', fonteProva: 'Avaliação no Google' };
     expect(depoimentoDeProva(m, '')).toBeNull();
-    expect(depoimentoDeProva(m, 'texto')).toMatchObject({ texto: 'Chegou rápido', midiaUrl: null, exibir: 'texto', nome: 'Avaliação no Google' });
+    // Sem texto digitado: "Só o texto" vira só o print (imagem), sem aspas com o OCR.
+    expect(depoimentoDeProva(m, 'texto')).toMatchObject({ texto: '', midiaUrl: 'https://x/p.jpg', exibir: 'print' });
+    const dig = { ...m, textoDepoimento: 'Chegou rápido, amei' };
+    expect(depoimentoDeProva(dig, 'texto')).toMatchObject({ texto: 'Chegou rápido, amei', midiaUrl: null, exibir: 'texto', nome: 'Avaliação no Google' });
     expect(depoimentoDeProva(m, 'print')).toMatchObject({ midiaUrl: 'https://x/p.jpg', midiaTipo: 'imagem', exibir: 'print' });
     const atuais = [{ nome: 'Ana', texto: 'ok' }, { origem: 'criativo', texto: 'h' }, { origem: 'prova_social', materialId: 'velho', texto: 'v' }];
-    const r = mesclarProvasNoSite(atuais, [depoimentoDeProva(m, 'ambos'), null]);
-    expect(r.map((d) => d.texto)).toEqual(['ok', 'h', 'Chegou rápido']);
+    const r = mesclarProvasNoSite(atuais, [depoimentoDeProva(dig, 'ambos'), null]);
+    expect(r.map((d) => d.texto)).toEqual(['ok', 'h', 'Chegou rápido, amei']);
     expect(r.filter(depoimentoGerido)).toHaveLength(2);
   });
 });
@@ -126,14 +129,14 @@ describe('montarDepoimentos (site: prova real primeiro, modelo só sem nenhuma)'
     expect(temProvaReal({ cliente })).toBe(true);
   });
 
-  it('respeita a escolha por print: no site, o texto dele não repete; "Não usar" some com o texto; sem decisão, o texto entra', () => {
+  it('linha que veio da leitura de um print é anotação interna: nunca vira depoimento; a digitada à mão entra', () => {
     const cliente = { marca: { provasSociais: 'Nota 4,9 no Google com 187 avaliações (do print enviado em 30/09/2026)\nElogio pelo WhatsApp: amei a vela' } };
     const noSite = { nome: 'Avaliação no Google', texto: 'Velas maravilhosas', origem: 'prova_social', materialId: 'm1', exibir: 'print', midiaUrl: 'https://x/p.jpg' };
     const a = montarDepoimentos({ cliente, materiais: [print], atuais: [noSite] });
     expect(a.depoimentos.map((d) => d.texto)).toEqual(['Elogio pelo WhatsApp: amei a vela', 'Velas maravilhosas']);
     const b = montarDepoimentos({ cliente, materiais: [print], provasOcultas: ['m1'] });
     expect(b.depoimentos.map((d) => d.texto)).toEqual(['Elogio pelo WhatsApp: amei a vela']);
-    expect(provasEmTexto(cliente, [print]).map((d) => d.nome)).toEqual(['Avaliação no Google', 'Elogio pelo WhatsApp']);
+    expect(provasEmTexto(cliente, [print]).map((d) => d.nome)).toEqual(['Elogio pelo WhatsApp']);
   });
 
   it('só prints (sem texto) e criativos também contam como prova real; escrito à mão fica; sem duplicar', () => {

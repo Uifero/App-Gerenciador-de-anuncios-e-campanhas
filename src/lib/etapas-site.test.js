@@ -87,15 +87,16 @@ describe('plataforma e tema', () => {
 
 describe('dado lido da fonte (mapa de conexões)', () => {
   const site = { ...siteOk, modo: 'custom', conteudo: { heroTitulo: 'Oi', depoimentos: [{ nome: 'Clientes da loja', texto: 'Nota 4,9 no Google', origem: 'prova_texto' }] } };
-  it('preço e prova social editados na fonte aparecem na prévia e no pacote sem gerar de novo', () => {
+  it('preço editado na fonte aparece sem gerar de novo; prova social do perfil não vira citação de cliente', () => {
     const cliente = { ...clienteOk, marca: { ...marcaCompleta, provasSociais: 'Nota 5,0 em 800 avaliações' } };
     const html = gerarSiteHTML({ cliente, produtos: [prod('p1', { preco: 123.45 })], conteudo: site.conteudo, materiais: [] });
     expect(html).toContain('123,45');
-    expect(html).toContain('Nota 5,0 em 800 avaliações');
+    // As provas sociais do perfil são anotação para a IA (números, resumos): nunca aparecem como fala de cliente.
+    expect(html).not.toContain('Nota 5,0 em 800 avaliações');
     expect(html).not.toContain('Nota 4,9 no Google'); // a cópia antiga não volta
     const d = dadosDoPacote({ cliente, site: { ...siteOk, conteudo: site.conteudo }, produtos: [prod('p1', { preco: 123.45 })] });
     expect(d.produtos[0].preco).toBe(123.45);
-    expect(d.depoimentos.map((x) => x.texto)).toEqual(['Nota 5,0 em 800 avaliações']);
+    expect(d.depoimentos).toEqual([]);
   });
   it('depoimento de print usa a cópia borrada atual; print apagado sai', () => {
     const guardados = [{ nome: 'Google', texto: 'Ótimo', origem: 'prova_social', materialId: 'm1', exibir: 'print', midiaUrl: 'https://x/original.png' }];

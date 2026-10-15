@@ -8,14 +8,21 @@
 import { tipoMaterial } from './prova-social.js';
 import { usosDe, temCodigo } from './fotos-site.js';
 import { focoDe } from './medidas-site.js';
+import { ELEMENTOS_OCULTAVEIS_LOJA } from './elementos-site.js';
 
+// "destaques" = a seção com os textos do operador escolhidos no plano (ex.: "5 motivos"): também muda de lugar e sai.
 export const SECOES_LOJA = [
-  ['banner', 'Banner'], ['provas', 'Clientes reais'], ['produtos', 'Produtos'], ['confianca', 'Compra segura'],
+  ['banner', 'Banner'], ['destaques', 'Destaques (seus textos)'], ['provas', 'Clientes reais'], ['produtos', 'Produtos'], ['confianca', 'Compra segura'],
   ['depoimentos', 'Quem já comprou'], ['sobre', 'Sobre a marca'], ['galeria', 'Galeria'], ['faq', 'Perguntas frequentes'],
 ];
 export const ORDEM_LOJA = SECOES_LOJA.map(([k]) => k);
 export const nomeSecaoLoja = (k) => (SECOES_LOJA.find(([s]) => s === k) || [, k])[1];
 export const AJUSTES_FOTO = { contain: 'Mostrar inteiras', cover: 'Preencher o espaço' };
+/** Título que a seção mostra na loja quando o operador não escreveu outro (pacote.visual.titulos). */
+export const TITULOS_LOJA = { provas: 'Clientes reais', produtos: 'Produtos', depoimentos: 'Quem já comprou', sobre: 'Sobre a marca', galeria: 'Galeria', faq: 'Perguntas frequentes' };
+/** Elementos do pacote que saem da loja sem sair a seção ("tirar o texto e deixar as imagens"): título, dica, textos. */
+export { ELEMENTOS_OCULTAVEIS_LOJA };
+export const tituloSecaoLoja = (visual, k) => String(visual?.titulos?.[k] || '').trim() || TITULOS_LOJA[k] || '';
 
 /** Escolhas visuais do pacote, sempre num formato válido (seção nova entra na posição padrão). */
 export function normalizarVisual(v = {}) {
@@ -28,6 +35,10 @@ export function normalizarVisual(v = {}) {
     ocultas: [...new Set((v.ocultas || []).filter((k) => ORDEM_LOJA.includes(k)))],
     ajusteFotos: v.ajusteFotos === 'contain' ? 'contain' : 'cover',
     banner: v.banner?.url ? { materialId: v.banner.materialId || null, url: v.banner.url, nome: v.banner.nome || 'imagem' } : null,
+    // Títulos das seções escritos pelo operador, elementos tirados (título, dica, textos) e depoimentos ocultos.
+    titulos: Object.fromEntries(Object.entries(v.titulos || {}).filter(([k, t]) => TITULOS_LOJA[k] && String(t || '').trim()).map(([k, t]) => [k, String(t).trim().slice(0, 80)])),
+    elementos: Object.fromEntries(Object.entries(v.elementos || {}).filter(([k, x]) => ELEMENTOS_OCULTAVEIS_LOJA.includes(k) && x?.oculto).map(([k]) => [k, { oculto: true }])),
+    depoimentosOcultos: [...new Set((v.depoimentosOcultos || []).map(String).filter(Boolean))],
   };
 }
 
@@ -52,7 +63,8 @@ export function printsDoCliente(materiais = []) {
     if (!atual || (printProtegido(m) && !printProtegido(atual))) porChave.set(k, m);
   }
   // Ordem escolhida (arrastar no seletor / ordem do texto); sem ordem, a de envio.
-  const ordem = (m) => usosDe(m).ordem.clientes || 0;
+  // Os pedidos (com posição: arrastar, ordem do texto/plano) vêm primeiro, nessa ordem; os sem posição depois, por data.
+  const ordem = (m) => usosDe(m).ordem.clientes || 1e9;
   return [...porChave.values()].sort((a, b) => ordem(a) - ordem(b) || String(a.criadoEm || '').localeCompare(String(b.criadoEm || ''))).map((m) => {
     const print = tipoMaterial(m) === 'prova_social';
     return {

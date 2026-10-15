@@ -5,12 +5,12 @@
 //  - Sugestões (Conferência do pedido, Cara de IA, plano) têm uma CHAVE pelo conteúdo: ignorada uma vez, não volta na
 //    próxima conferência do mesmo conteúdo (site.sugestoesIgnoradas).
 //  - Depois de aplicar, as conferências baratas (sem IA) rodam só nas seções mudadas.
-import { BLOCOS, nomeBloco, normalizarLayout, tituloBloco, problemaPaleta } from './site-blocos.js';
-import { SECOES_LOJA, ORDEM_LOJA, nomeSecaoLoja, normalizarVisual } from './visual-site.js';
+import { BLOCOS, nomeBloco, normalizarLayout, tituloBloco, problemaPaleta, secaoLojaDoNome } from './site-blocos.js';
+import { SECOES_LOJA, ORDEM_LOJA, nomeSecaoLoja, normalizarVisual, tituloSecaoLoja } from './visual-site.js';
 import { temCodigo, porCodigo, resumoUsos, usosDe } from './fotos-site.js';
 import { itensAceitos } from './plano-site.js';
 import { textosParaAplicar } from './textos-site.js';
-import { achadosSaude } from './saude.js';
+import { achadosSaudeSite } from './saude.js';
 import { secaoDoElemento, listaElementos, elementoValido } from './elementos-site.js';
 import { verificarCaraDeIa } from './cara-de-ia.js';
 import { TAREFAS_IA } from './constantes.js';
@@ -26,7 +26,7 @@ export const LIMITE_PEDIDO_AJUSTE = 2000;
 // ---------- seções ----------
 /** Seções do site no modo: [{ id, nome }]. Além dos blocos: "produto" (fotos/descrição do produto) e "geral" (cores, ajuste das fotos, ordem sugerida). */
 export function secoesDoSite(modo) {
-  const base = modo === 'pacote' ? SECOES_LOJA.map(([id, nome]) => ({ id, nome })) : BLOCOS.map(([id, nome]) => ({ id, nome }));
+  const base = modo === 'pacote' ? SECOES_LOJA.map(([id, nome]) => ({ id, nome })) : BLOCOS.flatMap(([id, nome]) => (id === 'hero' ? [{ id, nome }, { id: 'destaques', nome: 'Destaques (seus textos)' }] : [{ id, nome }]));
   return [...base, { id: 'produto', nome: modo === 'pacote' ? 'Produtos (fotos e descrições do CSV)' : 'Página do produto' }, { id: 'geral', nome: modo === 'pacote' ? 'Visual geral (paleta, estilo do tema, ordem sugerida)' : 'Visual geral (cores e fotos dos produtos)' }, ...(modo === 'pacote' ? [] : [{ id: 'rodape', nome: 'Rodapé e dados da loja' }])];
 }
 export const nomeSecao = (id, modo) => (id === TODO ? 'Site todo' : secoesDoSite(modo).find((s) => s.id === id)?.nome || id);
@@ -44,15 +44,16 @@ export function secaoDaOperacao(op = {}, modo = 'custom', layout = {}) {
   if (op.op === 'elemento') return secaoDoElemento(op.id, layout);
   if (op.op === 'extra') return secaoDoElemento(op.acao === 'adicionar' ? op.apos : op.id, layout);
   if (op.op === 'dadoLoja') return modo === 'pacote' ? 'geral' : 'rodape';
+  if (op.op === 'destaque') return 'destaques';
   if (op.op === 'texto' && /^politicas./.test(txt(op.campo))) return 'rodape';
   if (op.op === 'foto') return (modo === 'pacote' ? FOTO_PACOTE : FOTO_CUSTOM)[op.uso] || null;
   if (op.op === 'paleta' || op.op === 'fotos') return 'geral';
   if (op.op === 'faq') return 'faq';
   if (modo === 'pacote') {
-    if (['mover', 'ocultar', 'mostrar'].includes(op.op)) return ORDEM_LOJA.includes(op.bloco) ? op.bloco : op.secao || op.bloco ? 'geral' : null;
+    if (['mover', 'ocultar', 'mostrar'].includes(op.op)) return ORDEM_LOJA.includes(op.bloco) ? op.bloco : secaoLojaDoNome(op.secao || op.bloco) || null;
     if (op.op === 'imagem') return 'banner';
     if (op.op === 'produto') return 'produto';
-    if (op.op === 'texto') { const c = txt(op.campo); return /^banner\./.test(c) ? 'banner' : c === 'sobre' ? 'sobre' : /^tema\./.test(c) ? 'geral' : null; }
+    if (op.op === 'texto') { const c = txt(op.campo); const mt = /^titulo\.(\w+)$/.exec(c); return mt ? (ORDEM_LOJA.includes(mt[1]) ? mt[1] : null) : /^destaques\./.test(c) ? 'destaques' : /^banner\./.test(c) ? 'banner' : c === 'sobre' ? 'sobre' : /^tema\./.test(c) ? 'geral' : /^confianca/.test(c) ? 'confianca' : null; }
     return null;
   }
   if (['mover', 'ocultar', 'mostrar', 'variacao', 'imagem'].includes(op.op)) return BLOCOS.some(([k]) => k === op.bloco) ? op.bloco : null;
@@ -111,11 +112,12 @@ export function resumoDasSecoes(estado = {}, secoes = [], modo = 'custom', { mat
     for (const id of ids) {
       const t = {
         banner: () => `banner: ${(P.banners || []).map((b, i) => `${i}: "${b.titulo || ''}" / "${b.subtitulo || ''}" [${b.cta || ''}]`).join(' | ') || '(sem banner)'}; imagem: ${V.banner?.nome || 'nenhuma'}; fotos no banner: ${fotosDoLugar(materiais, 'banner').join(', ') || 'nenhuma'}`,
-        provas: () => 'provas (Clientes reais): prints reais; dá para mover, ocultar e mostrar; o conteúdo nunca muda',
+        provas: () => `provas (Clientes reais): título "${tituloSecaoLoja(V, 'provas')}"; prints reais; dá para mover, ocultar e mostrar, tirar o título (provas.titulo) e a dica (provas.dica); o conteúdo nunca muda`,
         produtos: () => `produtos: ${produtos.map((p) => p.nome).join(', ') || '(nenhum)'}; fotos ${V.ajusteFotos === 'contain' ? 'inteiras' : 'preenchendo'}`,
-        confianca: () => 'confianca (Compra segura): seção fixa de confiança; dá para mover, ocultar e mostrar',
-        depoimentos: () => 'depoimentos: falas de clientes reais (nunca reescrever); dá para mover, ocultar e mostrar',
-        sobre: () => `sobre: "${corta(tp.sobre, 1500)}"; fotos em Sobre: ${fotosDoLugar(materiais, 'sobre').join(', ') || 'nenhuma'}`,
+        confianca: () => 'confianca (Compra segura): faixa fixa e legal (pagamento + resumo das políticas de envio e trocas); não sai e não tem texto próprio',
+        depoimentos: () => `depoimentos: título "${tituloSecaoLoja(V, 'depoimentos')}"; só textos digitados pelo operador e prints como imagem (nunca escrever nem reescrever); elementos: depoimentos.titulo, depoimentos.textos (tirar os textos e deixar as imagens)`,
+        destaques: () => `destaques (índice do grupo: título / textos com índice): ${(P.destaques || []).map((g, i) => `${i}: "${g.titulo || ''}" / ${(g.linhas || []).map((l, k) => `${k}: "${corta(l.texto, 160)}"`).join(' · ')}`).join(' | ') || '(nenhuma seção de destaques ainda: crie com {"op":"destaque","acao":"criar",...})'}`,
+        sobre: () => `sobre: título "${tituloSecaoLoja(V, 'sobre')}"; texto "${corta(tp.sobre, 1500)}"; fotos em Sobre: ${fotosDoLugar(materiais, 'sobre').join(', ') || 'nenhuma'}`,
         galeria: () => `galeria: fotos ${fotosDoLugar(materiais, 'galeria').join(', ') || 'nenhuma'}`,
         faq: () => `faq (índice: pergunta / resposta): ${(tp.faq || []).map((f, i) => `${i}: ${f.p} / ${corta(f.r, 160)}`).join(' | ') || '(vazia)'}`,
         produto: () => `produto: ${(P.descricoesProdutos || []).map((d) => `${d.nome}: descrição "${corta(d.descricao, 400)}"`).join(' | ') || '(sem descrições)'}; fotos por produto: ${produtos.map((p) => `${p.nome}: ${fotosDoProduto(materiais, p).join(', ') || 'nenhuma'}`).join(' | ')}`,
@@ -130,6 +132,7 @@ export function resumoDasSecoes(estado = {}, secoes = [], modo = 'custom', { mat
     const col = (k) => (L.variacoes?.[k]?.colunas ? `, ${L.variacoes[k].colunas} colunas` : '');
     for (const id of ids) {
       const t = {
+        destaques: () => `destaques (índice do grupo: título / textos com índice): ${(c.destaques || []).map((g, i) => `${i}: "${g.titulo || ''}" / ${(g.linhas || []).map((l, k) => `${k}: "${corta(l.texto, 160)}"`).join(' · ')}`).join(' | ') || '(nenhuma)'}`,
         hero: () => `hero (banner): título "${c.heroTitulo || ''}", subtítulo "${c.heroSubtitulo || ''}", botão "${c.heroCta || ''}", altura ${L.variacoes?.hero?.altura || 'normal'}, imagem ${L.imagens.hero?.nome || 'nenhuma'}; fotos no banner: ${fotosDoLugar(materiais, 'banner').join(', ') || 'nenhuma'}`,
         provas: () => 'provas (Clientes reais): prints reais; dá para mover, ocultar e mostrar; o conteúdo nunca muda',
         categorias: () => `categorias: ${tit('categorias')}`, vendidos: () => `vendidos: ${tit('vendidos')}${col('vendidos')}`, sale: () => `sale: ${tit('sale')}${col('sale')}`, catalogo: () => `catalogo: ${tit('catalogo')}${col('catalogo')}`,
@@ -235,13 +238,16 @@ function textosDaSecao(estado, id, modo) {
     if (id === 'sobre') return [{ campo: 'sobre', texto: tp.sobre }];
     if (id === 'faq') return (tp.faq || []).flatMap((f, i) => [{ campo: `faq.${i}.p`, texto: f.p }, { campo: `faq.${i}.r`, texto: f.r }]);
     if (id === 'produto') return (P.descricoesProdutos || []).map((d) => ({ campo: `produto.${d.nome}`, texto: d.descricao }));
-    return [];
+    if (id === 'destaques') return (P.destaques || []).flatMap((g, i) => [{ campo: `destaques.${i}.titulo`, texto: g.titulo }, ...(g.linhas || []).map((l, k) => ({ campo: `destaques.${i}.linha.${k}`, texto: l.texto }))]);
+    const tit = normalizarVisual(P.visual).titulos?.[id];
+    return tit ? [{ campo: `titulo.${id}`, texto: tit }] : [];
   }
   const c = estado.conteudo || {}, L = normalizarLayout(estado.layout);
   if (id === 'hero') return ['heroTitulo', 'heroSubtitulo', 'heroCta'].map((k) => ({ campo: k, texto: c[k] }));
   if (id === 'marca') return [{ campo: 'titulo.marca', texto: tituloBloco(L, 'marca') }, { campo: 'storytelling', texto: c.storytelling }];
   if (id === 'newsletter') return [{ campo: 'newsletterTitulo', texto: c.newsletterTitulo }, { campo: 'newsletterTexto', texto: c.newsletterTexto }];
   if (id === 'faq') return (c.faq || []).flatMap((f, i) => [{ campo: `faq.${i}.p`, texto: f.p }, { campo: `faq.${i}.r`, texto: f.r }]);
+  if (id === 'destaques') return (c.destaques || []).flatMap((g, i) => [{ campo: `destaques.${i}.titulo`, texto: g.titulo }, ...(g.linhas || []).map((l, k) => ({ campo: `destaques.${i}.linha.${k}`, texto: l.texto }))]);
   if (L.titulos?.[id]) return [{ campo: `titulo.${id}`, texto: L.titulos[id] }];
   return [];
 }
@@ -257,7 +263,7 @@ export function conferirSecoes(estado = {}, secoes = [], modo = 'custom', { saud
     const itens = [];
     const textos = textosDaSecao(estado, id, modo).filter((t) => txt(t.texto));
     if (saude) {
-      const ach = [...new Set(textos.flatMap((t) => achadosSaude(t.texto)))];
+      const ach = [...new Set(textos.flatMap((t) => achadosSaudeSite(t.texto)))];
       itens.push(ach.length ? { tipo: 'saude', ok: false, texto: `Alegação de efeito no corpo: ${ach.map((a) => `"${a}"`).join(', ')}. No site fica só com o seu "Entendi e quero manter no site"; nos anúncios continua bloqueada.` } : { tipo: 'saude', ok: true, texto: 'Sem alegação de efeito no corpo.' });
     }
     const cliches = cara.filter((a) => a.tipo !== 'cor' && a.tipo !== 'banner' && secaoDoAchado(a, modo) === id);
@@ -294,9 +300,11 @@ export function normalizarEntendimento(d = {}, modo = 'custom') {
     resposta: null,
   })).filter((q) => q.texto && q.opcoes.length >= 2).map((q, i) => ({ id: `q${i + 1}`, ...q }));
   const fora = (Array.isArray(d.fora) ? d.fora : []).map((x) => corta(x, 200)).filter(Boolean);
+  // O que não tem operação neste site (dito ANTES de rodar), com a alternativa mais próxima.
+  const impossivel = (Array.isArray(d.impossivel) ? d.impossivel : []).map((x) => (typeof x === 'string' ? { oque: corta(x, 200), alternativa: '' } : { oque: corta(x?.oque, 200), alternativa: corta(x?.alternativa, 200) })).filter((x) => x.oque).slice(0, 8);
   // Print de outro site: só a ideia de layout (nunca texto, logo ou imagem dele).
   const referencia = d.referencia && txt(d.referencia.copiar) ? { copiar: corta(d.referencia.copiar, 300) } : null;
-  return { global, secoes: global ? [{ id: TODO, nome: 'Site todo', oque: corta(d.oque || secoes.map((s) => s.oque).join(' ') || 'mudança no site todo', 240), estrutura: true, elementos: [] }] : secoes, perguntas, fora, ...(referencia ? { referencia } : {}) };
+  return { global, secoes: global ? [{ id: TODO, nome: 'Site todo', oque: corta(d.oque || secoes.map((s) => s.oque).join(' ') || 'mudança no site todo', 240), estrutura: true, elementos: [] }] : secoes, perguntas, fora, impossivel, ...(referencia ? { referencia } : {}) };
 }
 /** Resposta de uma pergunta do "Entendi assim": as seções da opção entram e a instrução ganha o complemento. */
 export function responderEntendimento(ent, perguntaId, indice, modo = 'custom') {

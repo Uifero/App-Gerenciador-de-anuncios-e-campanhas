@@ -133,9 +133,11 @@ describe('fotos no site', () => {
     expect(f.map((x) => x.codigo || x.nome)).toEqual(['F3', 'propria.jpg', 'F2', 'F1']);
     expect(f[0].url).toBe(lista[2].url); // o mesmo arquivo dos Materiais
   });
-  it('no produto, as fotos escolhidas no seletor vêm antes das do texto', () => {
-    const lista = [foto('m5', 'F5', { usos: { produtos: [{ id: 'p2', ordem: 1, por: 'texto' }] } }), foto('m3', 'F3', { usos: { produtos: [{ id: 'p2', ordem: 2, por: 'manual' }] } })];
+  it('no produto, a POSIÇÃO escolhida no seletor vem antes; foto só ligada (envio/migração) segue a posição pedida', () => {
+    const lista = [foto('m5', 'F5', { usos: { produtos: [{ id: 'p2', ordem: 1, por: 'texto' }] } }), foto('m3', 'F3', { usos: { produtos: [{ id: 'p2', ordem: 2, por: 'manual', fixo: true }] } })];
     expect(fotosDoProduto(produtos[1], lista).map((x) => x.codigo)).toEqual(['F3', 'F5']);
+    const soLigada = [lista[0], foto('m3', 'F3', { usos: { produtos: [{ id: 'p2', ordem: 2, por: 'manual' }] } })];
+    expect(fotosDoProduto(produtos[1], soLigada).map((x) => x.codigo)).toEqual(['F5', 'F3']);
   });
   it('apagar a foto: o produto perde só ela', () => {
     const lista = [foto('m1', 'F1', { usos: { produtos: [{ id: 'p1' }] } }), foto('m2', 'F2', { usos: { produtos: [{ id: 'p1' }] } })];

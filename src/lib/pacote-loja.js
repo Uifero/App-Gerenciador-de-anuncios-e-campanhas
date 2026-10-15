@@ -4,16 +4,16 @@
 // "#produto-1" iria para o endereço do painel): não tem carrinho nem checkout funcionando, não carrega Pixel, Google Ads,
 // Hotjar, Tawk.to nem qualquer rastreador, e é noindex/nofollow. A navegação (home <-> página do produto) é por âncora.
 import { comTextosDoPacote } from './csv.js';
-import { normalizarVisual, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js';
+import { normalizarVisual, nomeSecaoLoja, AJUSTES_FOTO, tituloSecaoLoja, TITULOS_LOJA } from './visual-site.js';
 import { produtosComFotos, imagemDoLugar, fotosDoUso, rotuloFoto, slidesDoBanner, arquivosPorPasta } from './fotos-site.js';
 import { medidasDe, posicaoCss, textoMedida, nomeLugar } from './medidas-site.js';
 import { carrosselHtml, carrosselCss } from './carrossel.js';
 import { textoSobre, corLegivel } from './contraste.js';
 import { plataformaDoSite, nomeTema } from './etapas-site.js';
-import { depoimentosVivos } from './prova-social.js';
+import { depoimentosVivos, chaveDepoimento } from './prova-social.js';
 import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
-import { comDestaques } from './textos-site.js';
 import { marcarElemento, idFaq } from './elementos-site.js';
+import { pendenciasDoSite, pendenciasPorProduto, marcaPreencher, itensDoPlanoAplicado } from './pendencias-site.js';
 import { designDoSite, cssVariaveis, textoPar } from './design-site.js';
 import { normalizarAnimacoes, prazoDaOferta, cssAnimacoes, classesBody, htmlContador, instrucoesTema } from './animacoes-site.js';
 
@@ -42,8 +42,12 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
   const cor = design.cores.acento;
   const paleta = [cor, design.cores.texto, design.cores.suave];
   const banners = (p.banners || []).filter((b) => txt(b?.titulo));
+  const listaProdutos = comTextosDoPacote(produtosComFotos(produtos, materiais), p).filter((x) => txt(x?.nome));
+  // Dado que só o cliente tem e ainda falta: lugar marcado "Preencher" (lib/pendencias-site.js), nunca texto inventado.
+  const pendencias = pendenciasDoSite({ site, modo: 'pacote', produtos: listaProdutos, itens: itensDoPlanoAplicado(site) });
   return {
     visual,
+    pendencias,
     // Frete grátis, pagamento, colunas, botão, página do produto e "Compre junto" (plano do pedido, lib/plano-site.js).
     recursos: normalizarRecursos(p.recursos),
     sobreImagens: fotosDoUso(materiais, 'sobre'),
@@ -71,9 +75,11 @@ export function dadosDoPacote({ cliente = {}, site = {}, produtos = [], provas =
     // Textos do operador escolhidos no plano (lib/textos-site.js): seção "Destaques" da home.
     destaques: (p.destaques || []).map((g) => ({ titulo: txt(g?.titulo) || 'Destaques', linhas: (g?.linhas || []).map((l) => txt(l?.texto)).filter(Boolean) })).filter((g) => g.linhas.length),
     politicas: { trocas: txt(c.politicas?.trocas), envio: txt(c.politicas?.envio), privacidade: txt(c.politicas?.privacidade) },
-    // Lidos agora da fonte: provas em texto do perfil de marca, prints (cópia borrada) e escritos à mão (lib/prova-social.js).
-    depoimentos: depoimentosVivos({ cliente, materiais, guardados: p.depoimentos?.length ? p.depoimentos : c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => txt(d?.texto)),
-    produtos: comTextosDoPacote(produtosComFotos(produtos, materiais), p).filter((x) => txt(x?.nome)).map((x) => ({
+    // Lidos agora da fonte: provas em texto digitadas, prints (cópia borrada, texto só o digitado) e escritos à mão
+    // (lib/prova-social.js). Descrição de print e OCR nunca entram. Os ocultos no ajuste ficam de fora.
+    depoimentos: depoimentosVivos({ cliente, materiais, guardados: p.depoimentos?.length ? p.depoimentos : c.depoimentos || [], provasOcultas: c.provasOcultas || [] })
+      .filter((d) => (txt(d?.texto) || d?.midiaUrl) && !visual.depoimentosOcultos.includes(chaveDepoimento(d))),
+    produtos: listaProdutos.map((x) => ({
       id: x.id || '', nome: txt(x.nome), descricao: txt(x.descricao), formula: txt(x.formula), beneficios: txt(x.beneficios), modoUso: txt(x.modoUso), preco: Number(x.preco) || null, precoPromocional: Number(x.precoPromocional) || null,
       variacoes: (x.variacoes || []).filter((v) => v?.nome && v.valores?.length), fotos: (x.fotos || []).map((f) => f?.url).filter(Boolean),
       arquivos: (x.fotos || []).filter((f) => f?.url).map((f) => ({ url: f.url, nome: f.nome || 'foto', codigo: f.codigo || '', foco: f.foco || null })),
@@ -162,17 +168,32 @@ export function gruposPlataforma(d) {
     const arqs = plano.filter((a) => a.lugar === 'banner' && a.posicao === i + 1);
     return item(`Slide ${i + 1}${sl.fotos.length > 1 ? ` (${sl.fotos.length} fotos juntas, lado a lado)` : ''}`, [...arqs.map((a) => `${a.dispositivo === 'mobile' ? 'Celular' : 'Computador'}: ${a.caminho} (${a.l}×${a.a})`), `Fotos: ${sl.fotos.map(deFoto).join(' + ')}`].join('\n'));
   });
+  // Uma fonte só: a ordem e as seções que saem vêm das escolhas da prévia (d.visual); seção oculta não entra nos arquivos.
+  const V = d.visual, visivel = (k) => !V.ocultas.includes(k), semEl = (id) => !V.elementos?.[id]?.oculto;
+  const posHome = (k) => V.ordem.filter(visivel).indexOf(k) + 1;
+  const pend = pendenciasPorProduto(d.pendencias || []);
+  const marca = (x, campo) => { const p = pend[x.id || '']?.[campo]; return p ? marcaPreencher(p.oque) : ''; };
+  const ROT_SECAO = { formula: 'Fórmula / ingredientes (bloco da página do produto)', beneficios: 'Benefícios (bloco da página do produto)', modo_uso: 'Modo de uso (bloco da página do produto)' };
+  const CAMPO_S = { formula: 'formula', beneficios: 'beneficios', modo_uso: 'modoUso' };
+  const deps = (d.depoimentos || []);
   const grupos = [
     g('loja', 'Nome da loja', cam.loja, [item('Nome da loja', d.nomeLoja)]),
     g('logo', 'Logo', cam.logo, [d.logoUrl ? item('Arquivo do logo (baixe em "Baixar pacote")', d.logoUrl, 'imagem') : item('Logo', 'Sem logo salvo: envie no passo 2 de "Montar site".')]),
-    g('banner', 'Banner', cam.banner, (d.banners.length ? d.banners : [d.banner]).flatMap((b, i) => [
-      item(`${b.uso || `Banner ${i + 1}`}: título`, b.titulo), item(`${b.uso || `Banner ${i + 1}`}: subtítulo`, b.subtitulo), item(`${b.uso || `Banner ${i + 1}`}: botão`, b.cta)])),
-    g('home', 'Textos da home', cam.cores, [item('Ordem das seções da home', d.secoesHome.join(' > ')), item('Texto "Sobre a marca" (bloco de texto da home)', d.sobre)]),
-    g('destaques', 'Seção de destaques (seus textos escolhidos no plano)', cam.secoes, (d.destaques || []).flatMap((x) => [item('Título da seção', x.titulo), item('Textos, nesta ordem (um por linha; no tema use um bloco de texto ou lista)', x.linhas.join('\n'))])),
+    g('banner', 'Banner', cam.banner, visivel('banner') ? (d.banners.length ? d.banners : [d.banner]).flatMap((b, i) => [
+      item(`${b.uso || `Banner ${i + 1}`}: título`, b.titulo), semEl('banner.subtitulo') ? item(`${b.uso || `Banner ${i + 1}`}: subtítulo`, b.subtitulo) : null, semEl('banner.cta') ? item(`${b.uso || `Banner ${i + 1}`}: botão`, b.cta) : null]) : []),
+    g('home', 'Textos da home', cam.cores, [visivel('sobre') ? item('Texto "Sobre a marca" (bloco de texto da home)', d.sobre) : null]),
+    g('titulos', 'Títulos das seções da home', cam.secoes, Object.keys(TITULOS_LOJA).filter((k) => visivel(k) && (k !== 'provas' || d.provas.length) && (k !== 'depoimentos' || deps.length) && (k !== 'galeria' || (d.galeria || []).length) && (k !== 'faq' || d.faq.length) && (k !== 'sobre' || d.sobre))
+      .map((k) => item(`Seção "${nomeSecaoLoja(k)}"`, semEl(`${k}.titulo`) ? tituloSecaoLoja(V, k) : 'Sem título: deixe o título desta seção em branco no tema'))),
+    g('destaques', 'Seção de destaques (seus textos escolhidos no plano)', cam.secoes, visivel('destaques') ? (d.destaques || []).flatMap((x) => [semEl('destaques.titulo') ? item('Título da seção', x.titulo) : item('Título da seção', 'Sem título: deixe em branco no tema'), item('Textos, nesta ordem (um por linha; no tema use um bloco de texto ou lista; o que está entre ** vai em negrito: selecione e aperte Negrito no editor)', x.linhas.join('\n')), item('Onde na home', `Posição ${posHome('destaques')} da home (como na prévia).`)]) : []),
+    g('depoimentos', 'Quem já comprou (depoimentos)', cam.provas, visivel('depoimentos') && deps.length ? [
+      semEl('depoimentos.textos') ? item('Textos (só os digitados por você; um por linha)', deps.filter((x) => txt(x.texto)).map((x) => `"${x.texto}" — ${x.nome || 'Cliente'}`).join('\n')) : null,
+      item('Imagens', deps.filter((x) => x.midiaUrl).length ? `${deps.filter((x) => x.midiaUrl).length} imagem(ns) de prints/fotos reais (as mesmas de "Clientes reais", pasta clientes-reais/)` : ''),
+      item('Onde na home', `Posição ${posHome('depoimentos')} da home (como na prévia).`)] : []),
     ...d.produtos.map((x, i) => g(`produto-${i}`, `Produto: ${x.nome}`, cam.produtos, [
-      item('Título', x.nome), item('Descrição', x.descricao), item('Preço', moeda(x.preco)), item('Preço promocional', moeda(x.precoPromocional)),
-      item('Variações', variacoesTexto(x.variacoes)), item('Título para SEO', x.seoTitulo), item('Descrição para SEO', x.seoDescricao),
-      item('Fotos, nesta ordem (arquivos já no tamanho, do .zip "Imagens por lugar")', listaArquivos('produto', pastaProduto(i), x.arquivos, true)),
+      item('Título', x.nome), item('Descrição', x.descricao || marca(x, 'descricao')), item('Preço', moeda(x.preco) || marca(x, 'preco')), item('Preço promocional', moeda(x.precoPromocional)),
+      item('Variações', variacoesTexto(x.variacoes) || marca(x, 'variacoes')), item('Título para SEO', x.seoTitulo), item('Descrição para SEO', x.seoDescricao),
+      ...(d.recursos?.secoesProduto || []).map((s) => item(ROT_SECAO[s] || SECOES_PRODUTO[s], textoSecaoProduto(x, s) || marca(x, CAMPO_S[s]))),
+      item('Fotos, nesta ordem (arquivos já no tamanho, do .zip "Imagens por lugar")', listaArquivos('produto', pastaProduto(i), x.arquivos, true) || marca(x, 'fotos')),
       x.arquivos.length ? item('Tamanho das fotos', tamanho('produto')) : null])),
     g('paginas', 'Páginas institucionais', cam.paginas, [item('Página "Sobre"', d.sobre), item('Página "Perguntas frequentes"', d.faq.map((f) => `${f.p}\n${f.r}`).join('\n\n'))]),
     g('politicas', 'Políticas', cam.politicas, [item('Trocas e devoluções', d.politicas.trocas), item('Envio', d.politicas.envio), item('Privacidade', d.politicas.privacidade)]),
@@ -187,9 +208,11 @@ export function gruposPlataforma(d) {
     g('visual-fotos', 'Fotos dos produtos (como aparecem)', cam.fotos, [item('Escolha na prévia', `${AJUSTES_FOTO[d.visual.ajusteFotos]}: ${d.visual.ajusteFotos === 'contain' ? 'a foto aparece inteira, sem cortar' : 'a foto preenche o quadro (as bordas podem ser cortadas)'}`),
       item('No tema', cam.fotosAjuda[d.visual.ajusteFotos])]),
     g('visual-secoes', 'Ordem das seções da home (como aprovado na prévia)', cam.secoes, [item('Ordem', d.visual.ordem.filter((k) => !d.visual.ocultas.includes(k)).map(nomeSecaoLoja).join(' > ')), item('Não colocar na home', d.visual.ocultas.map(nomeSecaoLoja).join(', '))]),
-    g('provas', 'Clientes reais (prints)', cam.provas, d.provas.length ? [item('Prints para subir', `${d.provas.length} imagem(ns): baixe em "Baixar pacote" (Prints de clientes ou pasta clientes-reais/ do .zip "Imagens por lugar"). São as cópias com dados pessoais borrados quando você borrou.`), item('Arquivos, nesta ordem', listaArquivos('clientes', 'clientes-reais', d.provas)), item('Tamanho', tamanho('clientes')), item('Onde na home', `${d.visual.ocultas.includes('provas') ? 'Oculta na prévia: não colocar.' : `Posição ${d.visual.ordem.filter((k) => !d.visual.ocultas.includes(k)).indexOf('provas') + 1} da home (como na prévia).`}`)] : []),
+    g('provas', 'Clientes reais (prints)', cam.provas, d.provas.length && visivel('provas') ? [item('Prints para subir', `${d.provas.length} imagem(ns): baixe em "Baixar pacote" (Prints de clientes ou pasta clientes-reais/ do .zip "Imagens por lugar"). São as cópias com dados pessoais borrados quando você borrou.`), item('Arquivos, nesta ordem', listaArquivos('clientes', 'clientes-reais', d.provas)), item('Tamanho', tamanho('clientes')), item('Onde na home', `${d.visual.ocultas.includes('provas') ? 'Oculta na prévia: não colocar.' : `Posição ${d.visual.ordem.filter((k) => !d.visual.ocultas.includes(k)).indexOf('provas') + 1} da home (como na prévia).`}`)] : []),
     g('fotos-sobre', 'Imagem do "Sobre a marca"', cam.paginas, [item('Arquivos (pasta sobre/ do .zip "Imagens por lugar")', listaArquivos('sobre', 'sobre', d.sobreImagens)), (d.sobreImagens || []).length ? item('Tamanho', tamanho('sobre')) : null]),
-    g('fotos-galeria', 'Galeria de fotos', cam.provas, [item('Arquivos (pasta galeria/ do .zip "Imagens por lugar")', listaArquivos('galeria', 'galeria', d.galeria)), (d.galeria || []).length ? item('Tamanho', tamanho('galeria')) : null]),
+    g('fotos-galeria', 'Galeria de fotos', cam.provas, visivel('galeria') ? [item('Arquivos (pasta galeria/ do .zip "Imagens por lugar")', listaArquivos('galeria', 'galeria', d.galeria)), (d.galeria || []).length ? item('Tamanho', tamanho('galeria')) : null] : []),
+    // Lugares marcados para o cliente preencher: o que falta e onde fica na plataforma (o texto "[PREENCHER: …]" já está no campo).
+    g('preencher', 'O que falta o cliente preencher', cam.produtos, (d.pendencias || []).map((x) => item(`${x.produto} › ${x.titulo}`, `${marcaPreencher(x.oque)}\nOnde: ${x.noTema}`))),
   ];
   return grupos.filter((x) => x.itens.length);
 }
@@ -212,7 +235,14 @@ export function gerarPreviaLojaHTML(d) {
     ? `<span class="de">${esc(moeda(x.preco))}</span> <b>${esc(moeda(x.precoPromocional))}</b>` : x.preco || x.precoPromocional ? `<b>${esc(moeda(x.preco || x.precoPromocional))}</b>` : '<b>Sob consulta</b>');
   // Recorte pelo ponto focal da foto (só quando preenche o quadro; "Mostrar inteiras" não corta nada).
   const pos = (f) => (f?.foco && d.visual.ajusteFotos !== 'contain' ? ` style="object-position:${posicaoCss(f.foco)}"` : '');
-  const foto = (x, cls = '') => (x.fotos[0] ? `<img src="${esc(x.fotos[0])}" alt="${esc(x.nome)}"${cls ? ` class="${cls}"` : ''} width="800" height="800"${pos(x.arquivos?.[0])}>` : `<div class="semfoto ${cls}">sem foto</div>`);
+  // Lugar para o cliente preencher (lib/pendencias-site.js): tracejado amarelo claro, nunca com cara de conteúdo.
+  const pend = pendenciasPorProduto(d.pendencias || []);
+  const falta = (x, campo) => pend[x.id || '']?.[campo] || null;
+  const blocoPreencher = (p, extra = '') => (p ? `<div class="preencher${extra}" data-preencher="${esc(p.id)}"><b>Preencher:</b> ${esc(p.oque)}</div>` : '');
+  const foto = (x, cls = '') => (x.fotos[0] ? `<img src="${esc(x.fotos[0])}" alt="${esc(x.nome)}"${cls ? ` class="${cls}"` : ''} width="800" height="800"${pos(x.arquivos?.[0])}>`
+    : falta(x, 'fotos') ? `<div class="semfoto preencher-foto ${cls}" data-preencher="${esc(falta(x, 'fotos').id)}"><b>Foto a escolher</b><span>${esc(falta(x, 'fotos').sugestao)}</span></div>` : `<div class="semfoto ${cls}">sem foto</div>`);
+  // **negrito** do operador (destaques e Sobre): o resto do texto continua escapado.
+  const comNegrito = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   const marca = d.logoUrl ? `<img src="${esc(d.logoUrl)}" alt="${esc(d.nomeLoja)}" class="logo">` : `<span class="nome">${esc(d.nomeLoja)}</span>`;
   const cabecalho = `${d.recursos?.freteGratis ? `<div class="barra-frete" data-barra-frete>Frete grátis acima de ${esc(reais(d.recursos.freteGratis.valor))}</div>` : ''}<header><div class="wrap"><input type="checkbox" id="menu-loja" class="menu-toggle"><label for="menu-loja" class="hamb" title="Menu" aria-label="Abrir o menu"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></label><a href="#inicio" class="marca">${marca}</a><nav><a href="#inicio">Início</a><a href="#produtos">Produtos</a>${d.sobre ? '<a href="#sobre">Sobre</a>' : ''}${d.faq.length ? '<a href="#faq">Dúvidas</a>' : ''}</nav><span class="sacola" title="${esc(TEXTO_COMPRA_DESATIVADA)}"><span class="txt-sacola">Carrinho (0)</span><svg class="ic-sacola" viewBox="0 0 24 24" width="24" height="24" aria-label="Carrinho (0)"><path d="M6 8h12l-1 12H7L6 8zm3 0a3 3 0 0 1 6 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><b class="qtd-sacola" aria-hidden="true">0</b></span></div></header>`;
   const ident = linhasDadosLoja(d.dadosLoja);
@@ -224,7 +254,9 @@ export function gerarPreviaLojaHTML(d) {
   const trocaCurta = d.politicas.trocas ? 'Troca e devolução conforme a política da loja' : '';
   // Página do produto: com o plano pedindo, TODAS as fotos; sem, as 5 primeiras (como antes).
   const miniaturas = (x) => (R.paginaProduto ? x.fotos.slice(1) : x.fotos.slice(1, 5));
-  const secoesProduto = (x) => R.secoesProduto.map((k) => (textoSecaoProduto(x, k) ? `<details class="secao-prod" open data-secao-produto="${k}"><summary>${esc(SECOES_PRODUTO[k])}</summary><p>${esc(textoSecaoProduto(x, k)).replace(/\n/g, '<br>')}</p></details>` : '')).join('');
+  const CAMPO_S = { formula: 'formula', beneficios: 'beneficios', modo_uso: 'modoUso' };
+  const secoesProduto = (x) => R.secoesProduto.map((k) => (textoSecaoProduto(x, k) ? `<details class="secao-prod" open data-secao-produto="${k}"><summary>${esc(SECOES_PRODUTO[k])}</summary><p>${esc(textoSecaoProduto(x, k)).replace(/\n/g, '<br>')}</p></details>`
+    : falta(x, CAMPO_S[k]) ? `<div class="secao-prod" data-secao-produto="${k}"><p class="secao-t">${esc(SECOES_PRODUTO[k])}</p>${blocoPreencher(falta(x, CAMPO_S[k]))}</div>` : '')).join('');
   const compreJunto = (x, i) => {
     if (!R.compreJunto || d.produtos.length < 2) return '';
     const s = sugeridoPara(x.id || String(i), d.produtos.map((p, k) => ({ ...p, id: p.id || String(k) })), R); if (!s) return '';
@@ -234,36 +266,44 @@ export function gerarPreviaLojaHTML(d) {
   };
   const paginasProduto = d.produtos.map((x, i) => `<section id="produto-${i}" class="pagina"><div class="wrap"><a href="#produtos" class="voltar">&larr; Voltar aos produtos</a>
     <div class="pdp"><div class="galeria">${foto(x, 'principal')}${x.fotos.length > 1 ? `<div class="miniaturas">${miniaturas(x).map((u, k) => `<img src="${esc(u)}" alt="" width="64" height="64" loading="lazy"${pos(x.arquivos?.[k + 1])}>`).join('')}</div>` : ''}</div>
-    <div class="pdp-info"><h1>${esc(x.nome)}</h1><p class="preco">${preco(x)}</p>${contador}
-      ${x.variacoes.map((v) => `<div class="var"><span>${esc(v.nome)}</span><div>${v.valores.map((val) => `<span class="chip">${esc(val)}</span>`).join('')}</div></div>`).join('')}
+    <div class="pdp-info"><h1>${esc(x.nome)}</h1><p class="preco">${preco(x)}</p>${blocoPreencher(falta(x, 'preco'))}${contador}
+      ${x.variacoes.map((v) => `<div class="var"><span>${esc(v.nome)}</span><div>${v.valores.map((val) => `<span class="chip">${esc(val)}</span>`).join('')}</div></div>`).join('')}${blocoPreencher(falta(x, 'variacoes'))}
       <button type="button" class="comprar${R.botaoGrande ? ' grande' : ''}" disabled data-compra-desativada>${esc(TEXTO_COMPRA_DESATIVADA)}</button>${avisoFrete || trocaCurta ? `<p class="frete-pdp" data-frete-pdp>${[avisoFrete, trocaCurta].filter(Boolean).join(' · ')}</p>` : ''}${pags}
-      ${x.descricao ? `<div class="desc">${esc(x.descricao).replace(/\n/g, '<br>')}</div>` : ''}${secoesProduto(x)}${compreJunto(x, i)}</div></div></div>
+      ${x.descricao ? `<div class="desc">${esc(x.descricao).replace(/\n/g, '<br>')}</div>` : blocoPreencher(falta(x, 'descricao'))}${secoesProduto(x)}${compreJunto(x, i)}</div></div></div>
     <div class="barra-compra" data-barra-compra aria-hidden="true"><span class="bc-preco">${preco(x)}</span><span class="bc-botao">${esc(TEXTO_COMPRA_DESATIVADA)}</span></div></section>`).join('');
   const grade = d.produtos.length ? d.produtos.map((x, i) => `<a class="card" href="#produto-${i}">${foto(x)}<span class="nomep">${esc(x.nome)}</span><span class="preco">${preco(x)}</span>${R.botaoGrande ? '<span class="comprar grande card-btn">Comprar</span>' : ''}</a>`).join('') : '<p>Nenhum produto cadastrado.</p>';
   const V = d.visual;
   const med = d.medidas || medidasDe(d.plataforma, d.tema);
   const slides = V.slides || [];
-  const M = (id, html) => marcarElemento(html, id, { estado: { pacote: { textosPagina: { faq: d.faq } } } });
+  // Elementos tirados no ajuste (título, dica, textos dos depoimentos): marcarElemento devolve '' quando estão ocultos.
+  const M = (id, html) => marcarElemento(html, id, { layout: { elementos: d.visual.elementos || {} }, estado: { pacote: { textosPagina: { faq: d.faq } } } });
+  // Título da seção: o do operador (ou o padrão); a âncora fica fora dele, para o menu funcionar mesmo sem título.
+  const tit = (k, ancora) => `${ancora ? `<span id="${ancora}" class="ancora"></span>` : ''}${M(`${k}.titulo`, `<h2>${esc(tituloSecaoLoja(d.visual, k))}</h2>`)}`;
   const textoBanner = `${M('banner.titulo', `<h1>${esc(d.banner.titulo || d.nomeLoja)}</h1>`)}${d.banner.subtitulo ? M('banner.subtitulo', `<p>${esc(d.banner.subtitulo)}</p>`) : ''}${contador}${d.banner.cta ? M('banner.cta', `<a href="#produtos" class="cta">${esc(d.banner.cta)}</a>`) : ''}`;
   // Sem foto escolhida para o banner: a foto real do primeiro produto que tiver foto (nunca um fundo de gradiente).
   const iHero = d.produtos.findIndex((x) => x.fotos[0]);
   const lightbox = d.provas.map((p, i) => `<div id="print-${i}" class="lightbox"><a href="#clientes-reais" class="fechar" aria-label="Fechar">×</a><img src="${esc(p.url)}" alt="Print de cliente real"></div>`).join('');
-  const [dep1, ...depResto] = d.depoimentos.slice(0, 6);
+  // Depoimentos: texto só o digitado (com aspas); print/foto como imagem (sem repetir o que já está em "Clientes reais").
+  const depTexto = d.visual.elementos?.['depoimentos.textos']?.oculto ? [] : d.depoimentos.filter((x) => txt(x.texto)).slice(0, 6);
+  const naProva = new Set((d.visual.ocultas || []).includes('provas') ? [] : d.provas.map((p) => p.id));
+  const depImg = d.depoimentos.filter((x) => x.midiaUrl && x.midiaTipo !== 'video' && !(x.materialId && naProva.has(x.materialId))).slice(0, 8);
+  const [dep1, ...depResto] = depTexto;
   const secao = {
     // Banner com fotos: carrossel (uma foto = imagem fixa) no tamanho do banner da plataforma, recortado pelo ponto focal.
     banner: () => (slides.length ? `<div class="banner com-carrossel">${carrosselHtml({ slides, medida: med.banner, conteudo: textoBanner, id: 'bn', alt: d.nomeLoja })}</div>`
       : iHero >= 0 ? `<div class="banner com-foto" data-banner-produto><div class="wrap"><div class="hero-txt">${textoBanner}</div><a class="hero-img" href="#produto-${iHero}">${foto(d.produtos[iHero])}</a></div></div>`
       : `<div class="banner"><div class="wrap">${textoBanner}</div></div>`),
-    provas: () => (d.provas.length ? `<div class="sec"><div class="wrap"><h2 id="clientes-reais">Clientes reais</h2><div class="prints">${d.provas.map((p, i) => `<a href="#print-${i}" title="Toque para ampliar"><img src="${esc(p.url)}" alt="${p.foto ? 'Foto de cliente real' : 'Print de cliente real'}" loading="lazy" class="${p.foto ? 'foto-cliente' : 'print'}"${p.foto && p.foco ? ` style="object-position:${posicaoCss(p.foco)}"` : ''}></a>`).join('')}</div><p class="dica">Toque no print para ampliar.</p></div></div>` : ''),
-    destaques: () => ((d.destaques || []).length ? d.destaques.map((x) => `<div class="sec" data-destaques><div class="wrap"><h2>${esc(x.titulo)}</h2><ol class="destaques">${x.linhas.map((l) => `<li>${esc(l)}</li>`).join('')}</ol></div></div>`).join('') : ''),
-    produtos: () => `<div class="sec"><div class="wrap"><h2 id="produtos">Produtos</h2><div class="grade">${grade}</div></div></div>`,
+    provas: () => (d.provas.length ? `<div class="sec"><div class="wrap">${tit('provas', 'clientes-reais')}<div class="prints">${d.provas.map((p, i) => `<a href="#print-${i}" title="Toque para ampliar"><img src="${esc(p.url)}" alt="${p.foto ? 'Foto de cliente real' : 'Print de cliente real'}" loading="lazy" class="${p.foto ? 'foto-cliente' : 'print'}"${p.foto && p.foco ? ` style="object-position:${posicaoCss(p.foco)}"` : ''}></a>`).join('')}</div>${M('provas.dica', '<p class="dica">Toque no print para ampliar.</p>')}</div></div>` : ''),
+    destaques: () => ((d.destaques || []).length ? d.destaques.map((x, gi) => `<div class="sec" data-destaques>${gi ? '' : '<span id="destaques" class="ancora"></span>'}<div class="wrap">${M('destaques.titulo', `<h2>${esc(x.titulo)}</h2>`)}<ol class="destaques">${x.linhas.map((l) => `<li>${comNegrito(l)}</li>`).join('')}</ol></div></div>`).join('') : ''),
+    produtos: () => `<div class="sec"><div class="wrap">${tit('produtos', 'produtos')}<div class="grade">${grade}</div></div></div>`,
     confianca: () => `<div class="faixa"><div class="wrap confianca"><p><b>Compra segura</b> pagamento pela plataforma</p><p><b>Entrega</b> ${esc(d.politicas.envio ? d.politicas.envio.slice(0, 90) : 'frete calculado no carrinho')}</p><p><b>Trocas</b> ${esc(d.politicas.trocas ? d.politicas.trocas.slice(0, 90) : 'política de trocas da loja')}</p></div></div>`,
-    depoimentos: () => (dep1 ? `<div class="sec suave"><div class="wrap"><h2>Quem já comprou</h2><blockquote class="dep-destaque">“${esc(dep1.texto)}”<cite>${esc(dep1.nome || 'Cliente')}</cite></blockquote>${depResto.length ? `<div class="depos">${depResto.map((x) => `<blockquote>“${esc(x.texto)}”<cite>${esc(x.nome || 'Cliente')}</cite></blockquote>`).join('')}</div>` : ''}</div></div>` : ''),
-    galeria: () => ((d.galeria || []).length ? `<div class="sec"><div class="wrap"><h2 id="galeria">Galeria</h2><div class="galeria-fotos">${d.galeria.map((f) => `<img src="${esc(f.url)}" alt="" loading="lazy" style="object-position:${posicaoCss(f.foco)}">`).join('')}</div></div></div>` : ''),
-    sobre: () => (d.sobre ? `<div class="sec suave"><div class="wrap${(d.sobreImagens || [])[0] ? ' sobre-grid' : ''}">${(d.sobreImagens || [])[0] ? `<img class="sobre-img" src="${esc(d.sobreImagens[0].url)}" alt="" loading="lazy" style="object-position:${posicaoCss(d.sobreImagens[0].foco)}">` : ''}<div><h2 id="sobre">Sobre a marca</h2>${M('sobre.texto', `<p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p>`)}</div></div></div>` : ''),
-    faq: () => (d.faq.length ? `<div class="sec"><div class="wrap estreito"><h2 id="faq">Perguntas frequentes</h2>${d.faq.map((f) => M(idFaq(f.p), `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`)).join('')}</div></div>` : ''),
+    depoimentos: () => (dep1 || depImg.length ? `<div class="sec suave"><div class="wrap">${tit('depoimentos', 'depoimentos')}${dep1 ? M('depoimentos.textos', `<div data-depoimentos-textos><blockquote class="dep-destaque">“${esc(dep1.texto)}”<cite>${esc(dep1.nome || 'Cliente')}</cite></blockquote>${depResto.length ? `<div class="depos">${depResto.map((x) => `<blockquote>“${esc(x.texto)}”<cite>${esc(x.nome || 'Cliente')}</cite></blockquote>`).join('')}</div>` : ''}</div>`) : ''}${depImg.length ? `<div class="prints dep-imgs" data-depoimentos-imagens>${depImg.map((x) => `<img src="${esc(x.midiaUrl)}" alt="${x.origem === 'prova_social' ? 'Print de avaliação real de cliente' : 'Imagem de cliente real'}" loading="lazy" class="print">`).join('')}</div>` : ''}</div></div>` : ''),
+    galeria: () => ((d.galeria || []).length ? `<div class="sec"><div class="wrap">${tit('galeria', 'galeria')}<div class="galeria-fotos">${d.galeria.map((f) => `<img src="${esc(f.url)}" alt="" loading="lazy" style="object-position:${posicaoCss(f.foco)}">`).join('')}</div></div></div>` : ''),
+    sobre: () => (d.sobre ? `<div class="sec suave"><div class="wrap${(d.sobreImagens || [])[0] ? ' sobre-grid' : ''}">${(d.sobreImagens || [])[0] ? `<img class="sobre-img" src="${esc(d.sobreImagens[0].url)}" alt="" loading="lazy" style="object-position:${posicaoCss(d.sobreImagens[0].foco)}">` : ''}<div>${tit('sobre', 'sobre')}${M('sobre.texto', `<p class="sobre">${comNegrito(d.sobre).replace(/\n/g, '<br>')}</p>`)}</div></div></div>` : ''),
+    faq: () => (d.faq.length ? `<div class="sec"><div class="wrap estreito">${tit('faq', 'faq')}${d.faq.map((f) => M(idFaq(f.p), `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`)).join('')}</div></div>` : ''),
   };
-  const home = `<section id="inicio" class="home">${comDestaques(V.ordem.filter((k) => !V.ocultas.includes(k)), 'banner').map((k) => M(k, secao[k]())).join('')}</section>`;
+  // A ordem é a da prévia (uma fonte só); "Destaques" é uma seção como as outras: muda de lugar e sai.
+  const home = `<section id="inicio" class="home">${V.ordem.filter((k) => !V.ocultas.includes(k)).map((k) => M(k, (secao[k] || (() => ''))())).join('')}</section>`;
   // Página de produto: aparece pelo :target; a home some enquanto um produto está aberto.
   const pr = (m, cel = false) => { const x = cel ? m.mobile || m.desktop : m.desktop; return `${x.l}/${x.a}`; };
   const prodR = pr(med.produto || { desktop: { l: 1, a: 1 } });
@@ -289,7 +329,10 @@ nav{display:flex;gap:22px;flex:1;flex-wrap:wrap}nav a{text-decoration:none;font-
 .secao-prod{margin-top:12px;border-top:1px solid ${C.borda};padding:12px 0}.secao-prod p{margin:8px 0 0;line-height:1.6;font-size:15px}
 .junto{margin-top:20px;border:1px solid ${C.borda};border-radius:var(--raio);padding:14px}.junto-t{margin:0 0 8px;font-weight:700}.junto-item{display:flex;gap:12px;align-items:center;text-decoration:none}.junto-item img{width:72px;height:72px;object-fit:cover;border-radius:var(--raio)}
 ${d.recursos?.colunasProdutos ? `.grade{grid-template-columns:repeat(${d.recursos.colunasProdutos},1fr)}@media(max-width:640px){.grade{grid-template-columns:repeat(${Math.min(2, d.recursos.colunasProdutos)},1fr)}}` : ''}.card img,.card .semfoto{width:100%;height:auto;aspect-ratio:${prodR};object-fit:${ajuste};border-radius:var(--raio);background:${C.suave}}
-.semfoto{display:flex;align-items:center;justify-content:center;color:${C.apagado};font-size:13px}.nomep{font-size:15px;margin-top:4px}.preco b{color:${C.texto}}.de{text-decoration:line-through;color:${C.apagado};font-size:14px}
+.semfoto{display:flex;align-items:center;justify-content:center;color:${C.apagado};font-size:13px}
+.preencher{margin:10px 0;padding:10px 12px;border:2px dashed #ca8a04;border-radius:var(--raio);background:#fefce8;color:#713f12;font-size:14px;line-height:1.45}.preencher b{color:#713f12}
+.preencher-foto{flex-direction:column;gap:4px;text-align:center;padding:12px;border:2px dashed #ca8a04;background:#fefce8;color:#713f12}.preencher-foto span{font-size:12px}
+.ancora{display:block;position:relative;top:-70px;visibility:hidden}.secao-t{margin:0 0 4px;font-weight:600}.dep-imgs{margin-top:16px}.nomep{font-size:15px;margin-top:4px}.preco b{color:${C.texto}}.de{text-decoration:line-through;color:${C.apagado};font-size:14px}
 .faixa{border-top:1px solid ${C.borda};border-bottom:1px solid ${C.borda}}.confianca{display:flex;flex-wrap:wrap;gap:8px 40px;padding-top:18px;padding-bottom:18px}.confianca p{margin:0;font-size:14px;color:${C.apagado}}.confianca b{color:${C.texto};margin-right:6px}
 .dep-destaque{margin:0 0 28px;font-size:clamp(22px,5.5vw,var(--h3));line-height:1.35;max-width:30ch;border:0;padding:0}.dep-destaque cite{font-family:var(--f-texto);font-size:14px}
 .depos{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--gap)}blockquote{margin:0;border-top:2px solid ${cor};padding:14px 0 0;font-size:15px}cite{display:block;margin-top:8px;color:${C.apagado};font-style:normal;font-size:13px}

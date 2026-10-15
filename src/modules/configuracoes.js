@@ -6,6 +6,7 @@ import { CONFIG_PADRAO, TAREFAS_IA } from '../lib/constantes.js';
 import { cabecalho, lerForm, num, toast, on, ocupado, esc } from '../core/ui.js';
 import { htmlFerramentas } from '../lib/ferramentas-ia.js';
 import { usoArmazenamento, situacaoCota, formatarBytes, COTA_STORAGE } from '../lib/pecas.js';
+import { auditarInventados, auditarCriativos } from '../lib/textos-visiveis.js';
 
 const ID = 'global';
 let cache = null;
@@ -86,9 +87,23 @@ export async function view(el) {
     ${htmlFerramentas()}</section>
   <section class="card mt-6 max-w-3xl" id="documentos-referencia" data-documentos-referencia><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando os documentos…</p></section>
   <section class="card mt-6 max-w-5xl" id="custos-ia" data-custos-ia><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando os custos de IA…</p></section>
-  <section class="card mt-6 max-w-3xl" id="armazenamento" data-armazenamento><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando o uso do armazenamento…</p></section>`;
+  <section class="card mt-6 max-w-3xl" id="armazenamento" data-armazenamento><p class="caption"><i class="fa-solid fa-spinner fa-spin"></i> Carregando o uso do armazenamento…</p></section>
+  <section class="card mt-6 max-w-5xl" id="auditoria-inventados" data-auditoria-inventados><h3 class="font-semibold"><i class="fa-solid fa-user-slash mr-1 text-slate-400" aria-hidden="true"></i>Auditoria: textos que não são palavras de cliente</h3>
+    <p class="caption">Procura em todos os clientes (site atual, versões guardadas e links de aprovação ativos) depoimento ou citação que veio de descrição de print, OCR, número do perfil do Instagram ou copy de criativo; e, nos criativos, texto que veio da leitura de um print. Só lê: nada é mudado aqui. Para limpar um cliente, use "Remover textos inventados" no passo 4 do "Montar site" dele.</p>
+    <button type="button" class="btn-ghost mt-2 min-h-[44px]" data-rodar-auditoria><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Fazer a auditoria agora</button><div class="mt-2" data-resultado-auditoria aria-live="polite"></div></section>`;
   montarArmazenamento(el.querySelector('[data-armazenamento]')).catch((e) => { console.error(e); el.querySelector('[data-armazenamento]').innerHTML = '<p class="text-rose-700" role="alert">Não consegui ler o uso do armazenamento (veja o console).</p>'; });
   montarCustos(el.querySelector("[data-custos-ia]"));
+  on(el, 'click', '[data-rodar-auditoria]', (b) => ocupado(b, async () => {
+    const alvo = el.querySelector('[data-resultado-auditoria]');
+    const [clientes, sites, materiais, aprovacoes, criativos] = await Promise.all([db.listar(COL.clientes), db.listar(COL.sites), db.listar(COL.materiais), db.listar(COL.aprovacoes).catch(() => []), db.listar(COL.criativos)]);
+    const doCliente = (lista, id) => lista.filter((x) => x.clienteId === id);
+    const site = clientes.flatMap((c) => auditarInventados({ cliente: c, site: doCliente(sites, c.id)[0] || null, materiais: doCliente(materiais, c.id), aprovacoes: doCliente(aprovacoes, c.id) }));
+    const cria = clientes.flatMap((c) => auditarCriativos({ cliente: c, criativos: doCliente(criativos, c.id), materiais: doCliente(materiais, c.id) }));
+    alvo.innerHTML = `<p class="text-sm font-semibold" data-total-auditoria>Site: ${site.length} texto(s) · Criativos: ${cria.length} texto(s)</p>
+      ${site.length ? `<div class="mt-1 overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-1">Cliente</th><th class="p-1">Versão</th><th class="p-1">Seção</th><th class="p-1">Texto</th><th class="p-1">Origem</th></tr></thead><tbody>${site.map((x) => `<tr class="border-t border-slate-200"><td class="p-1">${esc(x.cliente)}</td><td class="p-1">${esc(x.versao)}</td><td class="p-1">${esc(x.secao)}</td><td class="p-1">${esc(x.texto)}</td><td class="p-1">${esc(x.origem)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">Nenhum texto inventado nos sites.</p>'}
+      ${cria.length ? `<p class="mt-2 text-sm font-medium">Criativos</p><ul class="text-xs">${cria.map((x) => `<li>${esc(x.cliente)} · ${esc(x.criativo)} (${esc(x.campo)}): "${esc(x.texto)}"</li>`).join('')}</ul>` : '<p class="hint">Nenhum criativo com texto vindo de print.</p>'}`;
+    alvo.scrollIntoView({ block: 'nearest' });
+  }));
   montarDocumentos(el.querySelector('[data-documentos-referencia]')).catch((e) => { console.error(e); el.querySelector('[data-documentos-referencia]').innerHTML = '<p class="text-rose-700">Não consegui carregar os documentos de referência.</p>'; });
   on(el, 'submit', '#f', async (f, ev) => {
     ev.preventDefault();

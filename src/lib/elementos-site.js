@@ -37,6 +37,18 @@ export const ELEMENTOS = {
   'rodape.trocas': { nome: 'política de trocas e arrependimento', politica: 'trocas' }, 'rodape.envio': { nome: 'política de envio', politica: 'envio' },
   'rodape.privacidade': { nome: 'política de privacidade', politica: 'privacidade' }, 'rodape.pagamentos': { nome: 'formas de pagamento' }, 'rodape.copy': { nome: 'direitos e preferências de cookies' },
 };
+/**
+ * Pacote (prévia da loja): elementos que saem sem sair a seção ("tira o texto e deixa as imagens"). Na loja de verdade,
+ * o "O que colocar na plataforma" diz para deixar o título em branco ou não colocar o bloco de texto.
+ */
+export const ELEMENTOS_LOJA = {
+  'provas.titulo': 'título da seção', 'produtos.titulo': 'título da seção', 'depoimentos.titulo': 'título da seção', 'sobre.titulo': 'título da seção',
+  'galeria.titulo': 'título da seção', 'faq.titulo': 'título da seção', 'destaques.titulo': 'título da seção',
+  'banner.subtitulo': 'subtítulo', 'banner.cta': 'botão', 'provas.dica': 'dica "Toque no print para ampliar"', 'depoimentos.textos': 'textos dos depoimentos',
+};
+export const ELEMENTOS_OCULTAVEIS_LOJA = Object.keys(ELEMENTOS_LOJA);
+// Mesmo texto de lib/visual-site.js TITULOS_LOJA (lá é a fonte; aqui só para mostrar o texto atual no "Mudar o texto").
+const TITULO_PADRAO_LOJA = { provas: 'Clientes reais', produtos: 'Produtos', depoimentos: 'Quem já comprou', sobre: 'Sobre a marca', galeria: 'Galeria', faq: 'Perguntas frequentes' };
 /** Elementos que mudam de ordem dentro da seção, na ordem padrão (o grupo é o começo do id). */
 export const ORDENAVEIS = {
   hero: ['titulo', 'subtitulo', 'contador', 'botao'],
@@ -61,6 +73,7 @@ export function nomeElemento(id, { layout = {}, estado = {} } = {}) {
   const secao = NOME_SECAO[s] || s;
   if (p.length === 1) return `Seção ${secao}`;
   if (ELEMENTOS[id]) return `${secao} › ${ELEMENTOS[id].nome}`;
+  if (ELEMENTOS_LOJA[id]) return `${secao} › ${ELEMENTOS_LOJA[id]}`;
   if (s === 'faq' && p[1] === 'item') { const f = (estado.conteudo?.faq || estado.pacote?.textosPagina?.faq || []).find((x) => idFaq(x.p) === id); return `${secao} › pergunta${f ? ` "${f.p.slice(0, 40)}"` : ''}`; }
   if (s === 'galeria' && p[1] === 'foto') return `${secao} › foto ${p[2]}`;
   if (s === 'depoimentos' && p[1] === 'item') return `${secao} › depoimento ${Number(p[2]) + 1}`;
@@ -72,7 +85,7 @@ export function nomeElemento(id, { layout = {}, estado = {} } = {}) {
 export function elementoValido(id) {
   const p = partes(id);
   if (p.length === 1) return Boolean(NOME_SECAO[p[0]]);
-  return Boolean(ELEMENTOS[id]) || ['banner.titulo', 'banner.subtitulo', 'banner.cta', 'sobre.texto'].includes(id) || (p[0] === 'faq' && p[1] === 'item' && p[2]) || (p[0] === 'galeria' && p[1] === 'foto' && /^F\d+$/i.test(p[2] || ''))
+  return Boolean(ELEMENTOS[id]) || Boolean(ELEMENTOS_LOJA[id]) || ['banner.titulo', 'banner.subtitulo', 'banner.cta', 'sobre.texto'].includes(id) || (p[0] === 'faq' && p[1] === 'item' && p[2]) || (p[0] === 'galeria' && p[1] === 'foto' && /^F\d+$/i.test(p[2] || ''))
     || (p[0] === 'depoimentos' && p[1] === 'item' && /^\d+$/.test(p[2] || '')) || (p[0] === 'extra' && Boolean(p[1]));
 }
 
@@ -148,7 +161,10 @@ export function textoAtual(id, { estado = {}, dadosLoja = {}, modo = 'custom' } 
   if (modo === 'pacote') {
     const P = estado.pacote || {};
     if (CAMPOS_PACOTE[id]) { const c = CAMPOS_PACOTE[id]; return c === 'sobre' ? P.textosPagina?.sobre || '' : P.banners?.[0]?.[c.split('.')[2]] || ''; }
-    const f = (P.textosPagina?.faq || []).find((x) => idFaq(x.p) === id); return f ? { p: f.p, r: f.r } : '';
+    if (id === 'destaques.titulo') return P.destaques?.[0]?.titulo || '';
+    const mt = /^(\w+)\.titulo$/.exec(id);
+    if (mt && TITULO_PADRAO_LOJA[mt[1]]) return txt(P.visual?.titulos?.[mt[1]]) || TITULO_PADRAO_LOJA[mt[1]];
+    const f = (P.textosPagina?.faq || []).find((x) => idFaq(x.p) === id); return f ? { p: f.p, r: f.r } : null;
   }
   const c = estado.conteudo || {}, e = ELEMENTOS[id];
   if (e?.campo) return /^titulo\./.test(e.campo) ? estado.layout?.titulos?.[e.campo.slice(7)] || '' : c[e.campo] || '';
@@ -177,6 +193,8 @@ export function operacoesDaAcao(acao, id, valor = null, ctx = {}) {
     case 'tirar': {
       if (ehLegal(id)) return { recusa: `${nome} ${MOTIVO_LEGAL}` };
       if (ehSecao(id)) return { ops: [{ op: 'ocultar', bloco: id }] };
+      if (pac && ELEMENTOS_LOJA[id]) return { ops: [{ op: 'elemento', id, acao: 'ocultar' }] };
+      if (pac && p[0] === 'faq' && p[1] === 'item') { const i = (estado.pacote?.textosPagina?.faq || []).findIndex((f) => idFaq(f.p) === id); return i < 0 ? { recusa: 'Essa pergunta não existe mais.' } : { ops: [{ op: 'faq', acao: 'remover', indice: i }] }; }
       if (pac) return doTema('Tirar este elemento');
       if (p[0] === 'faq' && p[1] === 'item') { const i = (estado.conteudo?.faq || []).findIndex((f) => idFaq(f.p) === id); return i < 0 ? { recusa: 'Essa pergunta não existe mais.' } : { ops: [{ op: 'faq', acao: 'remover', indice: i }] }; }
       if (p[0] === 'galeria' && p[1] === 'foto') return { ops: [{ op: 'foto', codigo: p[2], uso: 'galeria', acao: 'tirar' }] };
@@ -216,6 +234,7 @@ export function operacoesDaAcao(acao, id, valor = null, ctx = {}) {
       if (valor == null || (typeof valor === 'string' && !txt(valor))) return { recusa: ehLegal(id) ? `${nome}: o texto não pode ficar vazio (${MOTIVO_LEGAL})` : 'Escreva o texto novo.' };
       if (pac) {
         if (CAMPOS_PACOTE[id]) return { ops: [{ op: 'texto', campo: CAMPOS_PACOTE[id], valor: txt(valor) }] };
+        if (/^\w+\.titulo$/.test(id) && (TITULO_PADRAO_LOJA[p[0]] || p[0] === 'destaques')) return { ops: [{ op: 'texto', campo: `titulo.${p[0]}`, valor: txt(valor) }] };
         const i = (estado.pacote?.textosPagina?.faq || []).findIndex((f) => idFaq(f.p) === id);
         return i < 0 ? { recusa: 'Esse texto não muda por aqui no pacote.' } : { ops: [{ op: 'faq', acao: 'editar', indice: i, p: txt(valor.p), r: txt(valor.r) }] };
       }
@@ -260,8 +279,9 @@ export function operacoesDaAcao(acao, id, valor = null, ctx = {}) {
 /** Elementos de uma seção (para a IA saber os ids no ajuste por seção e no mapeamento do print). */
 export function elementosDaSecao(secao, estado = {}, { modo = 'custom', materiais = [] } = {}) {
   if (modo === 'pacote') {
-    const base = { banner: ['banner.titulo', 'banner.subtitulo', 'banner.cta'], sobre: ['sobre.texto'], faq: (estado.pacote?.textosPagina?.faq || []).map((f) => idFaq(f.p)) }[secao] || [];
-    return [secao, ...base];
+    const base = { banner: ['banner.titulo', 'banner.subtitulo', 'banner.cta'], sobre: ['sobre.texto'], faq: (estado.pacote?.textosPagina?.faq || []).map((f) => idFaq(f.p)), provas: ['provas.dica'], depoimentos: ['depoimentos.textos'] }[secao] || [];
+    const titulo = TITULO_PADRAO_LOJA[secao] || secao === 'destaques' ? [`${secao}.titulo`] : [];
+    return [secao, ...titulo, ...base];
   }
   const fixos = Object.keys(ELEMENTOS).filter((id) => partes(id)[0] === secao);
   const din = secao === 'faq' ? (estado.conteudo?.faq || []).map((f) => idFaq(f.p)) : secao === 'galeria' ? materiais.filter((m) => m.usos?.galeria && m.codigo).map((m) => `galeria.foto.${m.codigo}`) : [];

@@ -186,7 +186,7 @@ describe('conferência por código', () => {
     expect(de('botao_grande').status).toBe('nao');
     expect(de('banner_fotos').status).toBe('nao');
   });
-  it('tudo aplicado: banner na ordem, frete certo, seções com dados; falta de fórmula = Parcial', () => {
+  it('tudo aplicado: banner na ordem, frete certo, seções com dados; falta de fórmula = Para o cliente preencher', () => {
     const mats = comUso(['F36', 'F40', 'F15'], 'banner').map((m) => (['F23', 'F26', 'F25', 'F29'].includes(m.codigo) ? { ...m, usos: { clientes: 'texto', ordem: { clientes: ['F23', 'F26', 'F25', 'F29'].indexOf(m.codigo) + 1 } } } : m));
     const a = aplicacaoDoPlano(itens, { modo: 'pacote', materiais: mats, produtos: PRODUTOS });
     const site = { pacote: { recursos: a.recursos, descricoesProdutos: PRODUTOS.map((p) => ({ produtoId: p.id, nome: p.nome, descricao: 'y'.repeat(200) })) } };
@@ -198,10 +198,10 @@ describe('conferência por código', () => {
     expect(de('pagamentos').status).toBe('atendido');
     expect(de('colunas_produtos').status).toBe('atendido');
     expect(de('compre_junto').status).toBe('atendido');
-    expect(de('secoes_produto').status).toBe('parcial'); // Thermora Gel sem fórmula
+    expect(de('secoes_produto').status).toBe('preencher'); // Thermora Gel sem fórmula: dado do cliente, o site mostra "Preencher"
     expect(de('secoes_produto').motivo).toMatch(/Thermora Gel/);
     expect(paraIa.every((id) => ['texto', 'outro'].includes(itens.find((x) => x.id === id).tipo))).toBe(true);
-    expect(itensFaltando(itens, resultados).map((x) => x.tipo)).toContain('secoes_produto');
+    expect(itensFaltando(itens, resultados).map((x) => x.tipo)).not.toContain('secoes_produto'); // dado do cliente não vai para "Corrigir o que faltou" (a IA não inventa)
     expect(contagemConferencia(resultados).total).toBe(Object.keys(resultados).length);
   });
   it('banner com as fotos em outra ordem = Parcial', () => {

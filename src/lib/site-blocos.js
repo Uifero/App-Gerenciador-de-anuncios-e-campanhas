@@ -1,7 +1,8 @@
-import { normalizarVisual, ORDEM_LOJA, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js';
+import { normalizarVisual, ORDEM_LOJA, nomeSecaoLoja, AJUSTES_FOTO, TITULOS_LOJA, ELEMENTOS_OCULTAVEIS_LOJA, tituloSecaoLoja } from './visual-site.js';
 import { mudarUso, comUsos, imagemDoLugar, nomeUso, USOS_FOTO } from './fotos-site.js';
 import { elementoValido, ehLegal, ehSecao, nomeElemento, limitar, ORDENAVEIS, MOTIVO_LEGAL, ESPACOS, TIPOS_EXTRA, secaoDoElemento } from './elementos-site.js';
 import { CAMPOS_DADOS_LOJA, tipoDocumento } from './legal-loja.js';
+import { chaveDepoimento } from './prova-social.js';
 // "Ajustar este site": modelo de blocos do site personalizado + validador de operações + versões.
 // A IA (ou os controles manuais) NUNCA escreve HTML: ela devolve operações ({ op, ... }) sobre este modelo. O app confere
 // cada operação aqui, aplica numa CÓPIA do estado (rascunho) e só grava no site quando a pessoa aceita.
@@ -209,7 +210,7 @@ function aplicarCustom(e, op, ctx) {
       const d = deps[Number(op.indice)];
       if (!d) return { motivo: 'esse depoimento não existe' };
       if (op.acao === 'editar') return { motivo: 'depoimento é a fala de um cliente real: não reescrevemos. Dá para escolher quais aparecem (ocultar/mostrar) ou trocar o texto no formulário "Conteúdo da loja"' };
-      const chave = d.texto;
+      const chave = chaveDepoimento(d);
       if (op.acao === 'ocultar') {
         if (L.depoimentosOcultos.includes(chave)) return { motivo: 'esse depoimento já está oculto' };
         L.depoimentosOcultos = [...L.depoimentosOcultos, chave];
@@ -264,6 +265,12 @@ function aplicarCustom(e, op, ctx) {
     }
     case 'elemento': return aplicarElemento(e, op);
     case 'extra': return aplicarExtra(e, op, ctx);
+    case 'destaque': {
+      const r = aplicarDestaque(e.conteudo.destaques, op);
+      if (!r.lista) return r;
+      e.conteudo.destaques = r.lista;
+      return { mudanca: `${r.mudanca}${op.acao === 'criar' && (op.antesDe || op.depoisDe) ? ' (neste site, os destaques ficam logo depois do banner)' : ''}` };
+    }
     default: return { motivo: `a operação "${op.op}" não existe neste site` };
   }
 }
@@ -340,6 +347,66 @@ function aplicarExtra(e, op, ctx) {
   return { motivo: 'ação de acréscimo desconhecida' };
 }
 
+// ---------- "Destaques": os textos do operador (ex.: "5 motivos"), nos dois modos ----------
+const MAX_LINHAS_DESTAQUE = 10, MAX_LETRAS_DESTAQUE = 220;
+/** Seção nova com texto, edição do título, das linhas e saída de linha/seção. Devolve { lista, mudanca } | { motivo }. */
+function aplicarDestaque(lista0 = [], op = {}) {
+  const lista = clone(lista0 || []).filter((g) => g && Array.isArray(g.linhas));
+  const linhaOk = (t) => t && t.length <= MAX_LETRAS_DESTAQUE;
+  const i = Number.isInteger(Number(op.grupo)) ? Number(op.grupo) : 0;
+  if (op.acao === 'criar') {
+    const titulo = txt(op.titulo), linhas = (Array.isArray(op.linhas) ? op.linhas : []).map(txt).filter(Boolean);
+    if (!titulo || titulo.length > 80) return { motivo: 'a seção nova precisa de um título de 1 a 80 caracteres' };
+    if (!linhas.length || linhas.length > MAX_LINHAS_DESTAQUE || !linhas.every(linhaOk)) return { motivo: `a seção nova precisa de 1 a ${MAX_LINHAS_DESTAQUE} textos, cada um com até ${MAX_LETRAS_DESTAQUE} caracteres` };
+    lista.push({ itemId: `ajuste-${Date.now().toString(36)}`, titulo, linhas: linhas.map((t) => ({ texto: t, versao: 'original' })) });
+    return { lista, mudanca: `Seção nova "${corta(titulo)}" com ${linhas.length} texto(s): ${linhas.map((t) => `"${corta(t, 40)}"`).join(', ')}` };
+  }
+  const g = lista[i];
+  if (!g) return { motivo: lista.length ? 'esse grupo de destaques não existe' : 'ainda não há seção de destaques: peça para criar (título + textos)' };
+  if (op.acao === 'titulo') {
+    const t = txt(op.texto ?? op.titulo); if (!t || t.length > 80) return { motivo: 'o título precisa ter de 1 a 80 caracteres' };
+    if (txt(g.titulo) === t) return { motivo: 'o título já é esse' };
+    const antes = g.titulo; g.titulo = t; return { lista, mudanca: `Destaques, título: "${corta(antes)}" → "${corta(t)}"` };
+  }
+  if (op.acao === 'linha' || op.acao === 'editarLinha') {
+    const k = Number(op.indice), l = g.linhas[k], t = txt(op.texto);
+    if (!Number.isInteger(k) || !l) return { motivo: 'esse texto dos destaques não existe' };
+    if (!linhaOk(t)) return { motivo: `o texto precisa ter de 1 a ${MAX_LETRAS_DESTAQUE} caracteres` };
+    if (txt(l.texto) === t) return { motivo: 'o texto já é esse' };
+    const antes = l.texto; g.linhas[k] = { ...l, texto: t, versao: 'original', alegacao: [], confirmado: null };
+    return { lista, mudanca: `Destaques, texto ${k + 1}: "${corta(antes)}" → "${corta(t)}"` };
+  }
+  if (op.acao === 'adicionarLinha') {
+    const t = txt(op.texto); if (!linhaOk(t)) return { motivo: `o texto precisa ter de 1 a ${MAX_LETRAS_DESTAQUE} caracteres` };
+    if (g.linhas.length >= MAX_LINHAS_DESTAQUE) return { motivo: `o limite é de ${MAX_LINHAS_DESTAQUE} textos por seção` };
+    const dep = Number.isInteger(Number(op.depoisDe)) && g.linhas[Number(op.depoisDe)] ? Number(op.depoisDe) + 1 : g.linhas.length;
+    g.linhas.splice(dep, 0, { texto: t, versao: 'original' });
+    return { lista, mudanca: `Destaques: entra o texto "${corta(t)}"` };
+  }
+  if (op.acao === 'removerLinha') {
+    const k = Number(op.indice); if (!Number.isInteger(k) || !g.linhas[k]) return { motivo: 'esse texto dos destaques não existe' };
+    if (g.linhas.length <= 1) return { motivo: 'é o último texto da seção: para tirar tudo, tire a seção' };
+    const [x] = g.linhas.splice(k, 1); return { lista, mudanca: `Destaques: sai o texto "${corta(x.texto)}"` };
+  }
+  if (op.acao === 'moverLinha') {
+    const k = Number(op.indice), j = k + (op.direcao === 'subir' ? -1 : 1);
+    if (!g.linhas[k] || !g.linhas[j]) return { motivo: 'o texto já está na ponta' };
+    [g.linhas[k], g.linhas[j]] = [g.linhas[j], g.linhas[k]]; return { lista, mudanca: `Destaques: "${corta(g.linhas[j].texto)}" ${op.direcao === 'subir' ? 'sobe' : 'desce'} uma posição` };
+  }
+  if (op.acao === 'remover') { lista.splice(i, 1); return { lista, mudanca: `Sai a seção de destaques "${corta(g.titulo)}"` }; }
+  return { motivo: 'ação de destaques desconhecida' };
+}
+
+// Nome da seção escrito pela IA ou pelo briefing ("Depoimentos", "Quem já comprou", "5 motivos") -> seção da prévia.
+const SINONIMOS_LOJA = [
+  ['banner', /^(banner|topo|hero|capa)/], ['destaques', /destaque|motivo|beneficio|vantage|por que/], ['provas', /clientes reais|prints?\b|provas?\b/],
+  ['depoimentos', /depoiment|quem ja (comprou|usa)|avalia|prova social|ja comprou/], ['produtos', /produto|vitrine|vendido|catalogo/],
+  ['confianca', /compra segura|confian|selo|garantia/], ['sobre', /sobre|historia|quem somos|marca/], ['galeria', /galeria|fotos/], ['faq', /faq|pergunta|duvida/],
+];
+const semAc = (s) => txt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+export const secaoLojaDoNome = (nome) => { const n = semAc(nome); if (ORDEM_LOJA.includes(n)) return n; return (SINONIMOS_LOJA.find(([, re]) => re.test(n)) || [])[0] || null; };
+export const MOTIVO_CONFIANCA = '"Compra segura" é uma faixa fixa (exigência legal): mostra o pagamento pela plataforma e um resumo das suas políticas de envio e trocas. O texto dela muda nas políticas ("Conteúdo da loja" > Mais opções). Para uma lista sua (ex.: "5 motivos"), use a seção Destaques';
+
 /**
  * Uma operação no pacote: conteúdo (textos, cores sugeridas, ordem sugerida das seções para o tema, textos do CSV) e as
  * escolhas da prévia (imagem do banner, fotos inteiras/preenchendo, ordem e visibilidade das seções do molde), que o
@@ -351,8 +418,37 @@ function aplicarPacote(e, op, ctx = {}) {
   const secoes = P.briefingTema.secoesHome || [];
   const V = normalizarVisual(P.visual);
   const salvarV = () => { P.visual = V; };
-  const blocoLoja = ORDEM_LOJA.includes(op.bloco) ? op.bloco : null;
+  // Uma fonte só para as seções: a da prévia (visual). Nome do briefing ("Depoimentos", "5 motivos") vira a seção da prévia.
+  const blocoLoja = ORDEM_LOJA.includes(op.bloco) ? op.bloco : ['mover', 'ocultar', 'mostrar'].includes(op.op) ? secaoLojaDoNome(op.secao || op.bloco) : null;
+  if (['mover', 'ocultar', 'mostrar'].includes(op.op) && !blocoLoja) return { motivo: `não existe a seção "${op.secao || op.bloco || '?'}" na loja; as seções são: ${ORDEM_LOJA.map(nomeSecaoLoja).join(', ')}` };
+  if (op.op === 'mover' && (op.antesDe || op.depoisDe) && !ORDEM_LOJA.includes(op.antesDe || op.depoisDe)) {
+    const ref = secaoLojaDoNome(op.antesDe || op.depoisDe);
+    if (ref) op = { ...op, ...(op.antesDe ? { antesDe: ref } : { depoisDe: ref }) };
+  }
   switch (op.op) {
+    case 'destaque': {
+      const r = aplicarDestaque(P.destaques, op);
+      if (!r.lista) return r;
+      P.destaques = r.lista;
+      // Seção nova com "antesDe"/"depoisDe": a seção Destaques vai para esse lugar (e aparece, se estava oculta).
+      if (op.acao === 'criar') {
+        const ref = secaoLojaDoNome(op.antesDe || op.depoisDe || '');
+        if (ref && ref !== 'destaques') { const nova = V.ordem.filter((x) => x !== 'destaques'); nova.splice(nova.indexOf(ref) + (op.depoisDe ? 1 : 0), 0, 'destaques'); V.ordem = nova; }
+        V.ocultas = V.ocultas.filter((x) => x !== 'destaques'); salvarV();
+        return { mudanca: `${r.mudanca}${ref ? `, ${op.depoisDe ? 'depois de' : 'antes de'} "${nomeSecaoLoja(ref)}"` : ''}` };
+      }
+      return { mudanca: r.mudanca };
+    }
+    case 'elemento': {
+      const id = String(op.id || '');
+      if (!ELEMENTOS_OCULTAVEIS_LOJA.includes(id)) return { motivo: ehSecao(id) ? 'para tirar a seção inteira, use ocultar a seção' : `no pacote, "${id}" muda no editor do tema (anote em "Ajustar no tema", passo 6)` };
+      if (op.acao !== 'ocultar' && op.acao !== 'mostrar') return { motivo: 'no pacote, espaço, tamanho e ordem dentro da seção são do tema: anote em "Ajustar no tema" (passo 6)' };
+      const oculto = Boolean(V.elementos?.[id]?.oculto);
+      if (oculto === (op.acao === 'ocultar')) return { motivo: `${nomeElemento(id)} já está ${oculto ? 'fora da loja' : 'na loja'}` };
+      const el = { ...(V.elementos || {}) }; if (op.acao === 'ocultar') el[id] = { oculto: true }; else delete el[id];
+      V.elementos = el; salvarV();
+      return { mudanca: `${nomeElemento(id)}: ${op.acao === 'ocultar' ? 'sai da loja (a seção continua)' : 'volta para a loja'}` };
+    }
     case 'variacao': return { motivo: 'altura do banner e número de colunas dependem do tema escolhido na Nuvemshop/Shopify (o mais próximo aqui é mostrar as fotos inteiras ou preenchendo o espaço, e reordenar ou ocultar seções); no editor do tema dá para mudar' };
     case 'imagem': {
       if (op.bloco && op.bloco !== 'banner' && op.bloco !== 'hero') return { motivo: 'na prévia do pacote só o banner recebe imagem dos Materiais (as fotos dos produtos vêm da aba Produtos)' };
@@ -370,46 +466,25 @@ function aplicarPacote(e, op, ctx = {}) {
       return { mudanca: `Fotos dos produtos: ${antes} → ${AJUSTES_FOTO[ajuste]}` };
     }
     case 'mover': {
-      if (blocoLoja) {
-        const ref = op.antesDe || op.depoisDe;
-        if (!ORDEM_LOJA.includes(ref) || ref === blocoLoja) return { motivo: `a seção de referência precisa ser uma destas: ${ORDEM_LOJA.map(nomeSecaoLoja).join(', ')}` };
-        const antes = V.ordem.indexOf(blocoLoja) + 1;
-        const nova = V.ordem.filter((x) => x !== blocoLoja); nova.splice(nova.indexOf(ref) + (op.depoisDe ? 1 : 0), 0, blocoLoja);
-        if (nova.join('|') === V.ordem.join('|')) return { motivo: 'a seção já está nessa posição' };
-        V.ordem = nova; salvarV();
-        return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": passa da posição ${antes} para a ${nova.indexOf(blocoLoja) + 1}` };
-      }
-      const s = op.secao || op.bloco, ref = op.antesDe || op.depoisDe;
-      if (!secoes.includes(s) || !secoes.includes(ref) || s === ref) return { motivo: 'essa seção não está na lista de seções sugeridas' };
-      const antes = secoes.indexOf(s) + 1;
-      const nova = secoes.filter((x) => x !== s); nova.splice(nova.indexOf(ref) + (op.depoisDe ? 1 : 0), 0, s);
-      if (nova.join('|') === secoes.join('|')) return { motivo: 'a seção já está nessa posição' };
-      P.briefingTema.secoesHome = nova;
-      return { mudanca: `Seção sugerida "${s}": passa da posição ${antes} para a ${nova.indexOf(s) + 1}` };
+      const ref = op.antesDe || op.depoisDe;
+      if (!ORDEM_LOJA.includes(ref) || ref === blocoLoja) return { motivo: `a seção de referência precisa ser uma destas: ${ORDEM_LOJA.map(nomeSecaoLoja).join(', ')}` };
+      const antes = V.ordem.indexOf(blocoLoja) + 1;
+      const nova = V.ordem.filter((x) => x !== blocoLoja); nova.splice(nova.indexOf(ref) + (op.depoisDe ? 1 : 0), 0, blocoLoja);
+      if (nova.join('|') === V.ordem.join('|')) return { motivo: 'a seção já está nessa posição' };
+      V.ordem = nova; salvarV();
+      return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": passa da posição ${antes} para a ${nova.indexOf(blocoLoja) + 1}` };
     }
     case 'ocultar': {
-      if (blocoLoja) {
-        if (V.ocultas.includes(blocoLoja)) return { motivo: 'essa seção já está oculta' };
-        if (blocoLoja === 'produtos') return { motivo: 'a loja precisa mostrar os produtos em algum lugar para vender' };
-        V.ocultas = [...V.ocultas, blocoLoja]; salvarV();
-        return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": passa de visível para oculta` };
-      }
-      const s = op.secao || op.bloco;
-      if (!secoes.includes(s)) return { motivo: 'essa seção não está na lista de seções sugeridas' };
-      if (secoes.length <= 1) return { motivo: 'a home precisa ter ao menos uma seção sugerida' };
-      P.briefingTema.secoesHome = secoes.filter((x) => x !== s); P.secoesOcultas = [...new Set([...(P.secoesOcultas || []), s])];
-      return { mudanca: `Seção sugerida "${s}": sai da ordem sugerida da home` };
+      if (V.ocultas.includes(blocoLoja)) return { motivo: 'essa seção já está oculta' };
+      if (blocoLoja === 'produtos') return { motivo: 'a loja precisa mostrar os produtos em algum lugar para vender' };
+      if (blocoLoja === 'confianca') return { motivo: MOTIVO_CONFIANCA };
+      V.ocultas = [...V.ocultas, blocoLoja]; salvarV();
+      return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": sai da loja (prévia e arquivos do pacote; continua guardada)` };
     }
     case 'mostrar': {
-      if (blocoLoja) {
-        if (!V.ocultas.includes(blocoLoja)) return { motivo: 'essa seção já aparece' };
-        V.ocultas = V.ocultas.filter((x) => x !== blocoLoja); salvarV();
-        return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": passa de oculta para visível` };
-      }
-      const s = op.secao || op.bloco;
-      if (!(P.secoesOcultas || []).includes(s)) return { motivo: 'essa seção não foi retirada antes' };
-      P.briefingTema.secoesHome = [...secoes, s]; P.secoesOcultas = P.secoesOcultas.filter((x) => x !== s);
-      return { mudanca: `Seção sugerida "${s}": volta para a ordem sugerida (no fim)` };
+      if (!V.ocultas.includes(blocoLoja)) return { motivo: 'essa seção já aparece' };
+      V.ocultas = V.ocultas.filter((x) => x !== blocoLoja); salvarV();
+      return { mudanca: `Seção "${nomeSecaoLoja(blocoLoja)}": passa de oculta para visível` };
     }
     case 'texto': {
       const campo = String(op.campo || ''), valor = txt(op.valor);
@@ -418,11 +493,27 @@ function aplicarPacote(e, op, ctx = {}) {
         const b = (P.banners || [])[Number(mb[1])];
         if (!b) return { motivo: 'esse banner não existe no pacote' };
         const lim = { titulo: 80, subtitulo: 180, cta: 30 }[mb[2]];
+        if (/\*\*/.test(valor)) return { motivo: 'o banner do tema não aceita negrito em parte do texto: escreva sem ** (o título já sai em destaque)' };
         if (!valor || valor.length > lim) return { motivo: `o texto do banner precisa ter de 1 a ${lim} caracteres` };
         if (b[mb[2]] === valor) return { motivo: 'o banner já está com esse texto' };
         const antes = b[mb[2]]; P.banners = P.banners.map((x, i) => (i === Number(mb[1]) ? { ...x, [mb[2]]: valor } : x));
         return { mudanca: `Banner ${Number(mb[1]) + 1} (${b.uso || 'banner'}), ${{ titulo: 'título', subtitulo: 'subtítulo', cta: 'botão' }[mb[2]]}: "${corta(antes)}" → "${corta(valor)}"` };
       }
+      // Título de cada seção da loja (o que aparece em cima dela).
+      const mt = /^titulo\.(\w+)$/.exec(campo);
+      if (mt) {
+        if (mt[1] === 'destaques') return aplicarPacote(e, { op: 'destaque', acao: 'titulo', grupo: 0, texto: valor }, ctx);
+        if (!TITULOS_LOJA[mt[1]]) return { motivo: mt[1] === 'confianca' ? MOTIVO_CONFIANCA : `a seção "${nomeSecaoLoja(mt[1])}" não tem título` };
+        if (!valor || valor.length > 80) return { motivo: 'o título da seção precisa ter de 1 a 80 caracteres' };
+        const antes = tituloSecaoLoja(V, mt[1]);
+        if (antes === valor) return { motivo: 'o título já é esse' };
+        V.titulos = { ...(V.titulos || {}), [mt[1]]: valor }; salvarV();
+        return { mudanca: `Título da seção ${nomeSecaoLoja(mt[1])}: "${corta(antes)}" → "${corta(valor)}"` };
+      }
+      // Textos dos Destaques pelo nome do campo (destaques.0.titulo, destaques.0.linha.2).
+      const md = /^destaques\.(\d+)\.(titulo|linha\.(\d+))$/.exec(campo);
+      if (md) return aplicarPacote(e, md[2] === 'titulo' ? { op: 'destaque', acao: 'titulo', grupo: Number(md[1]), texto: valor } : { op: 'destaque', acao: 'linha', grupo: Number(md[1]), indice: Number(md[3]), texto: valor }, ctx);
+      if (/^confianca\b/.test(campo)) return { motivo: MOTIVO_CONFIANCA };
       const CAMPOS = { sobre: ['Página Sobre', 3000], 'tema.estilo': ['Briefing do tema: estilo', 800], 'tema.tipografia': ['Briefing do tema: tipografia', 300], 'tema.observacoes': ['Briefing do tema: observações', 1000] };
       const def = CAMPOS[campo];
       if (!def) return { motivo: `o texto "${campo}" não pode ser editado no pacote` };
@@ -524,8 +615,11 @@ export function aplicarOperacoes(estado, operacoes, { modo = 'custom', materiais
     if (protegido) { descartadas.push({ op, motivo: protegido }); continue; }
     // Imagem do banner/história escolhida em "Usar em" (seletor) vence: só muda pedindo a foto pelo código.
     const usoImg = op.op === 'imagem' ? ({ hero: 'banner', banner: 'banner', marca: 'sobre' }[op.bloco || (modo === 'custom' ? '' : 'banner')]) : null;
-    const fixa = usoImg && imagemDoLugar(comUsos(materiais, Object.entries(e.usosFotos || {}).map(([id, usos]) => ({ id, usos }))), usoImg);
-    if (fixa?.por === 'manual') { descartadas.push({ op, motivo: `a imagem ${usoImg === 'banner' ? 'do banner' : 'da história'} foi escolhida em Materiais do cliente (${fixa.codigo}, "Usar em"); para trocar, peça a foto pelo código (ex.: "usar F5 no banner")` }); continue; }
+    const matsAgora = comUsos(materiais, Object.entries(e.usosFotos || {}).map(([id, usos]) => ({ id, usos })));
+    const fixa = usoImg && imagemDoLugar(matsAgora, usoImg);
+    // A IA não troca sozinha a escolha do seletor. O pedido explícito do operador ("foto do Thermora no banner", "F5 no
+    // banner") é resolvido pelo app antes (lib/fotos-site.js fotosPorNome) e chega como operação "foto" (escolha manual).
+    if (fixa?.por === 'manual') { descartadas.push({ op, motivo: `a imagem ${usoImg === 'banner' ? 'do banner' : 'da história'} foi escolhida em Materiais do cliente (${fixa.codigo}, "Usar em") e a IA não troca escolha sua sozinha; para trocar, diga qual foto quer lá: pelo produto ("foto do Thermora no banner") ou pelo código ("F5 no banner")` }); continue; }
     const r = op.op === 'foto' ? aplicarFoto(e, op, { materiais, produtos }) : op.op === 'dadoLoja' ? aplicarDadoLoja(e, op, dadosLoja) : modo === 'custom' ? aplicarCustom(e, op, { materiais }) : aplicarPacote(e, op, { materiais });
     if (r.mudanca) { mudancas.push(r.mudanca); aplicadas.push(op); } else descartadas.push({ op, motivo: r.motivo || 'operação inválida' });
   }

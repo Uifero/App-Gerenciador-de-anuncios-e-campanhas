@@ -46,7 +46,7 @@ export const TIPOS_PEDIDO = {
 };
 export const STATUS_ITEM = { pronto: 'Pronto para aplicar', pergunta: 'Precisa de resposta', impossivel: 'Não dá para fazer' };
 export const ONDE = { ambos: 'Na prévia e na loja', previa: 'Só na prévia', loja: 'Na loja precisa configurar' };
-export const RESULTADO = { atendido: 'Atendido', parcial: 'Parcial', nao: 'Não atendido' };
+export const RESULTADO = { atendido: 'Atendido', parcial: 'Parcial', nao: 'Não atendido', preencher: 'Para o cliente preencher', tema: 'Conferir no tema' };
 
 /** Seções da home de cada modo (o mesmo pedido "banner" vira "hero" no site personalizado). */
 export const secoesDoModo = (modo) => (modo === 'custom' ? ORDEM_PADRAO : ORDEM_LOJA);
@@ -378,14 +378,16 @@ export function conferirPorCodigo(itens = [], { modo = 'pacote', site = {}, mate
       case 'pagina_produto': {
         if (!rec.paginaProduto) { v = r('nao', 'a página do produto não está ligada'); break; }
         const semDesc = produtos.filter((q) => descricao(q).length < 120);
-        v = semDesc.length ? r('parcial', `página com todas as fotos; descrição curta ou vazia em: ${semDesc.map((q) => q.nome).join(', ')}`) : r('atendido', 'página com todas as fotos e descrição detalhada');
+        v = semDesc.length ? r('preencher', `página com todas as fotos; descrição curta ou vazia em: ${semDesc.map((q) => q.nome).join(', ')} (dado do cliente: complete na aba Produtos; vazia, o site mostra "Preencher" no lugar)`) : r('atendido', 'página com todas as fotos e descrição detalhada');
         break;
       }
       case 'secoes_produto': {
         const faltaSecao = p.secoes.filter((s) => !rec.secoesProduto.includes(s));
         const faltaDado = produtos.flatMap((q) => p.secoes.filter((s) => !textoSecaoProduto(q, s)).map((s) => `${SECOES_PRODUTO[s].toLowerCase()} do ${q.nome}`));
         v = faltaSecao.length === p.secoes.length ? r('nao', 'as seções não estão ligadas na página do produto')
-          : faltaSecao.length || faltaDado.length ? r('parcial', [faltaSecao.length && `faltam as seções: ${faltaSecao.map((s) => SECOES_PRODUTO[s]).join(', ')}`, faltaDado.length && `falta preencher (aba Produtos): ${faltaDado.join('; ')}`].filter(Boolean).join('; '))
+          : faltaSecao.length ? r('parcial', [`faltam as seções: ${faltaSecao.map((s) => SECOES_PRODUTO[s]).join(', ')}`, faltaDado.length && `falta preencher (aba Produtos): ${faltaDado.join('; ')}`].filter(Boolean).join('; '))
+            // Seções ligadas, falta só o dado: a IA nunca inventa; o site sai com "Preencher" no lugar, para o cliente.
+            : faltaDado.length ? r('preencher', `o site mostra "Preencher" no lugar de: ${faltaDado.join('; ')} (aba Produtos)`)
             : r('atendido', `seções ${p.secoes.map((s) => SECOES_PRODUTO[s]).join(', ')} com os dados dos produtos`);
         break;
       }
@@ -403,13 +405,51 @@ export function conferirPorCodigo(itens = [], { modo = 'pacote', site = {}, mate
       case 'cores': { const c = custom ? txt(site?.config?.corPrimaria).toLowerCase() : txt(site?.pacote?.briefingTema?.paletaSugerida?.[0]).toLowerCase(); v = !p.corPrimaria ? null : c === p.corPrimaria ? r('atendido', `cor principal ${c}`) : r('nao', `cor principal ${c || 'padrão'}`); break; }
       default: v = null;
     }
+    if (!v && (x.tipo === 'outro' || (x.tipo === 'texto' && !ehItemTexto(x)))) v = conferirPeloApp(x, { modo, site, materiais, produtos, visiveis });
     if (v) res[x.id] = { ...v, por: 'codigo' }; else paraIa.push(x.id);
   }
   return { resultados: res, paraIa };
 }
 
-/** Resumo de uma conferência: { atendido, parcial, nao, total }. */
-export const contagemConferencia = (resultados = {}) => Object.values(resultados).reduce((a, x) => { a[x.status] = (a[x.status] || 0) + 1; a.total++; return a; }, { atendido: 0, parcial: 0, nao: 0, total: 0 });
+// ---------- itens "outro": o que o app consegue conferir sozinho (nunca a IA lendo texto para julgar layout/foto) ----------
+const RE_DADO_CLIENTE = /f[oó]rmula|ingrediente|composi[cç][aã]o|benef[ií]cio|modo de uso|pre[cç]os?\b|\bkits?\b|combos?|tabela nutricional/i;
+const RE_LAYOUT_TEMA = /\bgrande\b|\bpequen|tamanho|espa[cç]o|abaixo d|acima d|ao lado|lado a lado|largura|altura|fonte|tipografia|alinhad|coluna|grade|\bfixa\b|rolagem|anima|layout|tabela/i;
+// Ordem importa: "kit com preço por pote" é kit, não preço.
+const CAMPO_DADO = [[/\bkits?\b|combo/i, 'kits', 'kits e ofertas'], [/f[oó]rmula|ingrediente|composi/i, 'formula', 'fórmula/ingredientes'], [/benef[ií]cio/i, 'beneficios', 'benefícios'], [/modo de uso/i, 'modoUso', 'modo de uso'], [/pre[cç]o/i, 'preco', 'preço']];
+/** Confere um item livre pelo dado real do site. Devolve { status, motivo, codigos?, campo? } ou null (só a IA julga: texto/tom). */
+function conferirPeloApp(x, { modo, site, materiais, produtos, visiveis }) {
+  const t = `${x.pedido || ''} ${x.como || ''}`;
+  // Foto pelo código: está em algum lugar do site?
+  const cods = codigosDoTexto(t).map((c) => c.codigo);
+  if (cods.length) {
+    const custom = modo === 'custom', L = normalizarLayout(site?.layout), V = normalizarVisual(site?.pacote?.visual);
+    const em = new Set([...slidesDoBanner(materiais, custom ? L.imagens.hero : V.banner).flatMap((s) => s.fotos.map((f) => txt(f.codigo).toUpperCase())), ...['galeria', 'sobre'].flatMap((u) => fotosDoUso(materiais, u).map((f) => txt(f.codigo).toUpperCase())),
+      ...printsDoCliente(materiais).map((m) => txt(m.codigo).toUpperCase()), ...produtos.flatMap((p) => fotosDoProduto(p, materiais).map((f) => txt(f.codigo).toUpperCase()))].filter(Boolean));
+    const codigos = cods.map((c) => ({ codigo: c, ok: em.has(c) }));
+    const faltam = codigos.filter((c) => !c.ok).map((c) => c.codigo);
+    return { ...(faltam.length === cods.length ? r('nao', `nenhuma das fotos (${lista(cods)}) está no site`) : faltam.length ? r('parcial', `no site: ${lista(cods.filter((c) => !faltam.includes(c)))}; falta ${lista(faltam)}`) : r('atendido', `fotos no site: ${lista(cods)}`)), codigos };
+  }
+  // Dado que só o cliente tem (fórmula, benefícios, preço, kits): o app olha o cadastro; faltando, é para o cliente preencher.
+  if (RE_DADO_CLIENTE.test(t)) {
+    const [, campo, nome] = CAMPO_DADO.find(([re]) => re.test(t)) || [null, 'descricao', 'dados do produto'];
+    const temKit = (p) => (p.variacoes || []).some((v) => /kit|combo|leve|unidade|pote/i.test(`${v.nome} ${(v.valores || []).join(' ')}`));
+    const tem = (p) => (campo === 'kits' ? temKit(p) : campo === 'preco' ? Number(p.preco) > 0 : Boolean(txt(p[campo])));
+    const faltam = produtos.filter((p) => !tem(p));
+    if (!produtos.length) return { ...r('preencher', 'cadastre o produto na aba Produtos'), campo };
+    return faltam.length ? { ...r('preencher', `${nome} de ${faltam.map((p) => p.nome).join(', ')}: dado do cliente (a IA nunca inventa). Preencha na aba Produtos ou deixe para o cliente; o site mostra "Preencher" no lugar`), campo } : { ...r('atendido', `${nome} cadastrado(s) na aba Produtos`), campo };
+  }
+  // Tamanho, posição fina, tabela, fonte: no pacote quem decide é o tema (o app não consegue conferir pela prévia).
+  if (modo !== 'custom' && RE_LAYOUT_TEMA.test(t)) return r('tema', 'tamanho, posição e formato dependem do tema da plataforma: confira no editor do tema (dá para anotar em "Ajustar no tema", passo 6)');
+  return null;
+}
+
+/** Fotos pedidas x lugar, de todos os itens de foto da conferência: [{ codigo, ok, pedido }] (app, sem IA). */
+export function fotosNoLugarPedido(itens = [], resultados = {}) {
+  return itens.flatMap((x) => (resultados[x.id]?.codigos || []).map((c) => ({ ...c, pedido: x.pedido || TIPOS_PEDIDO[x.tipo] })));
+}
+
+/** Resumo de uma conferência: { atendido, parcial, nao, preencher, tema, total }. */
+export const contagemConferencia = (resultados = {}) => Object.values(resultados).reduce((a, x) => { a[x.status] = (a[x.status] || 0) + 1; a.total++; return a; }, { atendido: 0, parcial: 0, nao: 0, preencher: 0, tema: 0, total: 0 });
 /** Itens que "Corrigir o que faltou" deve tratar. */
 export const itensFaltando = (itens = [], resultados = {}) => itens.filter((x) => ['parcial', 'nao'].includes(resultados[x.id]?.status));
 /** Os usos de foto atuais batem com o que a conferência viu (para saber se precisa reconferir). */

@@ -6,9 +6,10 @@ import { normalizarLayout, tituloBloco } from './site-blocos.js';
 import { produtosComFotos, imagemDoLugar, fotosDoUso, slidesDoBanner } from './fotos-site.js';
 import { medidasDe, posicaoCss } from './medidas-site.js';
 import { carrosselHtml, carrosselCss } from './carrossel.js';
-import { depoimentosVivos } from './prova-social.js';
+import { depoimentosVivos, chaveDepoimento } from './prova-social.js';
 import { textoSobre, corLegivel } from './contraste.js';
 import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
+import { pendenciasDoSite, pendenciasPorProduto } from './pendencias-site.js';
 import { comDestaques } from './textos-site.js';
 import { designDoSite, cssVariaveis } from './design-site.js';
 import { linhasDadosLoja } from './pacote-loja.js';
@@ -96,17 +97,24 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
       ${vars.length ? M(`${bloco}.variacoes`, `<div class="vars">${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}</div>`) : ''}
       ${Number(p.preco) ? M(`${bloco}.botao`, `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>`) : '<!-- sem preço cadastrado: sem botão de compra -->'}${R.paginaProduto ? M(`${bloco}.detalhes`, `<a class="ver" href="#p-${esc(p.id)}">Ver detalhes</a>`) : ''}</article>`;
   };
+  // Dado que só o cliente tem e ainda falta: lugar marcado "Preencher" (lib/pendencias-site.js), nunca texto inventado.
+  const pend = pendenciasPorProduto(pendenciasDoSite({ site: { config: cfg }, modo: 'custom', produtos }));
+  const falta = (p, campo) => pend[p.id || '']?.[campo] || null;
+  const preencher = (x) => (x ? `<div class="preencher" data-preencher="${esc(x.id)}"><b>Preencher:</b> ${esc(x.oque)}</div>` : '');
+  const CAMPO_S = { formula: 'formula', beneficios: 'beneficios', modo_uso: 'modoUso' };
   // Página do produto (aparece pelo :target, sem script): todas as fotos, descrição, seções e "Compre junto".
   const paginaProduto = (p) => {
     const vars = (p.variacoes || []).filter((v) => v.nome && v.valores?.length);
     const sug = R.compreJunto?.onde === 'produto' ? junto(p) : null;
-    const secoesP = R.secoesProduto.map((k) => (textoSecaoProduto(p, k) ? `<details class="secao-prod" open><summary>${esc(SECOES_PRODUTO[k])}</summary><p>${esc(textoSecaoProduto(p, k))}</p></details>` : '')).join('');
+    const secoesP = R.secoesProduto.map((k) => (textoSecaoProduto(p, k) ? `<details class="secao-prod" open><summary>${esc(SECOES_PRODUTO[k])}</summary><p>${esc(textoSecaoProduto(p, k))}</p></details>`
+      : falta(p, CAMPO_S[k]) ? `<div class="secao-prod"><p><b>${esc(SECOES_PRODUTO[k])}</b></p>${preencher(falta(p, CAMPO_S[k]))}</div>` : '')).join('');
     return M('produto', `<section id="p-${esc(p.id)}" class="pdp-pagina" data-produto="${esc(p.id)}"><div class="wrap"><a href="#catalogo" class="ver">&larr; Voltar</a><div class="pdp card">
-      ${M('produto.fotos', `<div class="pdp-fotos">${(p.fotos || []).map((f) => `<img src="${esc(f.url)}" alt="${esc(p.nome)}" width="800" height="800" loading="lazy">`).join('') || '<span>sem foto</span>'}</div>`, p.id)}
+      ${M('produto.fotos', `<div class="pdp-fotos">${(p.fotos || []).map((f) => `<img src="${esc(f.url)}" alt="${esc(p.nome)}" width="800" height="800" loading="lazy">`).join('') || (falta(p, 'fotos') ? `<div class="preencher preencher-foto" data-preencher="${esc(falta(p, 'fotos').id)}"><b>Foto a escolher</b><br>${esc(falta(p, 'fotos').sugestao)}</div>` : '<span>sem foto</span>')}</div>`, p.id)}
       <div${grupoOrdenado(L, 'produto') ? ' class="ord"' : ''}>${M('produto.nome', `<h2>${esc(p.nome)}</h2>`)}${M('produto.contador', contador)}${M('produto.preco', `<p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>`)}${R.freteGratis ? M('produto.frete', `<p class="frete-pdp">Frete grátis acima de ${esc(reais(R.freteGratis.valor))}</p>`) : ''}
         ${vars.length ? M('produto.variacoes', `<div class="vars">${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}</div>`) : ''}
         ${Number(p.preco) ? M('produto.botao', `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>`) : ''}
-        ${p.descricao ? M('produto.descricao', `<div class="story">${esc(p.descricao)}</div>`) : ''}
+        ${!Number(p.preco) ? preencher(falta(p, 'preco')) : ''}
+        ${p.descricao ? M('produto.descricao', `<div class="story">${esc(p.descricao)}</div>`) : preencher(falta(p, 'descricao'))}
         ${secoesP ? M('produto.secoes', `<div class="secoes-prod">${secoesP}</div>`) : ''}
         ${sug ? M('produto.junto', `<div class="junto card"><b>Compre junto</b><p>+ ${esc(sug.nome)} · ${Number(sug.preco) ? brl(sug.precoPromocional || sug.preco) : 'sob consulta'}</p>${Number(sug.preco) ? `<button class="btn" data-add="${esc(sug.id)}">Adicionar ${esc(sug.nome)}</button>` : ''}</div>`) : ''}</div></div></div></section>`);
   };
@@ -115,7 +123,7 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
   // Colunas escolhidas pelo operador ("Ajustar este site") vencem: aí a vitrine vira grade com essas colunas.
   const grade = (lista, bloco) => { const n = L.variacoes[bloco]?.colunas; return `<div class="grid${n ? ` cols${n}` : ` g-${bloco}`}" data-vitrine="${bloco}">${lista.map((p) => card(p, bloco)).join('')}</div>`; };
   // Depoimentos lidos da fonte (perfil de marca, prints com a cópia borrada), não da cópia da última geração.
-  const deps = depoimentosVivos({ cliente, materiais, guardados: c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => !L.depoimentosOcultos.includes(d.texto));
+  const deps = depoimentosVivos({ cliente, materiais, guardados: c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => !L.depoimentosOcultos.includes(chaveDepoimento(d)));
   const alturaHero = { curto: '40px', alto: '140px' }[L.variacoes.hero?.altura] || '';
   const imgMarca = L.imagens.marca?.url;
   const fotoHero = produtos.find((p) => p.fotos?.[0]?.url) || null;
@@ -142,7 +150,7 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
     catalogo: () => `<section id="catalogo" class="${promo.length ? 'alt' : ''}"><div class="wrap">${M('catalogo.titulo', `<h2>${esc(tituloBloco(L, 'catalogo'))}</h2>`)}<div id="catalogoGrade">${grade(produtos, 'catalogo')}</div></div></section>`,
     marca: () => (c.storytelling ? `<section id="marca"><div class="wrap${grupoOrdenado(L, 'marca') ? ' ord' : ''}">${M('marca.titulo', `<h2>${esc(tituloBloco(L, 'marca'))}</h2>`)}${imgMarca ? M('marca.foto', `<img class="story-img" src="${esc(imgMarca)}" alt="${esc(cliente.nome)}" loading="lazy" style="object-position:${posicaoCss(L.imagens.marca.foco)}">`) : ''}${M('marca.texto', `<div class="story">${esc(c.storytelling)}</div>`)}</div></section>` : '<span id="marca"></span>'),
     galeria: () => (galeria.length ? `<section id="galeria"><div class="wrap">${M('galeria.titulo', `<h2>${esc(tituloBloco(L, 'galeria'))}</h2>`)}<div class="galeria">${galeria.map((f) => M(`galeria.foto.${String(f.codigo || '').toUpperCase()}`, `<img src="${esc(f.url)}" alt="${esc(cliente.nome)}" loading="lazy" style="object-position:${posicaoCss(f.foco)}">`)).join('')}</div></div></section>` : ''),
-    depoimentos: () => (deps.length ? `<section class="alt" id="depoimentos"><div class="wrap">${M('depoimentos.titulo', `<h2>${esc(tituloBloco(L, 'depoimentos'))}</h2>`)}<div class="dep">${deps.map((d) => { const iDep = (c.depoimentos || []).findIndex((x) => x.texto === d.texto); const q = `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.origem === 'prova_social' ? 'Print de avaliação real de cliente' : d.nome)}" class="dep-midia${d.origem === 'prova_social' ? ' dep-print' : ''}" loading="lazy">`) : ''}${d.exibir === 'print' ? '' : `“${esc(d.texto)}”`}<cite>— ${esc(d.nome)}</cite></blockquote>`; return iDep >= 0 ? M(`depoimentos.item.${iDep}`, q) : q; }).join('')}</div>
+    depoimentos: () => (deps.length ? `<section class="alt" id="depoimentos"><div class="wrap">${M('depoimentos.titulo', `<h2>${esc(tituloBloco(L, 'depoimentos'))}</h2>`)}<div class="dep">${deps.map((d) => { const iDep = (c.depoimentos || []).findIndex((x) => x.texto === d.texto); const q = `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.origem === 'prova_social' ? 'Print de avaliação real de cliente' : d.nome)}" class="dep-midia${d.origem === 'prova_social' ? ' dep-print' : ''}" loading="lazy">`) : ''}${d.exibir === 'print' || !String(d.texto || '').trim() ? '' : `“${esc(d.texto)}”`}<cite>— ${esc(d.nome)}</cite></blockquote>`; return iDep >= 0 ? M(`depoimentos.item.${iDep}`, q) : q; }).join('')}</div>
 <!-- ATENÇÃO: depoimentos escritos à mão (sem foto/vídeo anexado) podem ser MODELOS — troque por depoimentos reais antes de publicar. Os que têm foto/vídeo vieram de criativos aprovados ou de prints de avaliação reais (com dados pessoais cobertos) guardados no app. --></div></section>` : ''),
     faq: () => (faq.length ? `<section id="faq" class="alt"><div class="wrap faq">${M('faq.titulo', `<h2>${esc(tituloBloco(L, 'faq'))}</h2>`)}${faq.map((f) => M(idFaq(f.p), `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`)).join('')}</div></section>` : ''),
     newsletter: () => `<section class="news" id="newsletter"><div class="wrap${grupoOrdenado(L, 'newsletter') ? ' ord' : ''}">${M('newsletter.titulo', `<h2>${esc(c.newsletterTitulo || 'Receba novidades')}</h2>`)}${M('newsletter.texto', `<p>${esc(c.newsletterTexto || '')}</p>`)}
@@ -220,6 +228,7 @@ ${slides.length ? carrosselCss({ n: slides.length, id: 'bn' }) : ''}
 #cookies .ok{background:var(--cor);color:var(--sobre-cor)}#cookies .nao{background:#374151;color:#fff}.linkcookies{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit}
 ${cssAnimacoes(A, { acento: cor })}
 ${CSS_ELEMENTOS}
+.preencher{margin:10px 0;padding:10px 12px;border:2px dashed #ca8a04;border-radius:8px;background:#fefce8;color:#713f12;font-size:14px;line-height:1.45}.preencher-foto{text-align:center}
 </style></head><body${classesBody(A) ? ` class="${classesBody(A)}"` : ''}>
 ${R.freteGratis ? M('geral.barraFrete', `<div class="barra-frete">Frete grátis acima de ${esc(reais(R.freteGratis.valor))}</div>`) : ''}
 <header><div class="wrap"><input type="checkbox" id="menu-site" class="menu-toggle" aria-label="Abrir o menu"><label for="menu-site" class="hamb" title="Menu"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></label><a class="logo" href="#topo">${logoUrl ? `<img src="${esc(logoUrl)}" alt="${esc(cliente.nome)}">` : esc(cliente.nome)}</a>

@@ -1,0 +1,17 @@
+{
+ "chamadaReal": true,
+ "tarefa": "ajuste_secao_amplo",
+ "data": "2026-10-15",
+ "descricao": "\"Aproximar os 5 motivos... colocar a foto do Thermora Metabolic no banner\" (Thermora, pacote Shopify) com a lista do que dá para mudar",
+ "uso": {
+  "entrada": 2,
+  "saida": 137,
+  "cacheEscrita": 15879,
+  "cacheLeitura": 0,
+  "buscasWeb": 0,
+  "custoUsd": 0,
+  "modelo": "claude-sonnet-5",
+  "provedor": "cli"
+ },
+ "texto": "{\"tipo\":\"proposta\",\"resposta\":\"A foto do Thermora Metabolic (F27) vai para o banner e a seção dos 5 motivos passa para logo antes de produtos.\",\"operacoes\":[{\"op\":\"imagem\",\"bloco\":\"banner\",\"materialId\":\"F27\"},{\"op\":\"mover\",\"bloco\":\"destaques\",\"antesDe\":\"produtos\"}],\"naoFeito\":[]}"
+}

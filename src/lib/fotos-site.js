@@ -48,6 +48,9 @@ export function normalizarUsos(u = {}) {
   const vistos = new Set();
   r.produtos = (Array.isArray(u?.produtos) ? u.produtos : []).filter((p) => p?.id && !vistos.has(String(p.id)) && vistos.add(String(p.id))).map((p) => ({
     id: String(p.id), ordem: Number(p.ordem) > 0 ? Math.round(Number(p.ordem)) : 0, principal: Boolean(p.principal), por: p.por === 'texto' ? 'texto' : 'manual',
+    // Posição/principal escolhidas pelo operador (arrastar, "posição", "Foto principal"). Ligar a foto ao produto (envio,
+    // migração) não é escolha de ordem: aí a ordem pedida no texto ou no plano vale.
+    ...(p.fixo ? { fixo: true } : {}),
   }));
   r.pessoa = Boolean(u?.pessoa);
   r.bloqueados = [...new Set((Array.isArray(u?.bloqueados) ? u.bloqueados : []).map(String))];
@@ -88,8 +91,8 @@ export function mudarUso(materiais = [], id, { uso, ligado = true, produtoId = n
           e = { id: produtoId, ordem: maior + 1, principal: false, por: 'manual' }; u.produtos.push(e);
         }
         e.por = 'manual';
-        if (Number(ordem) > 0) e.ordem = Math.round(Number(ordem));
-        if (principal !== undefined) e.principal = Boolean(principal);
+        if (Number(ordem) > 0) { e.ordem = Math.round(Number(ordem)); e.fixo = true; }
+        if (principal !== undefined) { e.principal = Boolean(principal); e.fixo = true; }
         if (e.principal) for (const [outro, x] of mapa) if (outro !== id) x.produtos.forEach((p) => { if (p.id === produtoId) p.principal = false; });
       } else {
         if (ORDENAVEIS.includes(uso) && !u[uso]) u.ordem[uso] = proximaPosicao(mapa, uso);
@@ -126,7 +129,7 @@ export function reordenar(materiais = [], lugar, ids = [], produtoId = null) {
   const ordem = [...ids.map(String).filter((id) => atuais.includes(id)), ...atuais.filter((id) => !ids.map(String).includes(id))];
   ordem.forEach((id, i) => {
     const u = mapa.get(id);
-    if (lugar === 'produto') { const e = u.produtos.find((p) => p.id === produtoId); if (e) { e.ordem = i + 1; e.principal = i === 0; e.por = 'manual'; } }
+    if (lugar === 'produto') { const e = u.produtos.find((p) => p.id === produtoId); if (e) { e.ordem = i + 1; e.principal = i === 0; e.por = 'manual'; e.fixo = true; } }
     else { u.ordem[lugar] = i + 1; if (u[lugar]) u[lugar] = 'manual'; }
   });
   return mudados(materiais, mapa);
@@ -431,6 +434,10 @@ export function aplicarReferencias(materiais = [], refs = [], { direta = {}, pro
       const e = u.produtos.find((p) => p.id === r.produtoId);
       const usarPrincipal = { rotulo: `Usar ${r.codigo}`, uso: 'produto', produtoId: r.produtoId, principal: true };
       if (e) {
+        // Ligada antes sem posição escolhida (envio na aba Produtos, migração): a ordem pedida no texto vale.
+        if (!e.fixo && r.ordem > 0) { e.ordem = r.ordem; aplicadas.push(`${r.codigo} → ${nomeProd(r.produtoId)} (posição ${r.ordem})`); }
+        const principalFixa = [...mapa].find(([id, x]) => id !== r.materialId && x.produtos.some((p) => p.id === r.produtoId && p.principal && p.fixo));
+        if (r.principal && !e.principal && !e.fixo && !principalFixa) { for (const [, x] of mapa) x.produtos.forEach((p) => { if (p.id === r.produtoId) p.principal = false; }); e.principal = true; continue; }
         if (r.principal && !e.principal) {
           const atual = [...mapa].find(([id, x]) => id !== r.materialId && x.produtos.some((p) => p.id === r.produtoId && p.principal));
           conflito(r, `O texto pede ${r.codigo} como foto principal do ${nomeProd(r.produtoId)}, mas no seletor ela está nesse produto sem ser a principal: vale o seletor.`,
@@ -545,7 +552,8 @@ export function fotosDoProduto(produto, materiais = []) {
   const proprias = produto.fotosMigradas ? [] : (produto.fotos || []).filter((f) => f?.url).map((f) => ({ ...f, nome: f.nome || nomeDoCaminho(f.path || f.url) }));
   if (!ligadas.length) return proprias;
   const principal = ligadas.filter((x) => x.e.principal).sort((a, b) => (a.e.por === 'manual' ? -1 : 0) - (b.e.por === 'manual' ? -1 : 0) || porCodigo(a.m, b.m))[0];
-  const resto = ligadas.filter((x) => x !== principal).sort((a, b) => (a.e.por === 'manual' ? 0 : 1) - (b.e.por === 'manual' ? 0 : 1) || (a.e.ordem || 999) - (b.e.ordem || 999) || porCodigo(a.m, b.m)); // seletor antes do texto
+  // Posição escolhida no seletor (arrastar/posição) antes; o resto (ligada no envio, pedida no texto ou no plano) pela posição pedida.
+  const resto = ligadas.filter((x) => x !== principal).sort((a, b) => (a.e.fixo ? 0 : 1) - (b.e.fixo ? 0 : 1) || (a.e.ordem || 999) - (b.e.ordem || 999) || porCodigo(a.m, b.m));
   const f = ({ m }) => ({ url: m.url, path: m.path, nome: nomeArquivo(m), codigo: m.codigo || '', materialId: m.id, foco: focoDe(m) });
   return [...(principal ? [f(principal)] : []), ...proprias, ...resto.map(f)];
 }
@@ -601,3 +609,32 @@ export const proximaOrdem = (materiais = [], produtoId) => 1 + Math.max(0, ...ma
 /** Tira de todas as fotos o vínculo com um produto apagado (o arquivo continua em Materiais). [{ id, usos }]. */
 export const semProduto = (materiais = [], produtoId) => materiais.filter((m) => usosDe(m).produtos.some((p) => p.id === produtoId))
   .map((m) => { const u = usosDe(m); u.produtos = u.produtos.filter((p) => p.id !== produtoId); return { id: m.id, usos: u }; });
+
+// ---------- foto pelo nome do produto ("põe a foto do Thermora Metabolic no banner") ----------
+const RE_FOTO_PEDIDO = /\b(fotos?|imagens?|imagem)\b/;
+const LUGAR_DO_PEDIDO = [['banner', /\b(banner|topo|capa)\b/], ['sobre', /\b(sobre|historia|quem somos)\b/], ['galeria', /\bgaleria\b/]];
+const palavrasNome = (s) => sem(s).replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length >= 3);
+/**
+ * Pedido de foto pelo NOME do produto (sem código) para um lugar. Acha o produto citado e as fotos dele (as ligadas ao
+ * produto, a principal primeiro, e as de nome parecido). Devolve null quando o pedido não é desse tipo; senão
+ * { produto, uso, fotos: [{ materialId, codigo, url, nome }] } (0 = não achou foto; 1 = resolvido; várias = perguntar).
+ */
+export function fotosPorNome(texto, { materiais = [], produtos = [] } = {}) {
+  const t = sem(texto);
+  if (!RE_FOTO_PEDIDO.test(t) || TEM_COD.test(t)) return null; // com código, vale o código
+  const uso = (LUGAR_DO_PEDIDO.find(([, re]) => re.test(t)) || [])[0];
+  if (!uso) return null;
+  const pal = new Set(palavrasNome(texto));
+  const pontos = produtos.map((p) => { const ws = palavrasNome(p.nome); const n = ws.filter((w) => pal.has(w)).length; return { p, n, total: ws.length }; })
+    .filter((x) => x.n && (x.n >= 2 || x.total === 1));
+  if (!pontos.length) return null;
+  const melhor = Math.max(...pontos.map((x) => x.n));
+  const achados = pontos.filter((x) => x.n === melhor);
+  if (achados.length !== 1) return null; // dois produtos com o mesmo peso: a IA (ou a pergunta do "Entendi assim") decide
+  const produto = achados[0].p;
+  const ws = palavrasNome(produto.nome);
+  const ligadas = fotosDoProduto({ ...produto, fotosMigradas: true }, materiais).filter((f) => f.materialId);
+  const porNome = usaveis(materiais).filter((m) => !ligadas.some((f) => f.materialId === m.id) && ws.filter((w) => palavrasNome(`${m.nomeOriginal || ''} ${m.descricao || ''}`).includes(w)).length >= Math.min(2, ws.length));
+  const fotos = [...ligadas.map((f) => ({ materialId: f.materialId, codigo: f.codigo, url: f.url, nome: f.nome })), ...porNome.sort(porCodigo).map((m) => ({ materialId: m.id, codigo: m.codigo, url: m.url, nome: nomeArquivo(m) }))].filter((f) => f.codigo);
+  return { produto: { id: produto.id, nome: produto.nome }, uso, fotos };
+}

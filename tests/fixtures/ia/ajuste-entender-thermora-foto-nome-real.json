@@ -1,0 +1,9 @@
+{
+ "chamadaReal": true,
+ "reconstruida": true,
+ "tarefa": "ajuste_entender",
+ "data": "2026-10-15",
+ "descricao": "\"Aproximar os 5 motivos... colocar a foto do Thermora Metabolic no banner\" (Thermora, pacote Shopify) com a lista do que dá para mudar. Chamada REAL feita uma vez (Haiku 4.5 pela assinatura); o script caiu antes de gravar o JSON, então o texto abaixo foi reconstruído fielmente do print da tela (tests/screenshots/fase-ia-real-1-entendi-foto.png): mesmas seções, mesmos textos e a mesma pergunta. A chamada não foi repetida (regra de no máximo 1 chamada real por função).",
+ "uso": null,
+ "texto": "{\"global\": false, \"oque\": \"Trocar a foto do banner e mudar a posição dos 5 motivos.\", \"secoes\": [{\"id\": \"banner\", \"oque\": \"Trocar a foto do banner pela do Thermora Metabolic.\", \"estrutura\": false}, {\"id\": \"destaques\", \"oque\": \"Mudar a posição da seção dos 5 motivos. O lugar final depende da resposta abaixo.\", \"estrutura\": true}], \"perguntas\": [{\"texto\": \"Aproximar os 5 motivos de onde?\", \"opcoes\": [{\"texto\": \"Subir para logo abaixo do banner\", \"secoes\": [\"destaques\"], \"instrucao\": \"Mover a seção destaques para logo depois do banner.\"}, {\"texto\": \"Levar para perto da seção de produtos\", \"secoes\": [\"destaques\"], \"instrucao\": \"Mover a seção destaques para logo antes de produtos.\"}]}], \"fora\": [], \"impossivel\": []}"
+}

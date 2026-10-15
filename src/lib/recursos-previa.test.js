@@ -29,7 +29,9 @@ describe('prévia do pacote', () => {
     expect(sem.split('id="produto-0"')[1].split('</section>')[0]).not.toContain('https://x/c7.jpg'); // sem plano: as 5 primeiras
     expect(pdp).toContain('data-secao-produto="formula"');
     expect(pdp).toContain('Cafeína 200 mg');
-    expect(com.split('id="produto-1"')[1].split('</section>')[0]).not.toContain('data-secao-produto="formula"'); // Gel sem fórmula: nada inventado
+    // Gel sem fórmula: nada inventado; o lugar sai marcado para o cliente preencher (tracejado), nunca com texto.
+    const gel = com.split('id="produto-1"')[1].split('</section>')[0];
+    expect(gel).toMatch(/data-secao-produto="formula"><p class="secao-t">[^<]+<\/p><div class="preencher" data-preencher="[^"]+"><b>Preencher:<\/b> fórmula e ingredientes do Thermora Gel/);
   });
   it('"Compre junto" com o outro produto', () => {
     const pdp = com.split('id="produto-0"')[1].split('</section>')[0];

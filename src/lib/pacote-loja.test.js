@@ -65,7 +65,7 @@ describe('prévia do pacote com cara de loja', () => {
 
   it('"O que colocar na plataforma": grupos com o caminho do manual e itens para copiar', () => {
     const g = gruposPlataforma(d);
-    expect(g.map((x) => x.id)).toEqual(['loja', 'logo', 'banner', 'home', 'produto-0', 'produto-1', 'paginas', 'politicas', 'animacoes', 'cores', 'visual-fotos', 'visual-secoes']); // animações leves ligadas por padrão
+    expect(g.map((x) => x.id)).toEqual(['loja', 'logo', 'banner', 'home', 'titulos', 'produto-0', 'produto-1', 'paginas', 'politicas', 'animacoes', 'cores', 'visual-fotos', 'visual-secoes', 'preencher']); // produtos sem foto: lugar marcado para o cliente // animações leves ligadas por padrão
     expect(g.find((x) => x.id === 'politicas').caminho).toBe('Configurações > Políticas');
     expect(g.find((x) => x.id === 'cores').caminho).toMatch(/Loja virtual > Temas/);
     const p0 = g.find((x) => x.id === 'produto-0').itens;

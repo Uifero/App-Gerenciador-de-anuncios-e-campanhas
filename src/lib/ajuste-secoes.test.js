@@ -40,7 +40,11 @@ describe('cada operação mexe numa seção', () => {
     expect(secaoDaOperacao({ op: 'texto', campo: 'sobre' }, 'pacote')).toBe('sobre');
     expect(secaoDaOperacao({ op: 'produto', nome: 'Thermora', campo: 'descricao' }, 'pacote')).toBe('produto');
     expect(secaoDaOperacao({ op: 'ocultar', bloco: 'galeria' }, 'pacote')).toBe('galeria');
-    expect(secaoDaOperacao({ op: 'mover', secao: 'Frete e trocas', antesDe: 'Sobre' }, 'pacote')).toBe('geral');
+    // Nome do briefing vira a seção da prévia (uma fonte só); nome sem seção na loja não tem seção (o app recusa).
+    expect(secaoDaOperacao({ op: 'ocultar', secao: 'Quem já comprou' }, 'pacote')).toBe('depoimentos');
+    expect(secaoDaOperacao({ op: 'mover', secao: 'Frete e trocas', antesDe: 'Sobre' }, 'pacote')).toBe(null);
+    expect(secaoDaOperacao({ op: 'destaque', acao: 'linha', grupo: 0, indice: 4, texto: 'x' }, 'pacote')).toBe('destaques');
+    expect(secaoDaOperacao({ op: 'texto', campo: 'titulo.depoimentos', valor: 'x' }, 'pacote')).toBe('depoimentos');
     expect(secaoDaOperacao({ op: 'foto', codigo: 'F3', uso: 'sobre' }, 'pacote')).toBe('sobre');
   });
 });

@@ -71,13 +71,24 @@ const form = (p = {}, fotos = []) => `<form id="fp" class="space-y-3">
     ${p.id ? '<button class="btn-danger" type="button" data-apagar>Apagar</button>' : ''}</div></form>`;
 
 /** Janela de cadastro/edição de produto. Também usada pela pergunta "Quais produtos você quer no site?" (aba Site/Loja). */
-export async function abrirProduto(cliente, p, aoSalvar) {
+/** Foca e destaca um campo do formulário do produto (abre "Mais opções" quando ele está lá dentro). */
+function focarCampo(raiz, nome) {
+  const el = raiz.querySelector(`[name="${nome}"]`); if (!el) return;
+  const det = el.closest('details'); if (det) det.open = true;
+  el.classList.add('ring-2', 'ring-amber-400');
+  el.setAttribute('aria-describedby', 'dica-preencher');
+  el.insertAdjacentHTML('afterend', '<p class="hint text-amber-800" id="dica-preencher">Preencha com o dado real (do rótulo ou do cliente). O site troca o "Preencher" por este texto.</p>');
+  el.scrollIntoView({ block: 'center' }); el.focus({ preventScroll: true });
+}
+// `foco` (opcional): campo que abre já focado e destacado ("Preencher agora" da Conferência): formula, beneficios, modoUso,
+// preco, variacoes, descricao, fotos. Campo dentro de "Mais opções" abre o bloco.
+export async function abrirProduto(cliente, p, aoSalvar, { foco = null } = {}) {
   await garantirMigracaoFotos(cliente);
   if (p?.id) p = (await db.obter(COL.produtos, p.id)) || p; // sempre o registro do banco (quem chama pode ter a lista com as fotos já montadas)
   let materiais = await db.listar(COL.materiais, { clienteId: cliente.id });
   const fotosAtuais = () => (p ? fotosDoProduto(p, materiais) : []);
   const m = modal(p ? 'Editar produto' : 'Novo produto', form(p || {}, fotosAtuais()));
-  const redesenhar = () => { $('#fp', m.el).outerHTML = form({ ...p, ...lerForm($('#fp', m.el)) }, fotosAtuais()); };
+  if (foco) focarCampo(m.el, foco);
   const mudarFoto = async (materialId, opcoes, aviso) => {
     const patches = mudarUso(materiais, materialId, { uso: 'produto', produtoId: p.id, ...opcoes });
     await salvarUsos(patches);

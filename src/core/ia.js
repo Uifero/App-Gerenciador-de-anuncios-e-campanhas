@@ -9,7 +9,8 @@ import { exigirTamanho } from '../lib/textos-site.js';
 import { limparModelo } from '../lib/modelo-pedido-site.js';
 import { mapaDasSecoes, resumoDasSecoes, nomeSecao, filtrarOperacoes, normalizarEntendimento, textosDoOperador, LIMITE_PEDIDO_AJUSTE } from '../lib/ajuste-secoes.js';
 import { dividirSecoes, codigosDoTexto, temCodigo, porCodigo, resumoUsos, nomeArquivo } from '../lib/fotos-site.js';
-import { tipoMaterial } from '../lib/prova-social.js';
+import { tipoMaterial, ehTextoInterno } from '../lib/prova-social.js';
+import { capacidadesDoSite, semNotaDeSobra } from '../lib/capacidades-site.js';
 import { ehVertical } from '../lib/medidas-site.js';
 import { textoComoAnuncia } from '../lib/anuncio.js';
 import { REGRA_INSTAGRAM } from '../lib/formatos-instagram.js';
@@ -182,6 +183,8 @@ const REGRA_CRITICA = (cliente) => `REGRAS CRÍTICAS (valem para tudo que você 
 6. Não invente dados, números, estudos, prêmios ou depoimentos de pessoas reais. Use só o que consta no perfil de marca.${ehProdutoSaude(cliente) ? `
 7. ${REGRA_SAUDE}` : ''}`;
 
+/** Linhas das provas sociais que podem ir para a IA citar (sem as anotações internas de print/OCR/perfil). */
+const provasCitaveis = (c) => String(c?.marca?.provasSociais || '').split('\n').map((l) => l.trim()).filter((l) => l && !ehTextoInterno(l, { cliente: c })).join('\n');
 export function contextoCliente(c) {
   const m = c.marca || {};
   const h = c.historico || {};
@@ -199,7 +202,9 @@ export function contextoCliente(c) {
     m.linguagemDor && `Como o público descreve a própria dor (palavras reais): ${m.linguagemDor}`,
     m.objecoes && `Objeções comuns: ${m.objecoes}`,
     m.crencas && `Crenças do público (inclusive crenças erradas sobre o produto)${auto('crencas')}: ${m.crencas}`,
-    m.provasSociais && `Provas sociais disponíveis (únicas que podem ser citadas)${auto('provasSociais')}: ${m.provasSociais}`,
+    // Só o que o operador digitou pode ser citado. Descrição de print, OCR e métrica de perfil são anotação interna:
+    // nunca viram depoimento, citação, número nem título (no site nem no criativo).
+    provasCitaveis(c) && `Provas sociais disponíveis (únicas que podem ser citadas)${auto('provasSociais')}: ${provasCitaveis(c)}`,
     m.usp && `Diferencial (USP)${auto('usp')}: ${m.usp}`,
     m.estetica && `Estética visual / paleta de cor${auto('estetica')}: ${m.estetica}`,
     c.leituraSite?.resumo && `Como a marca se apresenta no site dela (leitura automática — reforço de contexto; se divergir do briefing ou dos campos acima, valem eles): ${c.leituraSite.resumo}`,
@@ -924,15 +929,18 @@ Por ELEMENTO (ids da lista "Elementos dessas seções"; passos fixos, o app guar
 - {"op":"elemento","id":ID,"acao":"mover","direcao":"subir"|"descer"}  (ordem dentro da seção)
 - {"op":"extra","acao":"adicionar","apos":ID,"tipo":"texto"|"selo"|"botao","texto":string,"segura":versão sem promessa de efeito no corpo} / {"op":"extra","acao":"editar"|"remover","id":ID}
 - {"op":"faq","acao":"mover","indice":n,"direcao":"subir"|"descer"} / {"op":"faq","acao":"adicionar","p","r","depoisDe":n}
-- {"op":"dadoLoja","campo":"razaoSocial"|"cnpj"|"endereco"|"email"|"telefone","valor":string}  (só se o operador escrever o dado; nunca invente)`;
+- {"op":"dadoLoja","campo":"razaoSocial"|"cnpj"|"endereco"|"email"|"telefone","valor":string}  (só se o operador escrever o dado; nunca invente)
+- {"op":"destaque","acao":"criar","titulo":string,"linhas":[string]} / {"op":"destaque","acao":"titulo","grupo":n,"texto":string} / {"op":"destaque","acao":"linha"|"adicionarLinha"|"removerLinha","grupo":n,"indice":n,"texto":string} / {"op":"destaque","acao":"moverLinha","grupo":n,"indice":n,"direcao":"subir"|"descer"}  (seção "Destaques": textos do operador como "5 motivos"; negrito só com **assim**)`;
 const OPS_PACOTE = `Operações permitidas (conteúdo do pacote e as escolhas da PRÉVIA, que depois viram configurações do tema em "O que colocar na plataforma"):
 - {"op":"imagem","bloco":"banner","materialId":ID dos Materiais listados | null para tirar}  (imagem do banner)
 - {"op":"fotos","ajuste":"contain"|"cover"}  (fotos dos produtos: inteiras, sem cortar | preenchendo o quadro)
-- {"op":"mover","bloco":S,"antesDe":S2|"depoisDe":S2} / {"op":"ocultar","bloco":S} / {"op":"mostrar","bloco":S}  (seções da prévia; S = banner, provas (Clientes reais: prints reais, conteúdo nunca muda), produtos, confianca, depoimentos, sobre, galeria, faq)
-- {"op":"texto","campo":"banner.<i>.titulo"|"banner.<i>.subtitulo"|"banner.<i>.cta"|"sobre"|"tema.estilo"|"tema.tipografia"|"tema.observacoes","valor":string}
+- {"op":"mover","bloco":S,"antesDe":S2|"depoisDe":S2} / {"op":"ocultar","bloco":S} / {"op":"mostrar","bloco":S}  (seções da loja; S = banner, destaques (seus textos, ex.: 5 motivos), provas (Clientes reais: prints reais, conteúdo nunca muda), produtos, confianca (fixa, não sai), depoimentos (Quem já comprou), sobre, galeria, faq). Tirar uma seção = "ocultar": ela some da prévia E dos arquivos do pacote.
+- {"op":"texto","campo":"banner.<i>.titulo"|"banner.<i>.subtitulo"|"banner.<i>.cta"|"sobre"|"titulo.<S>","valor":string}  (titulo.<S> = título que aparece em cima da seção S: provas, produtos, depoimentos, sobre, galeria, faq, destaques)
+- {"op":"texto","campo":"tema.estilo"|"tema.tipografia"|"tema.observacoes","valor":string}  (SÓ quando o pedido for sobre o tema/estilo; nunca para guardar o que você não conseguiu fazer no site)
+- {"op":"destaque","acao":"criar","titulo":string,"linhas":[string],"antesDe"|"depoisDe":S} / {"op":"destaque","acao":"titulo","grupo":n,"texto":string} / {"op":"destaque","acao":"linha"|"adicionarLinha"|"removerLinha","grupo":n,"indice":n,"texto":string} / {"op":"destaque","acao":"moverLinha","grupo":n,"indice":n,"direcao":"subir"|"descer"}  (seção "Destaques": textos do operador como "5 motivos"; seção nova = título + textos numa operação só; negrito só com **assim**)
+- {"op":"elemento","id":"<S>.titulo"|"banner.subtitulo"|"banner.cta"|"provas.dica"|"depoimentos.textos","acao":"ocultar"|"mostrar"}  (tira só esse pedaço e deixa a seção; "depoimentos.textos" = tirar os textos e deixar as imagens)
 - {"op":"faq","acao":"editar"|"adicionar"|"remover","indice":n,"p":string,"r":string}
-- {"op":"paleta","cores":["#rrggbb", ...]}  (2 a 6 cores sugeridas para o tema)
-- {"op":"mover","secao":NOME,"antesDe":NOME2|"depoisDe":NOME2} / {"op":"ocultar","secao":NOME} / {"op":"mostrar","secao":NOME}  (ordem sugerida das seções da home)
+- {"op":"paleta","cores":["#rrggbb", ...]}  (2 a 6 cores sugeridas para o tema; não muda a prévia)
 - {"op":"produto","nome":NOME DO PRODUTO,"campo":"descricao"|"seoTitulo"|"seoDescricao","valor":string}  (vai no CSV de importação)
 - {"op":"foto","codigo":"F3","uso":"banner"|"produto"|"clientes"|"sobre"|"galeria"|"nao","produto":NOME DO PRODUTO (só com uso "produto"),"acao":"usar"|"tirar","principal":true|false (opcional, foto principal do produto),"ordem":n (opcional, posição no produto)}  (onde vai cada foto dos Materiais, pelo código. SÓ use quando a pessoa pedir EXPLICITAMENTE para mudar onde vai uma foto: as escolhas de foto são do operador e nunca mudam por iniciativa sua)`;
 const NUNCA = `NUNCA pode ser alterado (nem se pedirem): códigos de Pixel/Google Ads/Hotjar/Tawk.to; aviso de cookies e a regra de só carregar rastreadores após o "Aceitar"; carrinho, botão "Finalizar compra"/checkout e selo de compra segura; políticas de trocas, envio e privacidade; cabeçalho, rodapé e WhatsApp. Se pedirem isso, diga claramente que não pode e por quê (tipo "recusa"), sem fingir que fez, e diga ONDE a pessoa muda por conta própria: Pixel/Google Ads/Hotjar/Tawk.to → cadastro do cliente, "Editar > Rastreamento"; políticas → formulário "Conteúdo da loja" > Mais opções (revisar com alguém responsável); aviso de cookies, carrinho/pagamento e selo → não mudam (protegem o cliente e o pagamento); formas de pagamento do selo → "Conteúdo da loja" > Mais opções. Nunca mande "contatar um desenvolvedor".`;
@@ -996,7 +1004,7 @@ ${SO_JSON}`;
  * "Entendi assim" do pedido livre: quais seções ele mexe (IA barata, sem os textos do site). Não muda nada.
  * Devolve { global, secoes: [{ id, nome, oque, estrutura }], perguntas, fora } (lib/ajuste-secoes.js normalizarEntendimento).
  */
-export async function entenderAjuste({ cliente, modo, mensagem, materiais = [], imagens = [], elementos = '' }) {
+export async function entenderAjuste({ cliente, modo, mensagem, materiais = [], imagens = [], elementos = '', plataforma = null }) {
   const pedidoLivre = String(mensagem || '').trim() || (imagens.length ? 'Veja o que marquei no print.' : '');
   if (!pedidoLivre) throw new Error('Escreva o que quer mudar no site.');
   if (pedidoLivre.length > LIMITE_PEDIDO_AJUSTE) throw new Error(`O pedido tem ${pedidoLivre.length} caracteres; o limite é ${LIMITE_PEDIDO_AJUSTE}. Encurte e tente de novo.`);
@@ -1007,6 +1015,8 @@ ${mapaDasSecoes({}, modo)}
 ${elementos ? `ELEMENTOS DO SITE ATUAL (id: nome):\n${elementos}\n` : ''}${comPrint ? `PRINTS ANEXADOS: ${imagens.length} (na ordem). Cada marca aponta um elemento. Se o print for de OUTRO site (referência: "quero parecido com isso"), use só a ideia de layout; nunca o texto, o logo ou as imagens dele.\n` : ''}
 Fotos com código nos Materiais: ${materiais.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo).map((m) => m.codigo).join(', ') || 'nenhuma'}
 
+${capacidadesDoSite(modo, { plataforma })}
+
 PEDIDO DO OPERADOR: "${pedidoLivre}"
 
 Regras:
@@ -1015,10 +1025,12 @@ Regras:
 - "estrutura": true só quando muda o layout da seção (ordem, mostrar/ocultar, altura, colunas, imagem); texto e foto = false.
 - "global": true SÓ quando o pedido vale para o site todo (ex.: "muda as cores do site todo", "deixa o tom mais informal em tudo"). Nesse caso "oque" resume a mudança.
 - Ambíguo (não dá para saber a seção ou o que fazer) ou "não sei": faça uma pergunta com 2 ou 3 opções clicáveis, cada uma {"texto", "secoes": [ids], "instrucao": o que fazer nessa opção}. Nunca chute.
-- O que não dá para mudar por aqui (Pixel, cookies, carrinho/pagamento, cabeçalho, WhatsApp) vai em "fora". Dados da loja e políticas (seção rodape) podem ter o TEXTO mudado, mas nunca saem do site.${elementos ? '\n- Em cada seção, "elementos": os ids (da lista ELEMENTOS) que o pedido ou a marca do print aponta. Só ids que existem na lista.' : ''}${comPrint ? `
+- O que não dá para mudar por aqui (Pixel, cookies, carrinho/pagamento, cabeçalho, WhatsApp) vai em "fora".
+- Parte do pedido que NÃO existe na lista "O QUE DÁ PARA MUDAR" (ex.: tamanho de fonte no pacote, dado que só a aba Produtos tem): vai em "impossivel": [{"oque": a parte, "alternativa": o mais próximo que dá (outra seção, no tema, na aba Produtos)}]. Diga ANTES; nunca prometa o que não existe.
+- Pedido de "tirar" uma seção, título ou texto: é a seção dele (ex.: "tira a parte Já comprou" = depoimentos). Dados da loja e políticas (seção rodape) podem ter o TEXTO mudado, mas nunca saem do site.${elementos ? '\n- Em cada seção, "elementos": os ids (da lista ELEMENTOS) que o pedido ou a marca do print aponta. Só ids que existem na lista.' : ''}${comPrint ? `
 - Marca que não dá para saber a qual elemento se refere: pergunta com botões, cada opção com "elementos": [id] (ex.: "Você marcou o selo de frete ou o preço?"). Nunca escolha sozinho e nunca inclua a seção que não deu para identificar.
 - Print de outro site (referência): "referencia": {"copiar": a ideia de layout que dá para trazer, em 1 frase}; nunca texto, logo ou imagem dele.` : ''}
-Saída JSON: {"global": boolean, "oque": string, "secoes": [{"id", "oque": o que muda nela em 1 frase, "estrutura": boolean${elementos ? ', "elementos": [ids]' : ''}}], "perguntas": [{"texto", "opcoes": [...]}], "fora": [string]${comPrint ? ', "referencia": {"copiar": string} ou null' : ''}}
+Saída JSON: {"global": boolean, "oque": string, "secoes": [{"id", "oque": o que muda nela em 1 frase, "estrutura": boolean${elementos ? ', "elementos": [ids]' : ''}}], "perguntas": [{"texto", "opcoes": [...]}], "fora": [string], "impossivel": [{"oque", "alternativa"}]${comPrint ? ', "referencia": {"copiar": string} ou null' : ''}}
 ${SO_JSON}`;
   // Com print: Haiku com visão (tarefa própria, para o custo da imagem aparecer separado em "Custos de IA").
   const { dados } = await gerarJSON({ tarefa: comPrint ? 'ajuste_entender_print' : 'ajuste_entender', cliente, system, messages: [{ role: 'user', content: pedido }], ...(comPrint ? { imagens } : {}) });
@@ -1030,7 +1042,7 @@ ${SO_JSON}`;
  * pedido global), a instrução e as regras do cliente, e devolve operações; o app recusa as que saem das seções
  * (lib/ajuste-secoes.js filtrarOperacoes). Devolve { tipo, resposta, operacoes, foraDasSecoes, naoFeito, tarefa }.
  */
-export async function ajustarSecoes({ cliente, modo, site, estado, secoes = [], instrucao, materiais = [], produtos = [], tarefa = 'ajuste_secao' }) {
+export async function ajustarSecoes({ cliente, modo, site, estado, secoes = [], instrucao, materiais = [], produtos = [], tarefa = 'ajuste_secao', plataforma = null }) {
   const custom = modo !== 'pacote';
   const dele = textosDoOperador(site, modo);
   const textosDele = Object.entries(dele).map(([campo, t]) => `${campo}: "${t.original}"`).join(' | ');
@@ -1041,19 +1053,23 @@ ${resumoDasSecoes(estado, secoes, modo, { materiais, produtos })}
 ${textosDele ? `\nTEXTOS QUE O OPERADOR ESCREVEU E APROVOU (${textosDele}): só mexa neles se o pedido mandar; se mexer, mande na operação também "segura": a versão sem promessa de efeito no corpo e sem número sem fonte (o app mostra as três versões para ele escolher).` : ''}
 PRODUTOS: ${produtos.slice(0, 15).map((p) => `"${p.nome}"`).join(', ') || '(nenhum)'}
 
+${capacidadesDoSite(modo, { secoes, plataforma })}
+
 ${custom ? OPS_CUSTOM : OPS_PACOTE}
 
 ${NUNCA}${regraSite(cliente)}
 
 PEDIDO: ${String(instrucao || '').slice(0, LIMITE_PEDIDO_AJUSTE + 600)}
 
-Faça SÓ o que foi pedido, nessas seções. Textos novos no idioma e tom da marca, curtos para o celular. Nunca invente dado, número, preço, prazo, garantia nem depoimento: se faltar, não faça e diga em "naoFeito". Onde ele escreveu "não sei", não invente: diga em "naoFeito". ${idiomaLinha(cliente)}
+Faça SÓ o que foi pedido, nessas seções, com as operações da lista. Textos novos no idioma e tom da marca, curtos para o celular. Nunca invente dado, número, preço, prazo, garantia, fórmula, ingrediente, benefício, kit nem depoimento: se faltar, não faça e diga em "naoFeito" (o app marca o lugar para o cliente preencher). O que não tem operação vai em "naoFeito" com a alternativa; nunca coloque esse texto no briefing do tema. Onde ele escreveu "não sei", não invente: diga em "naoFeito". ${idiomaLinha(cliente)}
 Saída JSON: {"tipo": "proposta"|"recusa"|"explicacao", "resposta": 1-2 frases do que muda, "operacoes": [ ... ], "naoFeito": [string]}
 ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa, cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   const r = normalizarAjusteSite(dados);
   const { dentro, fora } = filtrarOperacoes(r.operacoes, secoes, modo, estado?.layout);
-  return { ...r, operacoes: dentro, tipo: dentro.length ? 'proposta' : r.tipo === 'proposta' ? 'recusa' : r.tipo, foraDasSecoes: fora, tarefa };
+  // Nota no briefing do tema só quando o pedido fala do tema (senão é a IA guardando o que não conseguiu fazer).
+  const { ops, recusadas } = semNotaDeSobra(dentro, instrucao, modo);
+  return { ...r, operacoes: ops, tipo: ops.length ? 'proposta' : r.tipo === 'proposta' ? 'recusa' : r.tipo, foraDasSecoes: [...fora, ...recusadas], tarefa };
 }
 
 /** "id (F3): nome [usos]" de cada imagem, para a IA entender pedidos como "usar F5 no banner". */
