@@ -69,6 +69,9 @@ export async function view(el) {
         <div class="grid gap-3 sm:grid-cols-2">
           <div><label class="label">Orçamento mensal de IA (US$)</label><input class="input" type="number" step="0.01" min="0" name="orcamentoIa" value="${esc(c.orcamentoIaMensalUsd)}" placeholder="Sem limite">
             <p class="hint">Ao chegar em 80% aparece um aviso no início. Ao passar do limite, cada geração pede sua confirmação. Para limitar um cliente específico, use o campo no cadastro dele.</p></div>
+          <div><label class="label" for="cfg-usar-api">Usar API quando a assinatura acabar</label><select class="input min-h-[44px]" id="cfg-usar-api" name="usarApi" data-usar-api>
+              ${[['perguntar', 'Perguntar'], ['nunca', 'Nunca'], ['sempre', 'Sempre']].map(([k, r]) => `<option value="${k}"${(c.usarApiQuandoAcabar || 'perguntar') === k ? ' selected' : ''}>${r}</option>`).join('')}</select>
+            <p class="hint">Toda IA do app vai primeiro pela assinatura do Claude. Se ela chegar ao limite ou falhar: <b>Perguntar</b> mostra o custo estimado e espera você decidir; <b>Nunca</b> só avisa; <b>Sempre</b> usa a chave de API (cobrada por token) sem perguntar.</p></div>
           <div><label class="label">Cotação do dólar (R$)</label><input class="input" type="number" step="0.01" min="0" name="cotacao" value="${esc(c.cotacaoUsd)}">
             <p class="hint">Só para mostrar o equivalente em R$ (estimativa).</p></div>
           <div><label class="label">Variações por geração de criativo</label><input class="input" type="number" min="1" max="5" name="variacoes" value="${esc(c.variacoesPadrao)}">
@@ -121,6 +124,7 @@ export async function view(el) {
       cotacaoUsd: num(v.cotacao) > 0 ? num(v.cotacao) : 5.5,
       variacoesPadrao: Math.min(5, Math.max(1, Math.round(num(v.variacoes) || 4))),
       diasReutilizarBusca: num(v.reuso) >= 0 ? num(v.reuso) : 30,
+      usarApiQuandoAcabar: ['perguntar', 'nunca', 'sempre'].includes(v.usarApi) ? v.usarApi : 'perguntar',
       limitesTokens: Object.fromEntries(Object.keys(TAREFAS_IA).map((k) => [k, num(v['lim_' + k])]).filter(([, n]) => n > 0)),
     };
     if (dados.cortes.forte < dados.cortes.moderado) return toast('O corte "forte" deve ser maior ou igual ao "moderado".', 'erro');

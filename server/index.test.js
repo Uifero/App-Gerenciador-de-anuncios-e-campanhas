@@ -1,6 +1,6 @@
 // Testes da lógica de custo e roteamento de modelo/tarefa do servidor de IA (sem rede: só as funções puras exportadas).
 import { describe, it, expect } from 'vitest';
-import { TAREFAS, calcularCusto, paramsDoModelo, validarImagens, blocosComImagens, lerSaidaCli, MAX_IMAGENS, comMetodologia } from './index.js';
+import { TAREFAS, calcularCusto, paramsDoModelo, validarImagens, blocosComImagens, lerSaidaCli, MAX_IMAGENS, comMetodologia, decidirReserva, POLITICAS_API, estimarCustoApi, tempoLimiteCli, linhaLogIa } from './index.js';
 import { METODOLOGIA_VORTEX } from './referencias/metodologia-vortex.js';
 import { REFERENCIA_TRAFEGO } from './referencias/trafego.js';
 import { REFERENCIA_COPY } from './referencias/copy.js';
@@ -276,5 +276,33 @@ describe('imagens anexadas (diagnóstico com prints)', () => {
     expect(lerSaidaCli(stream, true).result).toBe('ok');
     expect(lerSaidaCli('{"result":"x"}', false).result).toBe('x');
     expect(() => lerSaidaCli('{"type":"system"}', true)).toThrow();
+  });
+});
+
+describe('quem paga: assinatura primeiro, API só com permissão (Frente 1)', () => {
+  it('decidirReserva nunca troca sozinha para a API', () => {
+    expect(decidirReserva({ politica: 'perguntar', temChave: true })).toBe('perguntar');
+    expect(decidirReserva({ politica: 'nunca', temChave: true })).toBe('parar');
+    expect(decidirReserva({ politica: 'sempre', temChave: true })).toBe('api');
+    expect(decidirReserva({ politica: 'nunca', permitir: true, temChave: true })).toBe('api'); // "Usar API desta vez"
+    for (const politica of POLITICAS_API) expect(decidirReserva({ politica, permitir: true, temChave: false })).toBe('parar');
+    expect(decidirReserva()).toBe('parar');
+  });
+  it('custo estimado pela API: texto + imagens + saída no teto da tarefa', () => {
+    const so = estimarCustoApi({ modelo: TAREFAS.plano_site.modelo, caracteres: 35_000, saida: TAREFAS.plano_site.max });
+    expect(so).toBeCloseTo(calcularCusto(TAREFAS.plano_site.modelo, { entrada: 10_000, saida: 16_000 }), 6);
+    expect(estimarCustoApi({ modelo: TAREFAS.ajuste_entender_print.modelo, caracteres: 3500, imagens: 2, saida: 1500 }))
+      .toBeCloseTo(calcularCusto(TAREFAS.ajuste_entender_print.modelo, { entrada: 1000 + 3200, saida: 1500 }), 6);
+  });
+  it('tempo da CLI: 3 min no normal, 5 min com busca, mais para saída longa (plano_site), teto 10 min', () => {
+    expect(tempoLimiteCli({ maxTokens: TAREFAS.conferencia_site.max })).toBe(180_000);
+    expect(tempoLimiteCli({ busca: true, maxTokens: 4000 })).toBe(300_000);
+    expect(tempoLimiteCli({ maxTokens: TAREFAS.plano_site.max })).toBe(400_000);
+    expect(tempoLimiteCli({ maxTokens: 32_000 })).toBe(600_000);
+  });
+  it('linha de log: tarefa, quem pagou, modelo, status e tempo; nada do prompt', () => {
+    expect(linhaLogIa({ tarefa: 'plano_site', pagoPor: 'assinatura', modelo: 'claude-sonnet-5', status: 200, ms: 1234.4, imagens: 0 }))
+      .toBe('[ia] tarefa=plano_site pago_por=assinatura modelo=claude-sonnet-5 status=200 ms=1234');
+    expect(linhaLogIa({ tarefa: 'ajuste_entender_print', pagoPor: 'api', status: 200, ms: 5, imagens: 2 })).toMatch(/pago_por=api modelo=- status=200 ms=5 imagens=2$/);
   });
 });

@@ -78,6 +78,7 @@ export const CONFIG_PADRAO = {
   diasAprovacaoPendente: 5,   // dias sem resposta do cliente a um link de aprovação para virar alerta
   diasCriativoSemDecisao: 10, // dias em rascunho (nunca enviado nem decidido) para virar alerta
   diasLembreteBackup: 14,     // dias desde o último backup completo para o Início lembrar de exportar
+  usarApiQuandoAcabar: 'perguntar', // assinatura acabou/falhou: 'perguntar' (cada vez) | 'nunca' | 'sempre' (usa a chave de API sem perguntar)
   ultimoBackupEm: null,       // data (ISO) do último backup completo; gravada por backup.js ao exportar
   // --- Fase 3: custo e limites de IA ---
   orcamentoIaMensalUsd: null, // orçamento global do mês em US$ (null = sem limite)

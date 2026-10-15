@@ -95,15 +95,16 @@ function layout() {
   // Quem respondeu a última chamada de IA: a assinatura do Claude (sem custo por token) ou a reserva (API, paga).
   // Antes da primeira chamada, mostra o que o servidor vai usar agora (/api/saude).
   $('#tema').insertAdjacentHTML('beforebegin', '<span id="ia-provedor" class="hidden"></span>');
+  // A reserva (API) só entra com a permissão do operador; o selo segue a última chamada real (core/ia.js).
   const pintar = (prov, ultima) => {
     const el = $('#ia-provedor'); if (!el) return;
     const reserva = prov === 'api';
     el.className = `tag ${reserva ? 'tag-warn' : 'tag-info'}`;
     el.dataset.provedor = reserva ? 'reserva' : 'assinatura';
-    el.title = `${ultima ? 'A última chamada de IA foi respondida' : 'As chamadas de IA estão indo'} pela ${reserva ? 'reserva (API da Anthropic, cobrada por token). Isso acontece quando o limite da assinatura acaba.' : 'assinatura do Claude (sem custo por token).'}`;
+    el.title = `${ultima ? 'A última chamada de IA foi respondida' : 'As chamadas de IA estão indo'} pela ${reserva ? 'chave de API da Anthropic (cobrada por token), com a sua permissão, porque a assinatura acabou ou falhou.' : 'assinatura do Claude (sem custo por token).'}`;
     // Assinatura (o normal) fica só no ícone até telas bem largas, para a busca caber; reserva é alerta e sempre tem texto.
-    el.setAttribute('aria-label', `IA: ${reserva ? 'reserva' : 'assinatura'}`);
-    el.innerHTML = `<i class="fa-solid fa-${reserva ? 'key' : 'user-check'}"></i><span class="${reserva ? '' : 'md:hidden 2xl:inline'} ml-1">IA: ${reserva ? 'reserva' : 'assinatura'}</span>`;
+    el.setAttribute('aria-label', `IA: ${reserva ? 'API' : 'assinatura'}`);
+    el.innerHTML = `<i class="fa-solid fa-${reserva ? 'key' : 'user-check'}" aria-hidden="true"></i><span class="${reserva ? '' : 'md:hidden 2xl:inline'} ml-1">IA: ${reserva ? 'API' : 'assinatura'}</span>`;
   };
   fetch('/api/saude').then((r) => r.json()).then((s) => { if (!$('#ia-provedor')?.dataset.provedor) pintar(s.provedor); }).catch(() => {});
   window.addEventListener('gcc:ia-provedor', (e) => pintar(e.detail?.provedor, true));

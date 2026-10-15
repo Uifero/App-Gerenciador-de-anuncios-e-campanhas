@@ -1,0 +1,18 @@
+{
+  "gravadoEm": "2026-10-15",
+  "tarefa": "ajuste_entender_print",
+  "status": 200,
+  "segundos": 30,
+  "provedor": "cli",
+  "uso": {
+    "entrada": 2,
+    "saida": 600,
+    "cacheEscrita": 10698,
+    "cacheLeitura": 0,
+    "buscasWeb": 0,
+    "custoUsd": 0,
+    "modelo": "claude-haiku-4-5",
+    "provedor": "cli"
+  },
+  "texto": "{\"vejo\":\"Painel de referência de critérios de oferta, não página de loja.\",\"marcas\":0}"
+}

@@ -9,7 +9,7 @@ Responda em português do Brasil.
 - Teste local sem Firebase: `VITE_DEMO_MODE=1 npx vite --port 5199 --strictPort` + `DEV_AUTH_BYPASS=1 node server/index.js`; no navegador `localStorage.gcc_demo_user='1'`, dados em `gccdb_<coleção>`.
 
 ## Restrições que não mudam
-- IA: sempre a assinatura (CLI `claude -p`) primeiro; API só como reserva (`IA_PROVEDOR=auto`).
+- IA: toda tarefa (inclusive com imagem) vai pela assinatura (CLI `claude -p`). A chave de API nunca entra sozinha: só com a permissão do operador (Configurações > "Usar API quando a assinatura acabar": Perguntar/Nunca/Sempre; `decidirReserva` em `server/index.js`). Cada chamada grava quem pagou (`provedor` em `gcc_uso_api`) e uma linha `[ia] … pago_por=` no log do servidor.
 - Vídeo é só no navegador (ffmpeg.wasm, carregado sob demanda). Nada de FFmpeg no servidor nem Cloud Run.
 - Produção = VM + PM2. Mudou `server/` (tarefa nova ou flag em `TAREFAS`)? Avisar: `git pull`, `npm run build` e **`pm2 restart`**.
 - Site gerado de cliente nunca é hospedado na VM nem no Firebase do painel.

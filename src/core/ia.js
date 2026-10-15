@@ -21,7 +21,7 @@ import { juntarItensSoltos } from '../lib/prints-resultado.js';
 import { ROTEIROS } from '../lib/parece-anuncio.js';
 import { textoLeituraDados } from '../lib/dados-minimos.js';
 import { obterConfig } from '../modules/configuracoes.js';
-import { verificarOrcamento, registrarUso } from '../modules/custo.js';
+import { verificarOrcamento, registrarUso, perguntarUsoApi } from '../modules/custo.js';
 
 /**
  * Chamada única à IA (via servidor). O servidor escolhe o modelo pela `tarefa` (Haiku x Sonnet), aplica o limite de tokens
@@ -34,14 +34,25 @@ import { verificarOrcamento, registrarUso } from '../modules/custo.js';
 export async function chamarClaude({ tarefa, cliente = null, estavel, system, messages, webSearch = null, imagens = undefined, buscasMinimas = 0, maxTokens = undefined }) {
   const cfg = await obterConfig();
   await verificarOrcamento(cliente, cfg); // exige confirmação manual se o orçamento do mês já estourou
-  const token = await tokenAtual();
-  // imagens: [{ media_type, data (base64) }] — só tarefas de leitura de imagem (o servidor recusa nas demais).
-  const corpoPedido = JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || maxTokens || undefined, webSearch, imagens, assincrono: true });
-  const { status, ok, corpo } = await pedirAoServidor(token, corpoPedido);
+  // Toda IA vai pela assinatura. Se ela acabar ou falhar, a chave de API só entra com a permissão do operador
+  // (Configurações > "Usar API quando a assinatura acabar"; "Perguntar" mostra o custo estimado e espera a decisão).
+  const usarApi = cfg.usarApiQuandoAcabar || 'perguntar';
+  let permitirApi = false, resposta;
+  for (;;) {
+    const token = await tokenAtual();
+    // imagens: [{ media_type, data (base64) }] — só tarefas de leitura de imagem (o servidor recusa nas demais).
+    const corpoPedido = JSON.stringify({ tarefa, estavel, system, messages, maxTokens: cfg.limitesTokens?.[tarefa] || maxTokens || undefined, webSearch, imagens, assincrono: true, usarApi, ...(permitirApi ? { permitirApi: true } : {}) });
+    resposta = await pedirAoServidor(token, corpoPedido);
+    if (!resposta.corpo?.precisaPermissao || permitirApi) break;
+    if (await perguntarUsoApi(resposta.corpo)) { permitirApi = true; continue; }
+    throw new Error(textoEsperar(resposta.corpo));
+  }
+  const { status, ok, corpo } = resposta;
   // buscasMinimas: tarefa que SEMPRE pesquisa na web conta ao menos essa busca no custo, mesmo se a CLI não informar quantas fez.
   if (corpo.uso) registrarUso({ cliente, tarefa, uso: buscasMinimas && ok ? { ...corpo.uso, buscasWeb: Math.max(corpo.uso.buscasWeb || 0, buscasMinimas) } : corpo.uso }); // até respostas cortadas consumiram tokens (grava em segundo plano)
-  const provedor = corpo.provedor || corpo.uso?.provedor;
-  if (provedor) avisar('gcc:ia-provedor', { provedor, tarefa, em: new Date().toISOString() });
+  // O selo do cabeçalho e a etiqueta "Pago por" mostram quem respondeu a última chamada REAL (com uso registrado).
+  const provedor = corpo.uso?.provedor || (ok ? corpo.provedor : null);
+  if (provedor) avisar('gcc:ia-provedor', { provedor, tarefa, custoUsd: corpo.uso?.custoUsd || 0, em: new Date().toISOString() });
   if (!ok) {
     if (!corpo.erro && status >= 500) throw comDetalhe(new Error(ERRO_REDE), `HTTP ${status} sem corpo de erro`);
     throw new Error(corpo.erro || `Erro ${status} ao chamar a IA.`);
@@ -50,7 +61,13 @@ export async function chamarClaude({ tarefa, cliente = null, estavel, system, me
   return corpo;
 }
 
-export const ERRO_REDE = 'Não consegui falar com o servidor do app. Se você acabou de atualizar, espere 30 segundos e tente de novo.';
+/** Mensagem de quando o operador escolhe "Esperar" (a chave de API não é usada). */
+export function textoEsperar(c = {}) {
+  return c.limite ? `${c.motivo || c.erro} A chave de API não foi usada.`
+    : `A assinatura não respondeu agora (${c.motivo || 'sem detalhe'}). A chave de API não foi usada. Tente de novo em instantes ou use o caminho sem IA desta tela.`;
+}
+
+export const ERRO_REDE ='Não consegui falar com o servidor do app. Se você acabou de atualizar, espere 30 segundos e tente de novo.';
 const comDetalhe = (e, detalhe) => Object.assign(e, { detalhe });
 const avisar = (nome, detail) => { try { window.dispatchEvent(new CustomEvent(nome, { detail })); } catch { /* fora do navegador */ } };
 const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));

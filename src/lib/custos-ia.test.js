@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calcularCusto, precoDoModelo } from './precos-ia.js';
-import { relatorioCustos, porTarefaDoMes } from './custos-ia.js';
+import { relatorioCustos, porTarefaDoMes, chamadasRecentes, pagoPor } from './custos-ia.js';
 
 describe('tabela de preços (um arquivo só)', () => {
   it('Sonnet 5 2/10, Haiku 4.5 1/5, Opus 5.5 4/20 com leitura de cache a 0,05x', () => {
@@ -36,5 +36,32 @@ describe('relatório de custos por tarefa', () => {
     expect(r.porTarefa.find((x) => x.tarefa === 'pacote').chamadas).toBe(2);
     expect(r.mesesSemDetalhe).toEqual(['2026-08']);
     expect(r.porMes.map((m) => m.mes)).toEqual(['2026-09', '2026-08']);
+  });
+});
+
+describe('"Pago por" (Frente 1): assinatura x API x não registrado', () => {
+  const regs = [
+    // Os 3 plano_site de produção que foram para a API em 14-15/10/2026 (US$ 0,4559 no total) + chamadas pela assinatura.
+    { tarefa: 'plano_site', modelo: 'claude-sonnet-5', provedor: 'api', tokensEntrada: 10000, tokensSaida: 13000, custoUsd: 0.1555665, data: '2026-10-14T23:59:15Z', mes: '2026-10' },
+    { tarefa: 'plano_site', modelo: 'claude-sonnet-5', provedor: 'api', tokensEntrada: 10000, tokensSaida: 13000, custoUsd: 0.1588105, data: '2026-10-15T00:34:37Z', mes: '2026-10' },
+    { tarefa: 'plano_site', modelo: 'claude-sonnet-5', provedor: 'api', tokensEntrada: 10000, tokensSaida: 12000, custoUsd: 0.1415705, data: '2026-10-15T12:44:58Z', mes: '2026-10' },
+    { tarefa: 'pacote', modelo: 'claude-sonnet-5', provedor: 'cli', tokensEntrada: 4000, tokensSaida: 6000, custoUsd: 0, data: '2026-10-15T13:01:48Z', mes: '2026-10' },
+    { tarefa: 'pacote', modelo: 'claude-sonnet-5', tokensEntrada: 1000, tokensSaida: 1000, custoUsd: 0.012, data: '2026-09-01T10:00:00Z', mes: '2026-09' }, // antigo, sem provedor
+  ];
+  it('totais separados: pago na API, pela assinatura (estimado) e não registrado sem reescrever o histórico', () => {
+    const r = relatorioCustos(regs);
+    expect(r.total).toMatchObject({ chamadas: 5, assinatura: 1, reserva: 3, naoRegistrado: 1 });
+    expect(r.total.custoReal).toBeCloseTo(0.4559475, 7);
+    expect(r.total.custoAssinaturaSeApi).toBeCloseTo(calcularCusto('claude-sonnet-5', { entrada: 4000, saida: 6000 }), 9);
+    expect(r.total.custoNaoRegistrado).toBeCloseTo(0.012, 9);
+    expect(pagoPor(regs[4])).toBe('nao_registrado');
+  });
+  it('chamada a chamada: assinatura = US$ 0 com "custaria" só de informação; API = o custo registrado', () => {
+    const c = chamadasRecentes(regs);
+    expect(c.map((x) => x.rotulo)).toEqual(['Assinatura', 'API', 'API', 'API', 'não registrado']);
+    expect(c[0]).toMatchObject({ custo: 0, tarefa: 'pacote' });
+    expect(c[0].custariaApi).toBeGreaterThan(0);
+    expect(c[1]).toMatchObject({ custo: 0.1415705, custariaApi: null });
+    expect(chamadasRecentes(regs, 2)).toHaveLength(2);
   });
 });

@@ -37,6 +37,7 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `ideias-thermora-qualidade-real.json` | "Criar criativos", passo 2 (tarefa `criativos`, Sonnet 5), 4 ideias com estilo orgânico, roteiro por formato (`roteiro`) e políticas por nicho | chamada real, 14/10/2026 |
 | `recomendacao-thermora-qualidade-real.json` | "Analisar e recomendar" (tarefa `recomendacao_anuncio`, Sonnet 5) com pouco dado (3 dias, 2 vendas) e a LEITURA DOS DADOS do app: "Dados insuficientes para decidir", `decisao` e `mudaSe` | chamada real, 14/10/2026 |
 | `ajuste-cliches-moda.json` | "Cara de IA" > Corrigir: reescrita dos clichês pela proposta de "Ajustar este site" | escrita à mão |
+| `imagem-pela-assinatura-real.json` | Tarefa com imagem (`ajuste_entender_print`, Haiku 4.5 com visão, maxTokens 256) pela ASSINATURA, servidor sem chave de API: pago pela assinatura, US$ 0 (custaria ~US$ 0,016 pela API) | chamada real, 15/10/2026 |
 | `refino-natural-thermora.json` | "Parece anúncio?" > Aplicar as sugestões numa ideia com cara de vitrine | escrita à mão |
 | `plano-modelo-secoes.json` | "Analisar meu pedido" com o modelo pronto preenchido em parte (S1, S2, S3, S6): FAQ vazia da IA e um preço inventado no "não sei" (o app tira) | escrita à mão |
 | `ajuste-secao-thermora-real.json` | Ajuste por seção (tarefa `ajuste_secao`, Haiku 4.5) a partir da sugestão da Conferência "Não feito" do subtítulo do banner: só a seção hero enviada, devolveu só a operação dela | chamada real, 14/10/2026 |
@@ -61,3 +62,5 @@ Com o app no modo demo, troque `window.fetch` para responder `POST /api/claude` 
 `GET /api/claude/trabalho/mock1` com `{ pronto: true, status: 200, corpo: { texto, provedor: 'cli', uso } }`, usando o
 `texto` de uma fixture. Para simular o limite da assinatura no servidor: `IA_CLI_BIN=tests/fixtures/ia/cli-limite.mjs`
 com `ANTHROPIC_BASE_URL` apontando para a API falsa (ver `tests/servidor-limite.test.js`).
+
+Assinatura no limite no navegador: `window.__limite = true` (o simulador devolve o pedido de permissão; "Usar API desta vez" reenvia com `permitirApi`). CLI falsa que responde: `tests/fixtures/ia/cli-ok.mjs`.

@@ -59,12 +59,25 @@ function aplicarResultadoPendente() {
   const { texto } = pendente; pendente = null;
   aplicarResultado(el, texto);
 }
+// "Pago por": a última chamada de IA real (core/ia.js dispara gcc:ia-provedor). O resultado que aparece logo depois dela
+// (até 2 min) ganha a etiqueta; uma vez só, para um resultado sem IA não herdar a etiqueta de outra chamada.
+let ultimaIa = null;
+if (typeof window !== 'undefined') window.addEventListener('gcc:ia-provedor', (e) => { ultimaIa = { ...(e.detail || {}), t: Date.now() }; });
+/** Texto da etiqueta: "Pago por: Assinatura" ou "Pago por: API (US$ 0,0123)". */
+export const textoPagoPor = (x) => (x?.provedor === 'cli' ? 'Pago por: Assinatura' : `Pago por: API${x?.custoUsd > 0 ? ` (US$ ${Number(x.custoUsd).toLocaleString('pt-BR', { maximumFractionDigits: 4 })})` : ''}`);
+function etiquetaPagoPor() {
+  if (!ultimaIa || Date.now() - ultimaIa.t > 120_000) return '';
+  const x = ultimaIa; ultimaIa = null;
+  return textoPagoPor(x);
+}
 function aplicarResultado(el, texto) {
   el.scrollIntoView({ block: el.offsetHeight > window.innerHeight * 0.8 ? 'start' : 'center' });
   el.classList.add(...DESTAQUE); setTimeout(() => el.classList.remove(...DESTAQUE), 2500);
+  const pago = etiquetaPagoPor();
+  if (pago) { el.querySelector(':scope > [data-pago-por]')?.remove(); el.insertAdjacentHTML('beforeend', `<p class="caption mt-1" data-pago-por><i class="fa-solid fa-${pago.includes('Assinatura') ? 'user-check' : 'key'}" aria-hidden="true"></i> ${esc(pago)}</p>`); }
   const barra = barraStatus('status-resultado');
   barra.innerHTML = `<div class="flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white shadow-lg" role="status" data-status-resultado>
-    <i class="fa-solid fa-circle-check"></i><span class="min-w-0 flex-1">${esc(texto)}</span>
+    <i class="fa-solid fa-circle-check"></i><span class="min-w-0 flex-1">${esc(texto)}${pago ? ` <span class="ml-1 whitespace-nowrap rounded bg-white/20 px-1.5 py-0.5 text-xs" data-pago-por-status>${esc(pago)}</span>` : ''}</span>
     <button type="button" class="rounded bg-white/20 px-2 py-1 text-xs font-semibold hover:bg-white/30" data-ver-resultado-status>Ver resultado</button>
     <button type="button" class="px-1 text-lg leading-none" aria-label="Fechar" data-fechar-status>&times;</button></div>`;
   barra.querySelector('[data-ver-resultado-status]').onclick = () => { if (el.isConnected) aplicarResultado(el, texto); else fecharBarra('status-resultado'); };

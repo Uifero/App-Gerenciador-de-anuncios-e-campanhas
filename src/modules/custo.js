@@ -3,7 +3,7 @@
 // Valores em US$ (é como a Anthropic cobra); o equivalente em R$ usa a cotação editável de Configurações e é só estimativa.
 import { db, COL } from '../core/storage.js';
 import { TAREFAS_IA, CATEGORIAS_CUSTO } from '../lib/constantes.js';
-import { esc, confirmar, toast } from '../core/ui.js';
+import { esc, confirmar, toast, modal, on } from '../core/ui.js';
 import { porTarefaDoMes } from '../lib/custos-ia.js';
 
 export const AVISO_PCT = 80;
@@ -44,7 +44,8 @@ export function registrarUso({ cliente, tarefa, uso }) {
     const doc = {
       clienteId: cliente?.id || null, clienteNome: cliente?.nome || '', tarefa, categoria: TAREFAS_IA[tarefa]?.[1] || 'outros', modelo: uso.modelo || '',
       tokensEntrada: uso.entrada || 0, tokensSaida: uso.saida || 0, tokensCacheEscrita: uso.cacheEscrita || 0, tokensCacheLeitura: uso.cacheLeitura || 0,
-      buscasWeb: uso.buscasWeb || 0, custoUsd: uso.custoUsd || 0, moeda: 'USD', provedor: uso.provedor || 'api', mes: mesDe(), data: new Date().toISOString(),
+      // provedor = quem pagou ('cli' = assinatura, 'api' = chave). Sem a informação, fica sem (o painel mostra "não registrado").
+      buscasWeb: uso.buscasWeb || 0, custoUsd: uso.custoUsd || 0, moeda: 'USD', ...(uso.provedor ? { provedor: uso.provedor } : {}), mes: mesDe(), data: new Date().toISOString(),
     };
     // Acumulado já em memória: soma agora (o orçamento vale para a próxima chamada mesmo antes da gravação terminar).
     // Se não estiver em memória, a próxima leitura espera a fila e vem do banco já com este registro.
@@ -74,12 +75,32 @@ export async function verificarOrcamento(cliente, cfg) {
   }
 }
 
+/**
+ * A assinatura chegou ao limite (ou falhou) e a configuração é "Perguntar": mostra o custo estimado pela API e espera.
+ * Resolve true só no "Usar API desta vez"; "Esperar", X ou clique fora = false (a chave não é usada).
+ */
+export function perguntarUsoApi({ limite = false, motivo = '', custoEstimadoUsd = 0 } = {}) {
+  return new Promise((ok) => {
+    const titulo = limite ? 'A assinatura chegou ao limite' : 'A assinatura não respondeu';
+    const m = modal(titulo, `<div class="space-y-3 text-sm" data-perguntar-api>
+      <p class="font-medium" data-texto-pergunta-api>${limite ? 'A assinatura chegou ao limite.' : 'A assinatura não respondeu agora.'} Usar a chave de API? Custo estimado ${esc(usd(custoEstimadoUsd))}</p>
+      ${motivo ? `<p class="caption" data-motivo-api>${esc(motivo)}</p>` : ''}
+      <p class="hint">A chave de API é cobrada por token. Só esta chamada usa a chave; as próximas tentam a assinatura de novo. Para não perguntar mais, mude em Configurações > "Usar API quando a assinatura acabar".</p>
+      <div class="flex flex-wrap justify-end gap-2"><button type="button" class="btn-ghost min-h-[44px]" data-esperar-api>Esperar</button>
+        <button type="button" class="btn-primary min-h-[44px]" data-usar-api-vez><i class="fa-solid fa-key" aria-hidden="true"></i> Usar API desta vez</button></div></div>`, { aoFechar: () => ok(false) });
+    on(m.el, 'click', '[data-usar-api-vez]', () => { ok(true); m.fechar(); });
+    on(m.el, 'click', '[data-esperar-api]', () => m.fechar());
+    m.el.querySelector('[data-esperar-api]')?.focus();
+  });
+}
+
 // ---------- resumos ----------
 export function resumirUso(regs) {
   const r = { totalUsd: 0, chamadas: regs.length, entrada: 0, saida: 0, cacheLeitura: 0, porCategoria: {} };
   for (const x of regs) {
     r.totalUsd += x.custoUsd || 0; r.entrada += x.tokensEntrada || 0; r.saida += x.tokensSaida || 0; r.cacheLeitura += x.tokensCacheLeitura || 0;
-    const c = (r.porCategoria[x.categoria] ||= { usd: 0, chamadas: 0, entrada: 0, saida: 0 });
+    const c = (r.porCategoria[x.categoria] ||= { usd: 0, chamadas: 0, entrada: 0, saida: 0, assinatura: 0, api: 0, naoRegistrado: 0 });
+    if (x.provedor === 'cli') c.assinatura++; else if (x.provedor === 'api') c.api++; else c.naoRegistrado++;
     c.usd += x.custoUsd || 0; c.chamadas++; c.entrada += (x.tokensEntrada || 0) + (x.tokensCacheEscrita || 0) + (x.tokensCacheLeitura || 0); c.saida += x.tokensSaida || 0;
   }
   return r;
@@ -117,17 +138,17 @@ export function cartaoCusto(cliente, regs, cfg, arquivado = null) {
   const totalGeral = r.totalUsd + (arquivado?.usd || 0);
   const chamadasGeral = r.chamadas + (arquivado?.chamadas || 0);
   const linhas = Object.entries(r.porCategoria).sort((a, b) => b[1].usd - a[1].usd).map(([cat, v]) => `<tr class="border-t border-slate-100">
-    <td class="py-1.5">${esc(CATEGORIAS_CUSTO[cat] || cat)}</td><td class="text-right">${v.chamadas}</td><td class="text-right">${compacto(v.entrada)}</td><td class="text-right">${compacto(v.saida)}</td>
+    <td class="py-1.5">${esc(CATEGORIAS_CUSTO[cat] || cat)}</td><td class="text-right">${v.chamadas}</td><td data-pago-por-categoria>${esc([v.assinatura && `Assinatura ${v.assinatura}`, v.api && `API ${v.api}`, v.naoRegistrado && `não registrado ${v.naoRegistrado}`].filter(Boolean).join(" · "))}</td><td class="text-right">${compacto(v.entrada)}</td><td class="text-right">${compacto(v.saida)}</td>
     <td class="text-right font-medium">${usd(v.usd)}</td></tr>`).join('');
   return `<details class="card mb-5" id="custo-ia">
     <summary class="cursor-pointer list-none"><div class="flex flex-wrap items-center justify-between gap-2">
       <span class="text-sm font-semibold"><i class="fa-solid fa-coins mr-1 text-slate-400"></i>Custo de IA acumulado: ${usd(totalGeral)} <span class="font-normal text-slate-500">(≈ ${brl(totalGeral, cfg.cotacaoUsd)})</span></span>
       <span class="caption">${chamadasGeral} chamada(s) · neste mês ${usd(gastoMes)}${orc ? ` de ${usd(orc)}` : ''}</span></div></summary>
-    ${r.chamadas ? `<div class="mt-3 overflow-x-auto"><table class="w-full text-sm"><thead class="text-left text-xs uppercase text-slate-500"><tr><th class="py-1">Operação</th><th class="text-right">Chamadas</th><th class="text-right">Tokens entrada</th><th class="text-right">Tokens saída</th><th class="text-right">Custo</th></tr></thead><tbody>${linhas}</tbody></table></div>
+    ${r.chamadas ? `<div class="mt-3 overflow-x-auto"><table class="w-full text-sm"><thead class="text-left text-xs uppercase text-slate-500"><tr><th class="py-1">Operação</th><th class="text-right">Chamadas</th><th>Pago por</th><th class="text-right">Tokens entrada</th><th class="text-right">Tokens saída</th><th class="text-right">Pago na API</th></tr></thead><tbody>${linhas}</tbody></table></div>
       ${r.cacheLeitura ? `<p class="hint">${compacto(r.cacheLeitura)} tokens de entrada foram lidos do cache (10x mais baratos).</p>` : ''}`
       : arquivado?.usd > 0 ? '' : '<p class="caption mt-3">Nenhuma chamada de IA registrada para este cliente ainda.</p>'}
     ${arquivado?.usd > 0 ? `<p class="hint mt-2">Inclui ${usd(arquivado.usd)} (${arquivado.chamadas} chamada(s)) já arquivados de meses fechados — o detalhe por operação desses meses não fica mais salvo, só o total.</p>` : ''}
-    <p class="hint mt-2">Custo estimado pela tabela de preços por token; a fatura da Anthropic é a referência oficial. R$ usa a cotação de Configurações.</p></details>`;
+    <p class="hint mt-2">Chamada pela assinatura custa US$ 0,00; só a chave de API é cobrada (calculada pela tabela de preços por token; a fatura da Anthropic é a referência oficial). Detalhe por chamada em Configurações > Custos de IA. R$ usa a cotação de Configurações.</p></details>`;
 }
 
 // ---------- rollup mensal (arquivamento) ----------
