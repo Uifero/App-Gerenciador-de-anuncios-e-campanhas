@@ -1,0 +1,5 @@
+{
+ "escritaAMao": true,
+ "tarefa": "ajuste_entender_print",
+ "texto": "{\"global\":false,\"oque\":\"\",\"secoes\":[],\"perguntas\":[{\"texto\":\"Você marcou o selo de frete ou o preço?\",\"opcoes\":[{\"texto\":\"O selo de frete\",\"elementos\":[\"produto.frete\"],\"instrucao\":\"mudar o selo de frete\"},{\"texto\":\"O preço\",\"elementos\":[\"produto.preco\"],\"instrucao\":\"mudar o preço\"}]}],\"fora\":[],\"referencia\":null}"
+}

@@ -110,6 +110,7 @@ export const TAREFAS = {
   ajuste_site: { modelo: MODELO_LEVE,     max: 3000, semRaciocinio: true },  // "Ajustar este site": pedido pontual (texto, ordem, cor); 8 s -> 6 s, mesmas operações
   ajuste_site_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', siteProfissional: true }, // "Ajustar este site": pedido amplo (várias seções / reescrever)
   ajuste_entender: { modelo: MODELO_LEVE, max: 1200 },                   // "Ajustar este site" por seção: só descobre QUAIS seções o pedido mexe ("Entendi assim"), sem os textos do site
+  ajuste_entender_print: { modelo: MODELO_LEVE, max: 1500, imagens: true }, // "Anexar print": Haiku com visão liga as marcas do print aos elementos do site (custo da imagem separado)
   ajuste_secao: { modelo: MODELO_LEVE, max: 2500 },                      // ajuste por seção: recebe SÓ as seções afetadas e devolve operações delas (texto, foto, mudança pequena)
   ajuste_secao_amplo: { modelo: MODELO_COMPLEXO, max: 5000, effort: 'low', siteProfissional: true }, // ajuste por seção que muda layout/estrutura ou o site todo
   plano_site:  { modelo: MODELO_COMPLEXO, max: 16000, effort: 'low', siteProfissional: true, paginaProduto: true },      // "Analisar meu pedido": texto de até 12.000 caracteres lido seção por seção, plano ANTES de aplicar (sem imagem: o print da referência já vem lido em texto)

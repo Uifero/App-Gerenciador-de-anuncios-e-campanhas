@@ -43,6 +43,9 @@ export async function apagarClienteEmCascata(clienteId) {
   await Promise.all((cli?.arquivosRetidos || []).map((a) => a?.path && removerArquivo(a.path)));
   await Promise.all([...criativos.flatMap((c) => [c.arquivoPath, c.previaPath]), ...materiais.flatMap((m) => [m.path, m.borrada?.path])].filter(Boolean).map((p) => removerArquivo(p))); // peça final + prévia reduzida + fotos salvas (e a cópia borrada dos prints)
   await Promise.all(pecas.map((p) => p.path && removerArquivo(p.path, { peca: true }))); // peças da Galeria (o cliente inteiro sai)
+  // Prints anexados ao "Ajustar este site" (gcc/<cliente>/ajustes/): a lista mora no site.
+  const sitesDoCliente = await db.listar(COL.sites, f);
+  await Promise.all(sitesDoCliente.flatMap((s) => (s.printsAjuste || []).map((p) => p?.path && removerArquivo(p.path))));
   await Promise.all([
     removerTodos(COL.criativos, f), removerTodos(COL.hooks, f), removerTodos(COL.referencias, f), removerTodos(COL.campanhas, f),
     removerTodos(COL.resultados, f), removerTodos(COL.produtos, f), removerTodos(COL.sites, f),

@@ -916,7 +916,15 @@ const OPS_CUSTOM = `Operações permitidas (use exatamente estes formatos):
 - {"op":"fotos","ajuste":"contain"|"cover"}  (fotos dos produtos: inteiras, sem cortar | preenchendo o quadro)
 - {"op":"foto","codigo":"F3","uso":"banner"|"produto"|"clientes"|"sobre"|"galeria"|"nao","produto":NOME DO PRODUTO (só com uso "produto"),"acao":"usar"|"tirar","principal":true|false (opcional, foto principal do produto),"ordem":n (opcional, posição no produto)}  (onde vai cada foto dos Materiais, pelo código. SÓ use quando a pessoa pedir EXPLICITAMENTE para mudar onde vai uma foto: as escolhas de foto são do operador e nunca mudam por iniciativa sua)
   Bloco "provas" = Clientes reais (prints reais de clientes): pode mover, ocultar e mostrar; o conteúdo dos prints NUNCA muda.
-Blocos (B): hero, categorias, vendidos, sale, catalogo, marca, galeria, depoimentos, faq, newsletter.`;
+Blocos (B): hero, categorias, vendidos, sale, catalogo, marca, galeria, depoimentos, faq, newsletter.
+Por ELEMENTO (ids da lista "Elementos dessas seções"; passos fixos, o app guarda o desenho consistente):
+- {"op":"elemento","id":ID,"acao":"ocultar"|"mostrar"}  (dados da loja e políticas NUNCA saem)
+- {"op":"elemento","id":ID,"acao":"espaco","passo":-1|1}  (mais junto | mais separado; num id de seção = espaço entre seções)
+- {"op":"elemento","id":ID,"acao":"tamanho","passo":-1|1}  (menor | maior)
+- {"op":"elemento","id":ID,"acao":"mover","direcao":"subir"|"descer"}  (ordem dentro da seção)
+- {"op":"extra","acao":"adicionar","apos":ID,"tipo":"texto"|"selo"|"botao","texto":string,"segura":versão sem promessa de efeito no corpo} / {"op":"extra","acao":"editar"|"remover","id":ID}
+- {"op":"faq","acao":"mover","indice":n,"direcao":"subir"|"descer"} / {"op":"faq","acao":"adicionar","p","r","depoisDe":n}
+- {"op":"dadoLoja","campo":"razaoSocial"|"cnpj"|"endereco"|"email"|"telefone","valor":string}  (só se o operador escrever o dado; nunca invente)`;
 const OPS_PACOTE = `Operações permitidas (conteúdo do pacote e as escolhas da PRÉVIA, que depois viram configurações do tema em "O que colocar na plataforma"):
 - {"op":"imagem","bloco":"banner","materialId":ID dos Materiais listados | null para tirar}  (imagem do banner)
 - {"op":"fotos","ajuste":"contain"|"cover"}  (fotos dos produtos: inteiras, sem cortar | preenchendo o quadro)
@@ -988,13 +996,15 @@ ${SO_JSON}`;
  * "Entendi assim" do pedido livre: quais seções ele mexe (IA barata, sem os textos do site). Não muda nada.
  * Devolve { global, secoes: [{ id, nome, oque, estrutura }], perguntas, fora } (lib/ajuste-secoes.js normalizarEntendimento).
  */
-export async function entenderAjuste({ cliente, modo, mensagem, materiais = [] }) {
-  const pedidoLivre = String(mensagem || '').trim();
+export async function entenderAjuste({ cliente, modo, mensagem, materiais = [], imagens = [], elementos = '' }) {
+  const pedidoLivre = String(mensagem || '').trim() || (imagens.length ? 'Veja o que marquei no print.' : '');
   if (!pedidoLivre) throw new Error('Escreva o que quer mudar no site.');
   if (pedidoLivre.length > LIMITE_PEDIDO_AJUSTE) throw new Error(`O pedido tem ${pedidoLivre.length} caracteres; o limite é ${LIMITE_PEDIDO_AJUSTE}. Encurte e tente de novo.`);
-  const system = 'Você só identifica QUAIS partes de um site de loja um pedido mexe. Não escreve texto novo e não muda nada. Português do Brasil, frases curtas.';
+  const comPrint = imagens.length > 0;
+  const system = `Você só identifica QUAIS partes de um site de loja um pedido mexe${comPrint ? ', olhando também o(s) print(s) com marcas (círculo, seta, risco) que o operador anexou' : ''}. Não escreve texto novo e não muda nada. Português do Brasil, frases curtas.`;
   const pedido = `SEÇÕES DO SITE (id: nome):
 ${mapaDasSecoes({}, modo)}
+${elementos ? `ELEMENTOS DO SITE ATUAL (id: nome):\n${elementos}\n` : ''}${comPrint ? `PRINTS ANEXADOS: ${imagens.length} (na ordem). Cada marca aponta um elemento. Se o print for de OUTRO site (referência: "quero parecido com isso"), use só a ideia de layout; nunca o texto, o logo ou as imagens dele.\n` : ''}
 Fotos com código nos Materiais: ${materiais.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo).map((m) => m.codigo).join(', ') || 'nenhuma'}
 
 PEDIDO DO OPERADOR: "${pedidoLivre}"
@@ -1005,10 +1015,13 @@ Regras:
 - "estrutura": true só quando muda o layout da seção (ordem, mostrar/ocultar, altura, colunas, imagem); texto e foto = false.
 - "global": true SÓ quando o pedido vale para o site todo (ex.: "muda as cores do site todo", "deixa o tom mais informal em tudo"). Nesse caso "oque" resume a mudança.
 - Ambíguo (não dá para saber a seção ou o que fazer) ou "não sei": faça uma pergunta com 2 ou 3 opções clicáveis, cada uma {"texto", "secoes": [ids], "instrucao": o que fazer nessa opção}. Nunca chute.
-- O que não dá para mudar por aqui (Pixel, cookies, carrinho/pagamento, políticas, cabeçalho, rodapé, WhatsApp) vai em "fora".
-Saída JSON: {"global": boolean, "oque": string, "secoes": [{"id", "oque": o que muda nela em 1 frase, "estrutura": boolean}], "perguntas": [{"texto", "opcoes": [...]}], "fora": [string]}
+- O que não dá para mudar por aqui (Pixel, cookies, carrinho/pagamento, cabeçalho, WhatsApp) vai em "fora". Dados da loja e políticas (seção rodape) podem ter o TEXTO mudado, mas nunca saem do site.${elementos ? '\n- Em cada seção, "elementos": os ids (da lista ELEMENTOS) que o pedido ou a marca do print aponta. Só ids que existem na lista.' : ''}${comPrint ? `
+- Marca que não dá para saber a qual elemento se refere: pergunta com botões, cada opção com "elementos": [id] (ex.: "Você marcou o selo de frete ou o preço?"). Nunca escolha sozinho e nunca inclua a seção que não deu para identificar.
+- Print de outro site (referência): "referencia": {"copiar": a ideia de layout que dá para trazer, em 1 frase}; nunca texto, logo ou imagem dele.` : ''}
+Saída JSON: {"global": boolean, "oque": string, "secoes": [{"id", "oque": o que muda nela em 1 frase, "estrutura": boolean${elementos ? ', "elementos": [ids]' : ''}}], "perguntas": [{"texto", "opcoes": [...]}], "fora": [string]${comPrint ? ', "referencia": {"copiar": string} ou null' : ''}}
 ${SO_JSON}`;
-  const { dados } = await gerarJSON({ tarefa: 'ajuste_entender', cliente, system, messages: [{ role: 'user', content: pedido }] });
+  // Com print: Haiku com visão (tarefa própria, para o custo da imagem aparecer separado em "Custos de IA").
+  const { dados } = await gerarJSON({ tarefa: comPrint ? 'ajuste_entender_print' : 'ajuste_entender', cliente, system, messages: [{ role: 'user', content: pedido }], ...(comPrint ? { imagens } : {}) });
   return normalizarEntendimento(dados || {}, modo);
 }
 
@@ -1039,7 +1052,7 @@ Saída JSON: {"tipo": "proposta"|"recusa"|"explicacao", "resposta": 1-2 frases d
 ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa, cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   const r = normalizarAjusteSite(dados);
-  const { dentro, fora } = filtrarOperacoes(r.operacoes, secoes, modo);
+  const { dentro, fora } = filtrarOperacoes(r.operacoes, secoes, modo, estado?.layout);
   return { ...r, operacoes: dentro, tipo: dentro.length ? 'proposta' : r.tipo === 'proposta' ? 'recusa' : r.tipo, foraDasSecoes: fora, tarefa };
 }
 

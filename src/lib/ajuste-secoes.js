@@ -11,6 +11,7 @@ import { temCodigo, porCodigo, resumoUsos, usosDe } from './fotos-site.js';
 import { itensAceitos } from './plano-site.js';
 import { textosParaAplicar } from './textos-site.js';
 import { achadosSaude } from './saude.js';
+import { secaoDoElemento, listaElementos, elementoValido } from './elementos-site.js';
 import { verificarCaraDeIa } from './cara-de-ia.js';
 import { TAREFAS_IA } from './constantes.js';
 import { precoDoModelo } from './precos-ia.js';
@@ -26,7 +27,7 @@ export const LIMITE_PEDIDO_AJUSTE = 2000;
 /** Seções do site no modo: [{ id, nome }]. Além dos blocos: "produto" (fotos/descrição do produto) e "geral" (cores, ajuste das fotos, ordem sugerida). */
 export function secoesDoSite(modo) {
   const base = modo === 'pacote' ? SECOES_LOJA.map(([id, nome]) => ({ id, nome })) : BLOCOS.map(([id, nome]) => ({ id, nome }));
-  return [...base, { id: 'produto', nome: modo === 'pacote' ? 'Produtos (fotos e descrições do CSV)' : 'Página do produto (fotos)' }, { id: 'geral', nome: modo === 'pacote' ? 'Visual geral (paleta, estilo do tema, ordem sugerida)' : 'Visual geral (cores e fotos dos produtos)' }];
+  return [...base, { id: 'produto', nome: modo === 'pacote' ? 'Produtos (fotos e descrições do CSV)' : 'Página do produto' }, { id: 'geral', nome: modo === 'pacote' ? 'Visual geral (paleta, estilo do tema, ordem sugerida)' : 'Visual geral (cores e fotos dos produtos)' }, ...(modo === 'pacote' ? [] : [{ id: 'rodape', nome: 'Rodapé e dados da loja' }])];
 }
 export const nomeSecao = (id, modo) => (id === TODO ? 'Site todo' : secoesDoSite(modo).find((s) => s.id === id)?.nome || id);
 export const secaoValida = (id, modo) => id === TODO || secoesDoSite(modo).some((s) => s.id === id);
@@ -38,7 +39,12 @@ const FOTO_PACOTE = { banner: 'banner', clientes: 'provas', sobre: 'sobre', gale
 const CAMPO_CUSTOM = { heroTitulo: 'hero', heroSubtitulo: 'hero', heroCta: 'hero', storytelling: 'marca', newsletterTitulo: 'newsletter', newsletterTexto: 'newsletter' };
 
 /** Seção que uma operação mexe (null = operação sem seção conhecida: é recusada no ajuste por seção). */
-export function secaoDaOperacao(op = {}, modo = 'custom') {
+export function secaoDaOperacao(op = {}, modo = 'custom', layout = {}) {
+  // "Apontar no site" (lib/elementos-site.js): a seção vem do id do elemento (ou do elemento que o acréscimo segue).
+  if (op.op === 'elemento') return secaoDoElemento(op.id, layout);
+  if (op.op === 'extra') return secaoDoElemento(op.acao === 'adicionar' ? op.apos : op.id, layout);
+  if (op.op === 'dadoLoja') return modo === 'pacote' ? 'geral' : 'rodape';
+  if (op.op === 'texto' && /^politicas./.test(txt(op.campo))) return 'rodape';
   if (op.op === 'foto') return (modo === 'pacote' ? FOTO_PACOTE : FOTO_CUSTOM)[op.uso] || null;
   if (op.op === 'paleta' || op.op === 'fotos') return 'geral';
   if (op.op === 'faq') return 'faq';
@@ -59,11 +65,11 @@ export function secaoDaOperacao(op = {}, modo = 'custom') {
  * Separa as operações que mexem só nas seções enviadas das que saem delas (essas o app recusa, com o motivo).
  * `secoes` com TODO = mudança no site todo (tudo vale).
  */
-export function filtrarOperacoes(operacoes = [], secoes = [], modo = 'custom') {
+export function filtrarOperacoes(operacoes = [], secoes = [], modo = 'custom', layout = {}) {
   const dentro = [], fora = [];
   const todo = secoes.includes(TODO);
   for (const op of Array.isArray(operacoes) ? operacoes : []) {
-    const s = secaoDaOperacao(op, modo);
+    const s = secaoDaOperacao(op, modo, layout);
     if (todo || (s && secoes.includes(s))) dentro.push(op);
     else fora.push({ op, motivo: `Recusado: mexeria em "${s ? nomeSecao(s, modo) : 'outra parte do site'}", que não estava no pedido (só ${secoes.map((x) => `"${nomeSecao(x, modo)}"`).join(', ')}).` });
   }
@@ -74,7 +80,7 @@ export function filtrarOperacoes(operacoes = [], secoes = [], modo = 'custom') {
 export function mudancasPorSecao(r, modo) {
   const mapa = new Map();
   (r?.aplicadas || []).forEach((op, i) => {
-    const s = secaoDaOperacao(op, modo) || 'geral';
+    const s = secaoDaOperacao(op, modo, r.estado?.layout) || 'geral';
     if (!mapa.has(s)) mapa.set(s, []);
     mapa.get(s).push(r.mudancas[i]);
   });
@@ -138,6 +144,10 @@ export function resumoDasSecoes(estado = {}, secoes = [], modo = 'custom', { mat
       if (t) linhas.push(t());
     }
   }
+  const els = listaElementos(ids.filter((id) => id !== 'geral'), estado, { modo, materiais });
+  if (els) linhas.push(`Elementos dessas seções (id: nome), para as operações por elemento:
+${els}`);
+  if (ids.includes('rodape') && modo !== 'pacote') linhas.push('rodape: dados da loja e políticas (exigência legal: NUNCA saem do site; só o texto muda).');
   const comFoto = ids.some((id) => ['hero', 'banner', 'marca', 'sobre', 'galeria', 'produto', 'provas'].includes(id));
   if (comFoto) linhas.push(`Fotos dos Materiais (código: nome [onde está]): ${materiais.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo).slice(0, 60).map((m) => linhaFoto(m, produtos)).join(' | ') || '(nenhuma)'}`);
   return linhas.join('\n');
@@ -166,17 +176,21 @@ export function textosDoOperador(site = {}, modo = 'custom') {
 /** Operações de texto que reescrevem um texto do operador: [{ campo, original, melhorada, segura, escolha: null }]. */
 export function escolhasDeTexto(operacoes = [], site = {}, modo = 'custom') {
   const dele = textosDoOperador(site, modo);
-  return operacoes.filter((op) => op.op === 'texto' && dele[op.campo] && txt(op.valor) && txt(op.valor) !== dele[op.campo].original)
+  const doOperador = operacoes.filter((op) => op.op === 'texto' && dele[op.campo] && txt(op.valor) && txt(op.valor) !== dele[op.campo].original)
     .map((op) => ({ campo: op.campo, original: dele[op.campo].original, melhorada: txt(op.valor), segura: txt(op.segura) || dele[op.campo].segura || '', escolha: null }));
+  // "Adicionar abaixo" com "a IA sugere": o texto novo também passa pela escolha (versão da IA ou versão segura).
+  const daIa = operacoes.filter((op) => op.op === 'extra' && op.acao === 'adicionar' && op.id && txt(op.segura) && txt(op.segura) !== txt(op.texto))
+    .map((op) => ({ campo: op.id, extra: true, original: '', melhorada: txt(op.texto), segura: txt(op.segura), escolha: null }));
+  return [...doOperador, ...daIa];
 }
 
 // ---------- custo estimado ----------
 /** Custo estimado (US$) de uma chamada: entrada pelos caracteres do pedido (+ regras fixas), saída pela metade do limite. */
-export function estimarCusto(tarefa, caracteres = 0) {
+export function estimarCusto(tarefa, caracteres = 0, { tokensImagem = 0 } = {}) {
   const t = TAREFAS_IA[tarefa]; if (!t) return null;
   const p = precoDoModelo(t[3] === 'Haiku' ? 'haiku' : 'sonnet-5');
-  const entrada = Math.round((caracteres + 9000) / 3.5), saida = Math.round(t[2] * 0.5);
-  return { tarefa, modelo: t[3], entrada, saida, usd: (entrada * p.entrada + saida * p.saida) / 1e6 };
+  const entrada = Math.round((caracteres + 9000) / 3.5) + tokensImagem, saida = Math.round(t[2] * 0.5);
+  return { tarefa, modelo: t[3], entrada, saida, tokensImagem, usd: (entrada * p.entrada + saida * p.saida) / 1e6 };
 }
 export const textoCusto = (c) => (c ? `~US$ ${c.usd < 0.01 ? c.usd.toFixed(4) : c.usd.toFixed(3)} (${c.modelo})`.replace('.', ',') : '');
 
@@ -268,23 +282,28 @@ export function secaoDoPrefixo(mensagem = '', modo = 'custom') {
 export const prefixoSecao = (id, modo) => `Na seção "${nomeSecao(id, modo)}": `;
 
 /** "Entendi assim" da IA, conferido: { global, secoes: [{ id, nome, oque, estrutura }], perguntas: [{ texto, opcoes: [{ texto, secoes, instrucao }] }], fora: [] }. */
+// Elementos apontados ("Apontar no site" ou marca no print): só ids que existem; o elemento sempre fica na seção dele.
+const elementosOk = (lista, secao) => [...new Set((Array.isArray(lista) ? lista : []).map(txt).filter((id) => elementoValido(id) && (!secao || secaoDoElemento(id) === secao)))].slice(0, 10);
 export function normalizarEntendimento(d = {}, modo = 'custom') {
   const global = d.global === true;
-  const secoes = (Array.isArray(d.secoes) ? d.secoes : []).map((s) => ({ id: txt(s?.id), oque: corta(s?.oque, 240), estrutura: s?.estrutura === true }))
+  const secoes = (Array.isArray(d.secoes) ? d.secoes : []).map((s) => ({ id: txt(s?.id), oque: corta(s?.oque, 240), estrutura: s?.estrutura === true, elementos: elementosOk(s?.elementos, txt(s?.id)) }))
     .filter((s) => s.id && s.id !== TODO && secaoValida(s.id, modo)).filter((s, i, a) => a.findIndex((x) => x.id === s.id) === i).map((s) => ({ ...s, nome: nomeSecao(s.id, modo) }));
   const perguntas = (Array.isArray(d.perguntas) ? d.perguntas : []).map((q) => ({
     texto: corta(q?.texto, 240),
-    opcoes: (Array.isArray(q?.opcoes) ? q.opcoes : []).map((o) => ({ texto: corta(typeof o === 'string' ? o : o?.texto, 80), secoes: (Array.isArray(o?.secoes) ? o.secoes : []).filter((id) => secaoValida(id, modo) && id !== TODO), instrucao: corta(o?.instrucao, 300) })).filter((o) => o.texto).slice(0, 3),
+    opcoes: (Array.isArray(q?.opcoes) ? q.opcoes : []).map((o) => ({ texto: corta(typeof o === 'string' ? o : o?.texto, 80), secoes: [...new Set([...(Array.isArray(o?.secoes) ? o.secoes : []), ...elementosOk(o?.elementos).map((id) => secaoDoElemento(id))])].filter((id) => secaoValida(id, modo) && id !== TODO), elementos: elementosOk(o?.elementos), instrucao: corta(o?.instrucao, 300) })).filter((o) => o.texto).slice(0, 3),
     resposta: null,
   })).filter((q) => q.texto && q.opcoes.length >= 2).map((q, i) => ({ id: `q${i + 1}`, ...q }));
   const fora = (Array.isArray(d.fora) ? d.fora : []).map((x) => corta(x, 200)).filter(Boolean);
-  return { global, secoes: global ? [{ id: TODO, nome: 'Site todo', oque: corta(d.oque || secoes.map((s) => s.oque).join(' ') || 'mudança no site todo', 240), estrutura: true }] : secoes, perguntas, fora };
+  // Print de outro site: só a ideia de layout (nunca texto, logo ou imagem dele).
+  const referencia = d.referencia && txt(d.referencia.copiar) ? { copiar: corta(d.referencia.copiar, 300) } : null;
+  return { global, secoes: global ? [{ id: TODO, nome: 'Site todo', oque: corta(d.oque || secoes.map((s) => s.oque).join(' ') || 'mudança no site todo', 240), estrutura: true, elementos: [] }] : secoes, perguntas, fora, ...(referencia ? { referencia } : {}) };
 }
 /** Resposta de uma pergunta do "Entendi assim": as seções da opção entram e a instrução ganha o complemento. */
 export function responderEntendimento(ent, perguntaId, indice, modo = 'custom') {
   const q = ent.perguntas.find((x) => x.id === perguntaId); const o = q?.opcoes?.[indice]; if (!q || !o) return ent;
-  const novas = o.secoes.filter((id) => !ent.secoes.some((s) => s.id === id)).map((id) => ({ id, nome: nomeSecao(id, modo), oque: o.instrucao || o.texto, estrutura: false }));
-  return { ...ent, secoes: ent.secoes.some((s) => s.id === TODO) ? ent.secoes : [...ent.secoes, ...novas], perguntas: ent.perguntas.map((x) => (x.id === perguntaId ? { ...x, resposta: o.texto, instrucao: o.instrucao } : x)), complementos: [...(ent.complementos || []), `${q.texto} → ${o.texto}${o.instrucao ? ` (${o.instrucao})` : ''}`] };
+  const novas = o.secoes.filter((id) => !ent.secoes.some((s) => s.id === id)).map((id) => ({ id, nome: nomeSecao(id, modo), oque: o.instrucao || o.texto, estrutura: false, elementos: (o.elementos || []).filter((e) => secaoDoElemento(e) === id) }));
+  const comEl = ent.secoes.map((s) => ({ ...s, elementos: [...new Set([...(s.elementos || []), ...(o.elementos || []).filter((e) => secaoDoElemento(e) === s.id)])] }));
+  return { ...ent, secoes: ent.secoes.some((s) => s.id === TODO) ? ent.secoes : [...comEl, ...novas], perguntas: ent.perguntas.map((x) => (x.id === perguntaId ? { ...x, resposta: o.texto, instrucao: o.instrucao } : x)), complementos: [...(ent.complementos || []), `${q.texto} → ${o.texto}${o.instrucao ? ` (${o.instrucao})` : ''}`] };
 }
 /** Tarefa do ajuste: Sonnet só quando muda layout/estrutura ou é o site todo; o resto é Haiku. */
 export const tarefaDoAjuste = (ent) => (ent.secoes.some((s) => s.id === TODO || s.estrutura) ? 'ajuste_secao_amplo' : 'ajuste_secao');

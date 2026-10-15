@@ -1,0 +1,5 @@
+{
+ "escritaAMao": true,
+ "tarefa": "ajuste_secao_amplo",
+ "texto": "{\"tipo\":\"proposta\",\"resposta\":\"Deixei o título maior e com mais espaço, como na referência.\",\"operacoes\":[{\"op\":\"elemento\",\"id\":\"hero.titulo\",\"acao\":\"tamanho\",\"passo\":1},{\"op\":\"elemento\",\"id\":\"hero.titulo\",\"acao\":\"espaco\",\"passo\":1}],\"naoFeito\":[]}"
+}

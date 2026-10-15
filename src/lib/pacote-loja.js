@@ -13,6 +13,7 @@ import { plataformaDoSite, nomeTema } from './etapas-site.js';
 import { depoimentosVivos } from './prova-social.js';
 import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, reais } from './recursos-loja.js';
 import { comDestaques } from './textos-site.js';
+import { marcarElemento, idFaq } from './elementos-site.js';
 import { designDoSite, cssVariaveis, textoPar } from './design-site.js';
 import { normalizarAnimacoes, prazoDaOferta, cssAnimacoes, classesBody, htmlContador, instrucoesTema } from './animacoes-site.js';
 
@@ -242,7 +243,8 @@ export function gerarPreviaLojaHTML(d) {
   const V = d.visual;
   const med = d.medidas || medidasDe(d.plataforma, d.tema);
   const slides = V.slides || [];
-  const textoBanner = `<h1>${esc(d.banner.titulo || d.nomeLoja)}</h1>${d.banner.subtitulo ? `<p>${esc(d.banner.subtitulo)}</p>` : ''}${contador}${d.banner.cta ? `<a href="#produtos" class="cta">${esc(d.banner.cta)}</a>` : ''}`;
+  const M = (id, html) => marcarElemento(html, id, { estado: { pacote: { textosPagina: { faq: d.faq } } } });
+  const textoBanner = `${M('banner.titulo', `<h1>${esc(d.banner.titulo || d.nomeLoja)}</h1>`)}${d.banner.subtitulo ? M('banner.subtitulo', `<p>${esc(d.banner.subtitulo)}</p>`) : ''}${contador}${d.banner.cta ? M('banner.cta', `<a href="#produtos" class="cta">${esc(d.banner.cta)}</a>`) : ''}`;
   // Sem foto escolhida para o banner: a foto real do primeiro produto que tiver foto (nunca um fundo de gradiente).
   const iHero = d.produtos.findIndex((x) => x.fotos[0]);
   const lightbox = d.provas.map((p, i) => `<div id="print-${i}" class="lightbox"><a href="#clientes-reais" class="fechar" aria-label="Fechar">×</a><img src="${esc(p.url)}" alt="Print de cliente real"></div>`).join('');
@@ -258,10 +260,10 @@ export function gerarPreviaLojaHTML(d) {
     confianca: () => `<div class="faixa"><div class="wrap confianca"><p><b>Compra segura</b> pagamento pela plataforma</p><p><b>Entrega</b> ${esc(d.politicas.envio ? d.politicas.envio.slice(0, 90) : 'frete calculado no carrinho')}</p><p><b>Trocas</b> ${esc(d.politicas.trocas ? d.politicas.trocas.slice(0, 90) : 'política de trocas da loja')}</p></div></div>`,
     depoimentos: () => (dep1 ? `<div class="sec suave"><div class="wrap"><h2>Quem já comprou</h2><blockquote class="dep-destaque">“${esc(dep1.texto)}”<cite>${esc(dep1.nome || 'Cliente')}</cite></blockquote>${depResto.length ? `<div class="depos">${depResto.map((x) => `<blockquote>“${esc(x.texto)}”<cite>${esc(x.nome || 'Cliente')}</cite></blockquote>`).join('')}</div>` : ''}</div></div>` : ''),
     galeria: () => ((d.galeria || []).length ? `<div class="sec"><div class="wrap"><h2 id="galeria">Galeria</h2><div class="galeria-fotos">${d.galeria.map((f) => `<img src="${esc(f.url)}" alt="" loading="lazy" style="object-position:${posicaoCss(f.foco)}">`).join('')}</div></div></div>` : ''),
-    sobre: () => (d.sobre ? `<div class="sec suave"><div class="wrap${(d.sobreImagens || [])[0] ? ' sobre-grid' : ''}">${(d.sobreImagens || [])[0] ? `<img class="sobre-img" src="${esc(d.sobreImagens[0].url)}" alt="" loading="lazy" style="object-position:${posicaoCss(d.sobreImagens[0].foco)}">` : ''}<div><h2 id="sobre">Sobre a marca</h2><p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p></div></div></div>` : ''),
-    faq: () => (d.faq.length ? `<div class="sec"><div class="wrap estreito"><h2 id="faq">Perguntas frequentes</h2>${d.faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div></div>` : ''),
+    sobre: () => (d.sobre ? `<div class="sec suave"><div class="wrap${(d.sobreImagens || [])[0] ? ' sobre-grid' : ''}">${(d.sobreImagens || [])[0] ? `<img class="sobre-img" src="${esc(d.sobreImagens[0].url)}" alt="" loading="lazy" style="object-position:${posicaoCss(d.sobreImagens[0].foco)}">` : ''}<div><h2 id="sobre">Sobre a marca</h2>${M('sobre.texto', `<p class="sobre">${esc(d.sobre).replace(/\n/g, '<br>')}</p>`)}</div></div></div>` : ''),
+    faq: () => (d.faq.length ? `<div class="sec"><div class="wrap estreito"><h2 id="faq">Perguntas frequentes</h2>${d.faq.map((f) => M(idFaq(f.p), `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`)).join('')}</div></div>` : ''),
   };
-  const home = `<section id="inicio" class="home">${comDestaques(V.ordem.filter((k) => !V.ocultas.includes(k)), 'banner').map((k) => secao[k]()).join('')}</section>`;
+  const home = `<section id="inicio" class="home">${comDestaques(V.ordem.filter((k) => !V.ocultas.includes(k)), 'banner').map((k) => M(k, secao[k]())).join('')}</section>`;
   // Página de produto: aparece pelo :target; a home some enquanto um produto está aberto.
   const pr = (m, cel = false) => { const x = cel ? m.mobile || m.desktop : m.desktop; return `${x.l}/${x.a}`; };
   const prodR = pr(med.produto || { desktop: { l: 1, a: 1 } });

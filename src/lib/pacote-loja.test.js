@@ -89,12 +89,12 @@ describe('escolhas visuais no molde do pacote', () => {
   it('imagem do banner vinda dos Materiais; sem escolha, banner de cor como antes', () => {
     const h = gerarPreviaLojaHTML(comVisual({ banner: { materialId: 'm1', url: 'https://cdn.exemplo/banner.jpg', nome: 'banner.jpg' } }));
     // Site de antes, com UMA imagem escolhida nos ajustes rápidos: continua com ela, agora como slide único (sem setas).
-    expect(h).toContain('<div class="banner com-carrossel"><div class="car car-1"');
+    expect(h).toMatch(/<div class="banner com-carrossel"[^>]*><div class="car car-1"/); // + data-el do "Apontar no site"
     expect(h).toContain('<img src="https://cdn.exemplo/banner.jpg"');
     expect(h).not.toContain('class="car-seta"');
     // Sem imagem escolhida: a foto real do produto vira o banner; sem foto nenhuma, fundo neutro (nunca gradiente).
-    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos }))).toMatch(/<div class="banner com-foto" data-banner-produto>[\s\S]*<a class="hero-img" href="#produto-0"><img src="https:\/\/cdn.exemplo\/legging.jpg"/);
-    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos: [{ nome: 'Sem foto', preco: 10, fotos: [] }] }))).toContain('<div class="banner"><div class="wrap">');
+    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos }))).toMatch(/<div class="banner com-foto" data-banner-produto[^>]*>[\s\S]*<a class="hero-img" href="#produto-0"><img src="https:\/\/cdn.exemplo\/legging.jpg"/);
+    expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site, produtos: [{ nome: 'Sem foto', preco: 10, fotos: [] }] }))).toMatch(/<div class="banner"[^>]*><div class="wrap">/);
   });
 
   it('seções na ordem escolhida e ocultas fora; "Clientes reais" logo depois do banner, com ampliação', () => {

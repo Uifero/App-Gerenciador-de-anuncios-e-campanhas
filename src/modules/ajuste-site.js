@@ -18,6 +18,9 @@ import {
   secoesDoSite, nomeSecao, ANCORA_SECAO, mudancasPorSecao, juntarPorSecao, escolhasDeTexto, conferirSecoes, estimarCusto, textoCusto,
   resumoDasSecoes, secaoDoPrefixo, prefixoSecao, responderEntendimento, tarefaDoAjuste, LIMITE_PEDIDO_AJUSTE, TODO, FONTES_SUGESTAO,
 } from '../lib/ajuste-secoes.js';
+import { secaoDoElemento, nomeElemento, listaElementos, ehCompra } from '../lib/elementos-site.js';
+import { comprimirPrint, marcarPrint, printsPendentesHtml, tokensDoPrint, base64De, blobDe, MAX_PRINTS } from './print-ajuste.js';
+import { enviarArquivo, removerArquivo } from '../core/storage.js';
 import { temCustom, temPacote, divergencias, aplicarBaseNoPacote, aplicarBaseNoCustom, baseDoCustom, baseDoPacote } from '../lib/site-modos.js';
 import { esc, $, on, toast, ocupado, modal, confirmar, tag, dataBR, mostrarResultado } from '../core/ui.js';
 import { salvarUsos } from '../lib/materiais.js';
@@ -85,30 +88,31 @@ export async function montarAjusteSite(alvo, ctx) {
   // ---------- rascunho ----------
   // Onde vai cada foto ("Usar em") mora nos Materiais, não no site: no rascunho fica à parte (usosFotos) e só é gravado
   // nos Materiais ao aplicar. Não entra nas versões ("Voltar para esta versão" nunca desfaz uma escolha de foto).
-  async function salvarRascunho({ estado, usosFotos, porSecao = [], mudancas = [], descartadas = [], escolhas = [], origem, fonte, pedido }) {
+  async function salvarRascunho({ estado, usosFotos, dadosLoja, porSecao = [], mudancas = [], descartadas = [], escolhas = [], origem, fonte, pedido, prints = [] }) {
     const atual = rascunho();
     await ctx.salvarSite({ rascunhoAjuste: {
-      modo, estado, usosFotos: usosFotos || {}, origem: atual && atual.origem !== origem ? 'ia+manual' : origem, criadoEm: atual?.criadoEm || new Date().toISOString(),
+      modo, estado, usosFotos: usosFotos || {}, dadosLoja: dadosLoja || atual?.dadosLoja || null, origem: atual && atual.origem !== origem ? 'ia+manual' : origem, criadoEm: atual?.criadoEm || new Date().toISOString(),
       mudancas: [...(atual?.mudancas || []), ...mudancas], descartadas: [...(atual?.descartadas || []), ...descartadas],
       porSecao: juntarPorSecao(atual?.porSecao || [], porSecao), escolhas: [...(atual?.escolhas || []), ...escolhas],
-      fontes: [...new Set([...(atual?.fontes || []), fonte || origem])], pedidos: [...(atual?.pedidos || []), pedido].filter(Boolean).slice(-10),
+      fontes: [...new Set([...(atual?.fontes || []), fonte || origem])], pedidos: [...(atual?.pedidos || []), pedido].filter(Boolean).slice(-10), prints: [...new Set([...(atual?.prints || []), ...(prints || [])])],
     } });
     aba = 'depois';
   }
   /** Operações -> rascunho. meta: { fonte, pedido, fora (recusadas fora das seções), recursos (patch de recursos da loja), textoRecursos, secaoRecursos }. */
   async function acrescentarAoRascunho(operacoes, origem, meta = {}) {
-    const base = { ...estadoBase(), usosFotos: rascunho()?.usosFotos || {} };
+    const base = { ...estadoBase(), usosFotos: rascunho()?.usosFotos || {}, ...(rascunho()?.dadosLoja ? { dadosLoja: rascunho().dadosLoja } : {}) };
     const extra = [];
     if (meta.recursos) {
       if (custom) base.config = { ...(base.config || {}), recursos: meta.recursos }; else base.pacote = { ...(base.pacote || {}), recursos: meta.recursos };
       extra.push({ secao: meta.secaoRecursos || 'produto', nome: nomeSecao(meta.secaoRecursos || 'produto', modo), mudancas: [meta.textoRecursos || 'Recursos da loja ajustados'] });
     }
-    const r = aplicarOperacoes(base, operacoes, { modo, materiais, produtos });
+    const r = aplicarOperacoes(base, operacoes, { modo, materiais: todosMateriais, produtos, dadosLoja: cliente.dadosLoja || {} });
     const descartadas = [...r.descartadas.map((d) => ({ op: d.op, motivo: d.motivo })), ...(meta.fora || []).map((d) => ({ op: d.op, motivo: d.motivo }))];
     const mudou = r.aplicadas.length > 0 || extra.length > 0;
     if (!mudou) return { ...r, mudou, descartadas };
-    const { usosFotos, ...estado } = r.estado;
-    await salvarRascunho({ estado, usosFotos, porSecao: [...mudancasPorSecao(r, modo), ...extra], mudancas: [...r.mudancas, ...extra.flatMap((x) => x.mudancas)], descartadas, escolhas: escolhasDeTexto(r.aplicadas, site(), modo), origem, fonte: meta.fonte, pedido: meta.pedido });
+    // Fotos ("Usar em") e dados da loja (cliente.dadosLoja) não moram no site: ficam à parte e só gravam ao aplicar.
+    const { usosFotos, dadosLoja, ...estado } = r.estado;
+    await salvarRascunho({ estado, usosFotos, dadosLoja, porSecao: [...mudancasPorSecao(r, modo), ...extra], mudancas: [...r.mudancas, ...extra.flatMap((x) => x.mudancas)], descartadas, escolhas: escolhasDeTexto(r.aplicadas, site(), modo), origem, fonte: meta.fonte, pedido: meta.pedido, prints: meta.prints });
     foco = mudancasPorSecao(r, modo)[0]?.secao || foco;
     return { ...r, mudou, descartadas };
   }
@@ -126,7 +130,8 @@ export async function montarAjusteSite(alvo, ctx) {
     const d = rascunho(); const e = d?.escolhas?.[i]; if (!e) return;
     const valor = versao === 'original' ? e.original : e[versao];
     if (!valor) return toast('Essa versão não existe para este texto.', 'erro');
-    const r = aplicarOperacoes({ ...d.estado, usosFotos: d.usosFotos }, [{ op: 'texto', campo: e.campo, valor }], { modo, materiais, produtos });
+    const op = e.extra ? { op: 'extra', acao: 'editar', id: e.campo, texto: valor } : { op: 'texto', campo: e.campo, valor };
+    const r = aplicarOperacoes({ ...d.estado, usosFotos: d.usosFotos }, [op], { modo, materiais: todosMateriais, produtos });
     const { usosFotos, ...estado } = r.estado;
     await ctx.salvarSite({ rascunhoAjuste: { ...d, estado: r.aplicadas.length ? estado : d.estado, usosFotos: d.usosFotos, escolhas: d.escolhas.map((x, k) => (k === i ? { ...x, escolha: versao } : x)) } });
     desenhar(); $('[data-escolhas-texto]', alvo)?.scrollIntoView({ block: 'nearest' });
@@ -140,7 +145,11 @@ export async function montarAjusteSite(alvo, ctx) {
     const anterior = versoesDoModo({ versoesAjuste: v.versoesAjuste }, modo)[1]?.n || null;
     const secoes = [...new Set((d.porSecao || []).map((s) => s.secao))];
     await salvarUsos(Object.entries(d.usosFotos || {}).map(([id, usos]) => ({ id, usos }))); // fotos: escolha da pessoa, como no seletor
-    await ctx.salvarSite({ ...d.estado, ...v, rascunhoAjuste: null, historicoAjustes: historico({ versao: n, pedidos: d.pedidos || [], fontes: d.fontes || [], secoes, resultado: 'aplicado' }) });
+    if (d.dadosLoja && Object.keys(d.dadosLoja).length) { // dados da loja moram no cliente (rodapé, passo 6, link)
+      const dadosLoja = { ...(cliente.dadosLoja || {}), ...d.dadosLoja };
+      await db.atualizar(COL.clientes, cliente.id, { dadosLoja }); cliente.dadosLoja = dadosLoja;
+    }
+    await ctx.salvarSite({ ...d.estado, ...v, rascunhoAjuste: null, historicoAjustes: historico({ versao: n, pedidos: d.pedidos || [], fontes: d.fontes || [], secoes, prints: d.prints || [], resultado: 'aplicado' }) });
     aceitoRecente.set(chave, n);
     // Link de aprovação já enviado mostra uma versão velha: vira "Substituído" (um novo é oferecido logo abaixo).
     const links = await Promise.resolve(ctx.substituirLinks?.()).catch(() => 0) || 0;
@@ -170,7 +179,11 @@ export async function montarAjusteSite(alvo, ctx) {
   }
 
   // ---------- 1ª etapa: "Entendi assim" ----------
-  const instrucaoDe = (ent) => [ent.mensagem, ...(ent.complementos || []).map((c) => `Resposta do operador: ${c}`), ...ent.secoes.filter((s) => s.oque && s.oque !== ent.mensagem).map((s) => `Em ${s.nome}: ${s.oque}`)].join('\n');
+  // A 2ª etapa nunca recebe o print: só o que foi entendido dele (seções, elementos apontados e a ideia de layout).
+  const instrucaoDe = (ent) => [ent.mensagem, ...(ent.complementos || []).map((c) => `Resposta do operador: ${c}`),
+    ...ent.secoes.filter((s) => (s.oque && s.oque !== ent.mensagem) || s.elementos?.length).map((s) => `Em ${s.nome}: ${s.oque || ''}${s.elementos?.length ? ` (elementos: ${s.elementos.join(', ')})` : ''}`),
+    ent.referencia ? `Referência de outro site: traga só a ideia de layout (${ent.referencia.copiar}). Nunca copie texto, logo ou imagem do outro site.` : '',
+  ].filter(Boolean).join('\n');
   const comCusto = (ent) => {
     const tarefa = tarefaDoAjuste(ent);
     const chars = resumoDasSecoes(estadoBase(), ent.secoes.map((s) => s.id), modo, { materiais, produtos }).length + instrucaoDe(ent).length;
@@ -183,8 +196,29 @@ export async function montarAjusteSite(alvo, ctx) {
     if (el) mostrarResultado(el, ent.perguntas?.some((q) => !q.resposta) ? 'Entendi assim, mas preciso de uma resposta sua antes.' : 'Entendi assim: confira as seções e o custo, e clique em "Fazer essas mudanças".');
   }
   /** Pedido livre: seção já conhecida ("Mudar esta seção") = sem IA; senão a IA barata diz quais seções. */
+  let pendentes = []; // prints anexados e ainda não enviados (só nesta tela)
+  const todasAsSecoes = () => secoesDoSite(modo).map((s) => s.id);
+  async function enviarPrints() {
+    const enviados = [];
+    for (const p of pendentes) {
+      const blob = await blobDe(p.dataUrl);
+      const { url, path } = await enviarArquivo(`gcc/${cliente.id}/ajustes/${p.id}.jpg`, new File([blob], `${p.id}.jpg`, { type: 'image/jpeg' }));
+      enviados.push({ id: p.id, url, path, w: p.w, h: p.h, marcas: (p.marcas || []).length, em: new Date().toISOString() });
+    }
+    await ctx.salvarSite({ printsAjuste: [...(site().printsAjuste || []), ...enviados].slice(-30) });
+    return enviados;
+  }
   async function entender(mensagem) {
     const msg = String(mensagem || '').trim();
+    if (pendentes.length) {
+      const imagens = pendentes.map((p) => ({ media_type: 'image/jpeg', data: base64De(p.dataUrl) }));
+      const elementos = listaElementos(todasAsSecoes(), estadoBase(), { modo, materiais: todosMateriais });
+      const ent = await entenderAjuste({ cliente, modo, mensagem: msg, materiais, imagens, elementos });
+      const prints = await enviarPrints(); // só depois da leitura dar certo (erro de IA não deixa arquivo solto)
+      pendentes = [];
+      await guardarEntendido({ ...ent, mensagem: msg || 'Veja o que marquei no print.', fonte: 'pedido', prints: prints.map(({ id, url }) => ({ id, url })), comPrint: true });
+      return;
+    }
     if (!msg) throw new Error('Escreva o que quer mudar no site.');
     if (msg.length > LIMITE_PEDIDO_AJUSTE) throw new Error(`O pedido tem ${msg.length} caracteres; o limite é ${LIMITE_PEDIDO_AJUSTE}. Encurte e tente de novo.`);
     const pref = secaoDoPrefixo(msg, modo);
@@ -194,18 +228,24 @@ export async function montarAjusteSite(alvo, ctx) {
     await guardarEntendido({ ...ent, mensagem: msg, fonte: 'pedido' });
   }
   /** Sugestão ("Fazer essa mudança") que precisa da IA: a seção já vem dela, então o "Entendi assim" sai sem IA. */
-  async function prepararSugestao({ fonte, secoes, oque, instrucao, chaves = [] }) {
+  async function prepararSugestao({ fonte, secoes, oque, instrucao, chaves = [], elementos = [], estrutura = false }) {
     const lista = [...new Set(secoes)].filter(Boolean);
-    await guardarEntendido({ global: lista.includes(TODO), secoes: lista.map((id) => ({ id, nome: nomeSecao(id, modo), oque: oque || instrucao, estrutura: false })), perguntas: [], fora: [], semIa: true, mensagem: instrucao, fonte, chaves });
+    await guardarEntendido({ global: lista.includes(TODO), secoes: lista.map((id) => ({ id, nome: nomeSecao(id, modo), oque: oque || instrucao, estrutura, elementos: elementos.filter((e) => secaoDoElemento(e, estadoBase().layout) === id) })), perguntas: [], fora: [], semIa: true, mensagem: instrucao, fonte, chaves });
   }
   /** Sugestão que o app resolve sem IA (fotos pelo código, recursos da loja, seção mostrar/ocultar): direto para "Antes × Depois". */
-  async function proporOperacoes(ops, meta = {}) {
+  // `rolar: false` ("Apontar no site"): várias mudanças entram na fila sem tirar o operador da prévia. Devolve { ok, motivo, n }.
+  async function proporOperacoes(ops, meta = {}, { rolar = true } = {}) {
     const r = await acrescentarAoRascunho(ops, 'manual', meta);
     desenhar();
-    if (!r.mudou) { toast(`Não deu para fazer: ${r.descartadas.map((x) => x.motivo).join(' · ') || 'o site já está assim'}`, 'erro'); return false; }
-    mostrarResultado($('[data-rascunho]', alvo), 'Antes × Depois: confira e clique em "Aplicar". Nada mudou no site ainda.');
-    return true;
+    const motivo = r.descartadas.map((x) => x.motivo).join(' · ') || 'o site já está assim';
+    if (!r.mudou) { if (rolar) toast(`Não deu para fazer: ${motivo}`, 'erro'); return { ok: false, motivo }; }
+    if (rolar) mostrarResultado($('[data-rascunho]', alvo), 'Antes × Depois: confira e clique em "Aplicar". Nada mudou no site ainda.');
+    return { ok: true, n: (rascunho()?.mudancas || []).length };
   }
+  /** Estado que a prévia do passo 4 mostra no "Apontar no site" (com as mudanças na fila, ainda não aplicadas). */
+  const estadoParaPrevia = () => ({ ...estadoBase(), usosFotos: rascunho()?.usosFotos || {}, dadosLoja: rascunho()?.dadosLoja || null });
+  const dadosLojaAtuais = () => ({ ...(cliente.dadosLoja || {}), ...(rascunho()?.dadosLoja || {}) });
+  const mudancasNaFila = () => (rascunho()?.mudancas || []).length;
 
   // ---------- 2ª etapa: muda só as seções ----------
   async function executar() {
@@ -214,7 +254,7 @@ export async function montarAjusteSite(alvo, ctx) {
     if (!ent.secoes.length) throw new Error('Nenhuma seção para mudar. Escreva o pedido de outro jeito.');
     const ids = ent.secoes.map((s) => s.id);
     const r = await ajustarSecoes({ cliente, modo, site: site(), estado: estadoBase(), secoes: ids, instrucao: instrucaoDe(ent), materiais, produtos, tarefa: ent.tarefa });
-    const aplicado = r.tipo === 'proposta' ? await acrescentarAoRascunho(r.operacoes, 'ia', { fora: r.foraDasSecoes, fonte: ent.fonte, pedido: ent.mensagem }) : null;
+    const aplicado = r.tipo === 'proposta' ? await acrescentarAoRascunho(r.operacoes, 'ia', { fora: r.foraDasSecoes, fonte: ent.fonte, pedido: ent.mensagem, prints: (ent.prints || []).map((p) => p.id) }) : null;
     const mudou = Boolean(aplicado?.mudou);
     const recusadas = [...(aplicado?.descartadas || []), ...(aplicado ? [] : r.foraDasSecoes || [])].map((d) => d.motivo);
     const resposta = { role: 'assistant', content: r.resposta, em: new Date().toISOString(), tipo: mudou ? 'proposta' : r.tipo === 'recusa' ? 'recusa' : 'explicacao', mudancas: aplicado?.mudancas || [], recusadas, naoFeito: r.naoFeito, modelo: r.tarefa === 'ajuste_secao_amplo' ? 'forte' : 'leve', secoes: ent.secoes.map((s) => s.nome) };
@@ -237,7 +277,7 @@ export async function montarAjusteSite(alvo, ctx) {
 
   function previaHTML(d) {
     if (custom) {
-      const html = comFoco(ctx.htmlDe(aba === 'antes' ? estadoAtual() : { ...d.estado, usosFotos: d.usosFotos }), foco);
+      const html = comFoco(ctx.htmlDe(aba === 'antes' ? estadoAtual() : { ...d.estado, usosFotos: d.usosFotos, dadosLoja: d.dadosLoja }), foco);
       return `<div class="${largura === 'celular' ? 'mx-auto max-w-[390px]' : ''}"><iframe sandbox="${SANDBOX}" srcdoc="${esc(html)}" class="${largura === 'celular' ? 'h-[640px]' : 'h-[520px]'} w-full rounded-lg border border-slate-200 bg-white" title="Prévia do site: ${aba === 'antes' ? 'antes' : 'depois'}${foco ? `, seção ${esc(nomeSecao(foco, modo))}` : ''}" data-previa-rascunho data-previa-lado="${aba}"></iframe></div>`;
     }
     // Pacote: a prévia com cara de loja (mesmo molde do painel e do link de aprovação), sem script; o resumo em texto embaixo.
@@ -249,10 +289,16 @@ export async function montarAjusteSite(alvo, ctx) {
     const ach = saude ? [...new Set(achadosSaude([...d.mudancas.map((m) => String(m).split('→').pop()), ...(d.escolhas || []).map((e) => (e.escolha === 'original' ? e.original : e[e.escolha] || e.melhorada))].join(' ')))] : [];
     return ach.length ? `<p class="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-aviso-alegacao-ajuste><i class="fa-solid fa-triangle-exclamation"></i> ${esc(AVISO_SITE_SAUDE)} Trecho: ${ach.map((a) => `"${esc(a)}"`).join(', ')}.</p>` : '';
   };
+  // Preço ou botão de compra tirados (pelo pedido, pelo print ou pela IA): o mesmo aviso do "Tirar daqui".
+  const avisoCompra = (d) => {
+    const antes = estadoAtual().layout?.elementos || {}, depois = d.estado.layout?.elementos || {};
+    const tirados = Object.keys(depois).filter((id) => ehCompra(id) && depois[id]?.oculto && !antes[id]?.oculto);
+    return tirados.length ? `<p class="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-aviso-compra><i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> Atenção: sem ${tirados.some((id) => /preco$/.test(id)) ? 'preço' : ''}${tirados.some((id) => /preco$/.test(id)) && tirados.some((id) => /botao$/.test(id)) ? ' e sem ' : ''}${tirados.some((id) => /botao$/.test(id)) ? 'botão de compra' : ''} o cliente não consegue comprar por aqui (${tirados.map((id) => esc(nomeElemento(id))).join(', ')}).</p>` : '';
+  };
   const VERSOES = [['original', 'Seu texto'], ['melhorada', 'Versão melhorada'], ['segura', 'Versão segura']];
   function escolhasHTML(d) {
     if (!d.escolhas?.length) return '';
-    return `<div class="mb-2 space-y-2" data-escolhas-texto>${d.escolhas.map((e, i) => `<fieldset class="rounded border border-indigo-200 bg-white p-2 text-sm" data-escolha-texto="${i}"><legend class="px-1 text-xs font-semibold">Texto seu (${esc(e.campo)}): escolha a versão</legend>
+    return `<div class="mb-2 space-y-2" data-escolhas-texto>${d.escolhas.map((e, i) => `<fieldset class="rounded border border-indigo-200 bg-white p-2 text-sm" data-escolha-texto="${i}"><legend class="px-1 text-xs font-semibold">${e.extra ? 'Texto sugerido pela IA (acréscimo): escolha a versão' : `Texto seu (${esc(e.campo)}): escolha a versão`}</legend>
       ${VERSOES.filter(([k]) => e[k]).map(([k, rot]) => `<label class="mt-1 flex min-h-[44px] cursor-pointer items-start gap-2 rounded border ${e.escolha === k ? 'border-indigo-500 bg-indigo-50/60' : 'border-slate-200'} p-2"><input type="radio" class="mt-1 h-4 w-4" name="escolha-${i}" data-escolher-versao="${i}" value="${k}" ${e.escolha === k ? 'checked' : ''}><span><b class="block text-xs">${rot}</b>${esc(e[k])}</span></label>`).join('')}
       ${e.escolha ? '' : '<p class="mt-1 text-xs text-amber-800" data-escolha-pendente>Escolha uma versão para poder aplicar.</p>'}</fieldset>`).join('')}</div>`;
   }
@@ -262,7 +308,7 @@ export async function montarAjusteSite(alvo, ctx) {
     return `<div class="mt-4 rounded-lg border-2 border-emerald-300 bg-emerald-50/40 p-3" data-rascunho>
       <h4 class="text-sm font-semibold"><i class="fa-solid fa-code-compare mr-1" aria-hidden="true"></i> Antes × Depois: ainda NÃO está no site</h4>
       <p class="hint mb-2">Só ${porSecao.length === 1 ? 'esta seção muda' : `estas ${porSecao.length} seções mudam`}; o resto do site fica igual. "Aplicar" cria uma versão nova; "Desfazer" deixa tudo como estava.</p>
-      ${avisoAlegacao(d)}${escolhasHTML(d)}
+      ${avisoAlegacao(d)}${avisoCompra(d)}${escolhasHTML(d)}
       <div class="space-y-2" data-secoes-mudadas>${porSecao.map((s) => `<section class="rounded border border-slate-200 bg-white p-2" data-secao-mudada="${esc(s.secao)}"><p class="text-sm font-semibold">${esc(s.nome)}</p>
         <ul class="list-disc pl-5 text-sm">${s.mudancas.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
         ${custom && ANCORA_SECAO[s.secao] ? `<div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm min-h-[44px]" data-ver-secao="${esc(s.secao)}" data-lado="antes">Ver antes</button><button type="button" class="btn-ghost btn-sm min-h-[44px]" data-ver-secao="${esc(s.secao)}" data-lado="depois">Ver depois</button></div>` : ''}</section>`).join('')}</div>
@@ -285,9 +331,11 @@ export async function montarAjusteSite(alvo, ctx) {
       <h4 class="text-sm font-semibold"><i class="fa-solid fa-list-check mr-1" aria-hidden="true"></i> Entendi assim${ent.fonte && ent.fonte !== 'pedido' ? ` <span class="font-normal text-slate-600">(sugestão da ${esc(FONTES_SUGESTAO[ent.fonte] || ent.fonte)})</span>` : ''}</h4>
       <p class="mt-1 text-sm text-slate-700"><b>Pedido:</b> ${esc(ent.mensagem)}</p>
       ${ent.secoes.some((s) => s.id === TODO) ? '<p class="mt-1 rounded bg-amber-50 p-2 text-sm text-amber-800" data-mudanca-global><i class="fa-solid fa-globe"></i> <b>Mudança no site todo:</b> todas as seções vão para a IA.</p>' : ''}
-      ${ent.secoes.length ? `<ul class="mt-2 space-y-1 text-sm" data-secoes-entendidas>${ent.secoes.map((s) => `<li class="rounded border border-slate-200 bg-white px-2 py-1" data-secao-entendida="${esc(s.id)}"><b>${esc(s.nome)}</b>: ${esc(s.oque || '')}</li>`).join('')}</ul><p class="hint">Só ${ent.secoes.length === 1 ? 'essa seção vai' : 'essas seções vão'} para a IA; o resto do site não muda.</p>` : ent.perguntas?.length ? '<p class="mt-1 text-sm text-slate-700" data-sem-secao>Responda a pergunta abaixo para eu saber qual parte do site mudar.</p>' : '<p class="mt-1 text-sm text-amber-800" data-sem-secao>Não identifiquei qual parte do site o pedido mexe. Escreva de outro jeito ou use "Mudar esta seção".</p>'}
+      ${ent.secoes.length ? `<ul class="mt-2 space-y-1 text-sm" data-secoes-entendidas>${ent.secoes.map((s) => `<li class="rounded border border-slate-200 bg-white px-2 py-1" data-secao-entendida="${esc(s.id)}"><b>${esc(s.nome)}</b>: ${esc(s.oque || '')}${(s.elementos || []).length ? `<span class="mt-1 flex flex-wrap gap-2" data-elementos-entendidos>${s.elementos.map((id) => `<button type="button" class="btn-ghost btn-sm min-h-[44px]" data-destacar-el="${esc(id)}" title="Mostra o elemento na prévia, acima"><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> ${esc(nomeElemento(id, { layout: estadoBase().layout, estado: estadoBase() }))}: ver no site</button>`).join('')}</span>` : ''}</li>`).join('')}</ul><p class="hint">Só ${ent.secoes.length === 1 ? 'essa seção vai' : 'essas seções vão'} para a IA; o resto do site não muda.</p>` : ent.perguntas?.length ? '<p class="mt-1 text-sm text-slate-700" data-sem-secao>Responda a pergunta abaixo para eu saber qual parte do site mudar.</p>' : '<p class="mt-1 text-sm text-amber-800" data-sem-secao>Não identifiquei qual parte do site o pedido mexe. Escreva de outro jeito ou use "Mudar esta seção".</p>'}
       ${(ent.perguntas || []).map((q) => `<div class="mt-2 rounded bg-amber-50 p-2" data-pergunta-ajuste="${esc(q.id)}"><p class="text-sm font-semibold text-amber-800"><i class="fa-solid fa-circle-question"></i> ${esc(q.texto)}</p>
         ${q.resposta ? `<p class="text-xs text-emerald-800"><i class="fa-solid fa-reply"></i> Sua resposta: ${esc(q.resposta)}</p>` : `<div class="mt-1 flex flex-wrap gap-2">${q.opcoes.map((o, i) => `<button type="button" class="btn-ghost btn-sm min-h-[44px]" data-responder-ajuste="${esc(q.id)}" data-opcao="${i}">${esc(o.texto)}</button>`).join('')}</div>`}</div>`).join('')}
+      ${ent.referencia ? `<p class="mt-2 rounded bg-sky-50 p-2 text-sm text-slate-700" data-referencia-print><i class="fa-solid fa-clone" aria-hidden="true"></i> <b>Print de outro site:</b> vou trazer só a ideia de layout (${esc(ent.referencia.copiar)}). Nunca o texto, o logo ou as imagens do outro site.</p>` : ''}
+      ${(ent.prints || []).length ? `<p class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600" data-prints-entendidos>Print(s) lido(s): ${ent.prints.map((p) => `<img src="${esc(p.url)}" alt="Print anexado" class="h-12 w-12 rounded border border-slate-200 object-cover">`).join('')}</p>` : ''}
       ${ent.fora?.length ? `<p class="mt-2 text-xs text-amber-800"><b>Não muda por aqui:</b> ${ent.fora.map(esc).join(' · ')}</p>` : ''}
       <p class="mt-2 text-xs text-slate-700" data-custo-ajuste><i class="fa-solid fa-coins" aria-hidden="true"></i> Custo estimado: ${esc(textoCusto(ent.custo))}${ent.semIa ? ' · este "Entendi assim" não usou IA' : ''}. O gasto real aparece em Configurações > Custos de IA.</p>
       <div class="mt-2 flex flex-wrap gap-2"><button type="button" class="btn-ia min-h-[44px]" data-executar-ajuste ${pode ? '' : 'disabled'}><i class="fa-solid fa-wand-magic-sparkles"></i> Fazer essas mudanças</button>
@@ -363,6 +411,31 @@ export async function montarAjusteSite(alvo, ctx) {
   }
 
   const contador = (t) => `${String(t || '').length.toLocaleString('pt-BR')} de ${LIMITE_PEDIDO_AJUSTE.toLocaleString('pt-BR')} caracteres`;
+  // Custo antes de mandar o(s) print(s): a leitura com imagem (Haiku com visão) conta os tokens da imagem.
+  function custoPrintHtml() {
+    if (!pendentes.length) return '';
+    const elementos = listaElementos(todasAsSecoes(), estadoBase(), { modo, materiais: todosMateriais });
+    const c = estimarCusto('ajuste_entender_print', elementos.length + 1500, { tokensImagem: pendentes.reduce((n, p) => n + tokensDoPrint(p), 0) });
+    return `<p class="mt-1 text-xs text-slate-700" data-custo-print><i class="fa-solid fa-coins" aria-hidden="true"></i> Custo estimado para ler ${pendentes.length} print(s): ${esc(textoCusto(c))} (com ~${c.tokensImagem.toLocaleString('pt-BR')} tokens de imagem). O ajuste em si tem o custo dele, mostrado no "Entendi assim".</p>`;
+  }
+  const redesenharPrints = () => { const a = $('[data-area-prints]', alvo); if (a) a.innerHTML = printsPendentesHtml(pendentes) + custoPrintHtml(); const b = $('[data-anexar-print]', alvo); if (b) b.disabled = pendentes.length >= MAX_PRINTS; };
+  async function anexar(arquivos) {
+    const lista = [...arquivos].filter((x) => /^image\//.test(x.type || ''));
+    if (!lista.length) return;
+    const sobra = MAX_PRINTS - pendentes.length;
+    if (sobra <= 0) { toast(`No máximo ${MAX_PRINTS} prints por pedido.`, 'erro'); return; }
+    for (const arq of lista.slice(0, sobra)) pendentes.push(await comprimirPrint(arq));
+    if (lista.length > sobra) toast(`Entraram ${sobra}: o limite é ${MAX_PRINTS} prints por pedido.`, 'info');
+    redesenharPrints();
+    mostrarResultado($('[data-area-prints]', alvo), 'Print anexado. Toque em "Marcar" para circular o que quer mudar.');
+  }
+  function enviadosHTML() {
+    const lista = site().printsAjuste || [];
+    if (!lista.length) return '';
+    return `<details class="mt-2 rounded-lg border border-slate-200 p-2" data-prints-enviados><summary class="flex min-h-[44px] cursor-pointer items-center text-sm font-medium text-slate-600">Prints enviados (${lista.length})</summary>
+      <p class="hint">Ficam só aqui, no histórico de ajustes: nunca aparecem no link de aprovação do cliente.</p>
+      <ul class="mt-1 space-y-1">${lista.slice().reverse().map((p) => `<li class="flex flex-wrap items-center gap-2 rounded bg-slate-50 p-1 text-xs" data-print-enviado="${esc(p.id)}"><img src="${esc(p.url)}" alt="Print enviado" class="h-12 w-12 rounded object-cover"><span class="flex-1">${esc(quando(p.em))}${p.marcas ? ` · ${p.marcas} marca(s)` : ''}</span><button type="button" class="btn-ghost btn-sm min-h-[44px]" data-excluir-print="${esc(p.id)}">Excluir print</button></li>`).join('')}</ul></details>`;
+  }
   function desenhar() {
     const d = rascunho(), ent = entendido(), u = ultimo();
     const e = estadoBase();
@@ -380,10 +453,15 @@ export async function montarAjusteSite(alvo, ctx) {
       <form class="mt-2" data-form-ajuste><label class="label" for="pedido-ajuste-${modo}">O que quer mudar ${custom ? 'no site' : 'no pacote'}?</label>
         <textarea id="pedido-ajuste-${modo}" class="input min-h-[6rem] text-base" name="pedido" rows="3" maxlength="${LIMITE_PEDIDO_AJUSTE}" aria-describedby="contador-ajuste-${modo}" placeholder="Ex.: troca a F12 pela F27 na galeria; deixa o banner mais curto" data-pedido-ajuste>${esc(texto)}</textarea>
         <p class="mt-1 text-xs text-slate-500" id="contador-ajuste-${modo}" aria-live="polite" data-contador-ajuste>${contador(texto)}</p>
-        <div class="mt-1 flex flex-wrap gap-2"><button class="btn-ia min-h-[44px]" type="submit"><i class="fa-solid fa-list-check"></i> Ver o que vai mudar</button></div></form>
+        <div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-ghost min-h-[44px]" data-anexar-print ${pendentes.length >= MAX_PRINTS ? 'disabled' : ''}><i class="fa-solid fa-paperclip" aria-hidden="true"></i> Anexar print</button>
+          <input type="file" accept="image/*" multiple class="hidden" data-input-print aria-label="Escolher print">
+          <button class="btn-ia min-h-[44px]" type="submit"><i class="fa-solid fa-list-check"></i> Ver o que vai mudar</button></div>
+        <p class="hint">Até ${MAX_PRINTS} prints por pedido (galeria, câmera ou Ctrl+V no campo). Marque no print o que quer mudar; pode ser também um print de outro site ("quero parecido com isso").</p>
+        <div data-area-prints>${printsPendentesHtml(pendentes)}${custoPrintHtml()}</div></form>
       <details class="mt-2 rounded-lg border border-slate-200 p-2" data-mudar-secao><summary class="flex min-h-[44px] cursor-pointer items-center text-sm font-medium text-slate-600">Mudar esta seção</summary>
         <p class="hint">Escolha a seção: o pedido já começa com o nome dela e vai só ela (o "Entendi assim" sai sem IA).</p>
         <div class="mt-1 flex flex-wrap gap-2">${secoesDoSite(modo).map((s) => `<button type="button" class="btn-ghost btn-sm min-h-[44px]" data-mudar-secao-btn="${esc(s.id)}">${esc(s.nome)}</button>`).join('')}</div></details>
+      ${enviadosHTML()}
       ${ent ? entendidoHTML(ent) : ''}
       ${d ? rascunhoHTML(d) : ''}
       <details class="mt-4 rounded-lg border border-slate-200 p-3" data-manuais><summary class="flex min-h-[44px] cursor-pointer items-center text-sm font-medium text-slate-600">Ajustar à mão (sem IA)</summary><div class="mt-2">${manuaisHTML(e)}</div></details>
@@ -407,7 +485,7 @@ export async function montarAjusteSite(alvo, ctx) {
   });
   on(alvo, 'submit', '[data-form-ajuste]', (f, ev) => {
     ev.preventDefault(); clearTimeout(esperaTexto);
-    const p = f.elements.pedido.value.trim(); if (!p) return;
+    const p = f.elements.pedido.value.trim(); if (!p && !pendentes.length) return;
     ocupado(f.querySelector('button[type=submit]'), async () => { await guardarTexto(p); await entender(p); });
   });
   on(alvo, 'click', '[data-mudar-secao-btn]', async (b) => {
@@ -418,6 +496,24 @@ export async function montarAjusteSite(alvo, ctx) {
     const c = $('[data-contador-ajuste]', alvo); if (c) c.textContent = contador(campo.value);
     await guardarTexto(campo.value).catch(() => {});
   });
+  on(alvo, 'click', '[data-anexar-print]', () => $('[data-input-print]', alvo)?.click());
+  on(alvo, 'change', '[data-input-print]', (inp) => ocupado($('[data-anexar-print]', alvo), async () => { await anexar(inp.files || []); inp.value = ''; }));
+  alvo.addEventListener('paste', (ev) => {
+    if (!ev.target.closest?.('[data-pedido-ajuste]')) return;
+    const arqs = [...(ev.clipboardData?.items || [])].filter((i) => i.kind === 'file' && /^image\//.test(i.type)).map((i) => i.getAsFile()).filter(Boolean);
+    if (arqs.length) { ev.preventDefault(); anexar(arqs).catch((e) => toast(e.message, 'erro')); }
+  });
+  on(alvo, 'click', '[data-marcar-print]', async (b) => { const i = Number(b.dataset.marcarPrint); const r = await marcarPrint(pendentes[i]); if (r) { pendentes[i] = r; redesenharPrints(); mostrarResultado($('[data-area-prints]', alvo), `Marcas guardadas (${r.marcas.length}). Escreva o que quer e toque em "Ver o que vai mudar".`); } });
+  on(alvo, 'click', '[data-tirar-print]', (b) => { pendentes.splice(Number(b.dataset.tirarPrint), 1); redesenharPrints(); });
+  on(alvo, 'click', '[data-excluir-print]', (b) => ocupado(b, async () => {
+    const p = (site().printsAjuste || []).find((x) => x.id === b.dataset.excluirPrint); if (!p) return;
+    await removerArquivo(p.path);
+    const ent = entendido();
+    await ctx.salvarSite({ printsAjuste: (site().printsAjuste || []).filter((x) => x.id !== p.id), ...(ent?.prints ? { ajusteEntendido: { ...ent, prints: ent.prints.filter((x) => x.id !== p.id) } } : {}) });
+    desenhar(); const d2 = $('[data-prints-enviados]', alvo); if (d2) d2.open = true;
+    mostrarResultado(d2 || $('[data-form-ajuste]', alvo), 'Print excluído (o arquivo também saiu do armazenamento).');
+  }));
+  on(alvo, 'click', '[data-destacar-el]', (b) => ctx.destacar?.(b.dataset.destacarEl));
   on(alvo, 'click', '[data-responder-ajuste]', (b) => ocupado(b, async () => {
     const ent = entendido(); if (!ent) return;
     await guardarEntendido(responderEntendimento(ent, b.dataset.responderAjuste, Number(b.dataset.opcao), modo));
@@ -429,7 +525,7 @@ export async function montarAjusteSite(alvo, ctx) {
   on(alvo, 'click', '[data-largura]', (b) => { largura = b.dataset.largura; desenhar(); $('[data-previa-rascunho]', alvo)?.scrollIntoView({ block: 'nearest' }); });
   on(alvo, 'click', '[data-outro-ajuste]', () => { const c = $('[data-pedido-ajuste]', alvo); if (c) { c.focus(); c.scrollIntoView({ block: 'center' }); } });
   on(alvo, 'click', '[data-aba]', (b) => { aba = b.dataset.aba; desenhar(); $('[data-rascunho]', alvo)?.scrollIntoView({ block: 'nearest' }); });
-  on(alvo, 'click', '[data-previa-aba]', () => abrirPreviaIsolada(comFoco(ctx.htmlDe(aba === 'antes' ? estadoAtual() : { ...rascunho().estado, usosFotos: rascunho().usosFotos }), foco), `Prévia (${aba}) — ${cliente.nome}`));
+  on(alvo, 'click', '[data-previa-aba]', () => abrirPreviaIsolada(comFoco(ctx.htmlDe(aba === 'antes' ? estadoAtual() : { ...rascunho().estado, usosFotos: rascunho().usosFotos, dadosLoja: rascunho().dadosLoja }), foco), `Prévia (${aba}) — ${cliente.nome}`));
   on(alvo, 'click', '[data-aceitar]', (b) => ocupado(b, aceitar));
   on(alvo, 'click', '[data-descartar]', (b) => ocupado(b, descartar));
   on(alvo, 'click', '[data-voltar]', (b) => voltarPara(Number(b.dataset.voltar)));
@@ -505,5 +601,5 @@ export async function montarAjusteSite(alvo, ctx) {
   }
 
   desenhar();
-  return { redesenhar: desenhar, prepararSugestao, proporOperacoes, proporLocal };
+  return { redesenhar: desenhar, prepararSugestao, proporOperacoes, proporLocal, estadoParaPrevia, dadosLojaAtuais, mudancasNaFila, materiais: () => todosMateriais };
 }

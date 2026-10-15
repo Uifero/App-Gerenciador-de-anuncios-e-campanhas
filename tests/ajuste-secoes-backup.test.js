@@ -7,6 +7,9 @@ import { prepararDemo, limparBanco, semearCliente } from './dados-demo.js';
 const mapa = prepararDemo();
 vi.mock('../src/core/ui.js', async (original) => ({ ...(await original()), confirmar: vi.fn(async () => true), toast: vi.fn() }));
 vi.stubGlobal('document', { dispatchEvent: () => true, addEventListener: () => {}, removeEventListener: () => {} });
+// Arquivos do Storage: a cascata tem de pedir a exclusão de cada print de ajuste (gcc/<cliente>/ajustes/).
+const apagados = [];
+vi.mock('../src/core/storage.js', async (original) => ({ ...(await original()), removerArquivo: vi.fn(async (p) => { apagados.push(p); }) }));
 
 const { db, COL } = await import('../src/core/storage.js');
 const { montarBackup, restaurarBackup } = await import('../src/modules/backup.js');
@@ -19,6 +22,10 @@ const CAMPOS = {
   ajusteUltimo: { modo: 'pacote', versao: 4, anterior: 3, secoes: ['galeria'], nomes: ['Galeria'], checagens: [], conferencia: [], links: 1, em: '2026-10-14T12:00:00Z' },
   historicoAjustes: [{ em: '2026-10-14T12:00:00Z', modo: 'pacote', versao: 4, pedidos: ['troca a F12 pela F27'], fontes: ['pedido'], secoes: ['galeria'], resultado: 'aplicado' }],
   pedidoAjusteTexto: { pacote: 'troca a F12 pela F27 na galeria' },
+  // "Apontar no site" e "Anexar print"
+  printsAjuste: [{ id: 'prA1', url: 'https://x/gcc/cliA/ajustes/prA1.jpg', path: 'gcc/cliA/ajustes/prA1.jpg', w: 1600, h: 900, marcas: 1, em: '2026-10-15T12:00:00Z' }],
+  ajustesTema: [{ id: 't1', secao: 'Banner', elemento: 'Banner › título', oque: 'Deixar mais separado', feito: false, em: '2026-10-15T12:00:00Z' }],
+  layout: { elementos: { 'produto.frete': { oculto: true }, 'hero.titulo': { espaco: 1 } }, ordemElementos: { hero: ['botao', 'titulo', 'subtitulo', 'contador'] }, extras: [{ id: 'extra.1', apos: 'produto.preco', tipo: 'selo', texto: 'Envio em 24h' }] },
   versoesAjuste: [{ n: 3, modo: 'pacote', resumo: 'antes', estado: { pacote: {} } }, { n: 4, modo: 'pacote', resumo: 'Galeria: F27', estado: { pacote: {} } }],
 };
 
@@ -44,6 +51,7 @@ describe('campos do ajuste por seção', () => {
     const siteB = await db.obter(COL.sites, 'siteB');
     await apagarClienteEmCascata(A);
     expect(await db.obter(COL.sites, 'siteA')).toBeNull();
+    expect(apagados).toContain('gcc/cliA/ajustes/prA1.jpg'); // o arquivo do print sai do Storage
     expect(JSON.stringify(await db.listar(COL.sites))).not.toMatch(/F12 pela F27|conferencia\|produto/);
     expect(await db.obter(COL.sites, 'siteB')).toEqual(siteB);
   });

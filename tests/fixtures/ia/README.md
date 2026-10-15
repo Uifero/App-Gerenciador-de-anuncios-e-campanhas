@@ -45,6 +45,9 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `ajuste-entender-duas-secoes.json` / `ajuste-secao-duas-secoes.json` | Pedido em duas seções (banner + FAQ), com uma operação fora delas (a F5 na galeria, que o app recusa) e uma alegação de saúde | escrita à mão |
 | `ajuste-entender-ambiguo.json` | "muda a foto": pergunta com duas opções | escrita à mão |
 | `conferencia-ajuste-thermora.json` | "Conferir de novo" com o motivo reescrito pela IA (a sugestão ignorada não volta) | escrita à mão |
+| `apontar-outro-thermora-real.json` | "Apontar no site" > "Outro: escrever" no subtítulo do banner (tarefa `ajuste_secao`, Haiku 4.5): só a seção hero + o id do elemento; devolveu só a operação do subtítulo | chamada real, 15/10/2026 |
+| `print-mapeamento-thermora-real.json` | "Anexar print" (tarefa `ajuste_entender_print`, Haiku 4.5 com visão): print da página do produto com um círculo + "tira isso daqui"; o círculo do teste caiu no botão "Adicionar ao carrinho" e a IA ligou a marca ao `produto.botao` (certo para a imagem) | chamada real, 15/10/2026 |
+| `print-ambiguo-thermora.json` / `print-referencia-thermora.json` / `ajuste-secao-referencia-thermora.json` | Print ambíguo ("Você marcou o selo de frete ou o preço?") e print de outro site (só a ideia de layout) | escrita à mão |
 | `animacao-thermora-real.json` | Biblioteca de animações: "Preencher os textos com IA" (tarefa `animacao`, Haiku 4.5, limite 900) no preset "Foto com zoom lento + legenda falada" pela ideia "Rotina" da Thermora | chamada real, 14/10/2026 |
 | `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |

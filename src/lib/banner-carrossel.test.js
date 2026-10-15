@@ -115,7 +115,7 @@ describe('prévia, link de aprovação e site personalizado', () => {
   });
   it('site personalizado: carrossel no topo', () => {
     const h = gerarSiteHTML({ cliente: { id: 'c', nome: 'Loja' }, produtos, conteudo: { heroTitulo: 'Oi' }, materiais: l });
-    expect(h).toContain('<div id="topo" class="hero com-carrossel"><div class="car car-3"');
+    expect(h).toMatch(/<div id="topo" class="hero com-carrossel"[^>]*><div class="car car-3"/); // + data-el do "Apontar no site"
     expect(h).toContain('@keyframes car3');
   });
   it('site antigo com uma imagem só no banner continua igual (slide único, sem setas)', () => {

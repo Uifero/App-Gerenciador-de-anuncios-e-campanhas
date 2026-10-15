@@ -1,5 +1,7 @@
 import { normalizarVisual, ORDEM_LOJA, nomeSecaoLoja, AJUSTES_FOTO } from './visual-site.js';
 import { mudarUso, comUsos, imagemDoLugar, nomeUso, USOS_FOTO } from './fotos-site.js';
+import { elementoValido, ehLegal, ehSecao, nomeElemento, limitar, ORDENAVEIS, MOTIVO_LEGAL, ESPACOS, TIPOS_EXTRA, secaoDoElemento } from './elementos-site.js';
+import { CAMPOS_DADOS_LOJA, tipoDocumento } from './legal-loja.js';
 // "Ajustar este site": modelo de blocos do site personalizado + validador de operações + versões.
 // A IA (ou os controles manuais) NUNCA escreve HTML: ela devolve operações ({ op, ... }) sobre este modelo. O app confere
 // cada operação aqui, aplica numa CÓPIA do estado (rascunho) e só grava no site quando a pessoa aceita.
@@ -70,6 +72,10 @@ export function normalizarLayout(l = {}) {
     variacoes: Object.fromEntries(Object.entries(l.variacoes || {}).filter(([k]) => VARIACOES[k])),
     imagens: Object.fromEntries(Object.entries(l.imagens || {}).filter(([k, v]) => BLOCOS_COM_IMAGEM.includes(k) && v?.url)),
     depoimentosOcultos: [...new Set(l.depoimentosOcultos || [])],
+    // "Apontar no site" (lib/elementos-site.js): o que o operador mudou em cada elemento, a ordem dentro da seção e os acréscimos.
+    elementos: Object.fromEntries(Object.entries(l.elementos || {}).filter(([k, v]) => elementoValido(k) && v && typeof v === 'object').map(([k, v]) => [k, { ...(v.oculto ? { oculto: true } : {}), ...(v.espaco ? { espaco: limitar(v.espaco, -1, 2) } : {}), ...(v.tamanho ? { tamanho: limitar(v.tamanho, -2, 2) } : {}) }]).filter(([, v]) => Object.keys(v).length)),
+    ordemElementos: Object.fromEntries(Object.entries(l.ordemElementos || {}).filter(([g, v]) => ORDENAVEIS[g] && Array.isArray(v)).map(([g, v]) => [g, [...new Set(v.filter((k) => ORDENAVEIS[g].includes(k)))]])),
+    extras: (Array.isArray(l.extras) ? l.extras : []).filter((x) => x?.id && x.apos && TIPOS_EXTRA[x.tipo]).slice(0, 30),
   };
 }
 export const tituloBloco = (layout, k) => layout?.titulos?.[k] || TITULOS_PADRAO[k] || nomeBloco(k);
@@ -152,6 +158,16 @@ function aplicarCustom(e, op, ctx) {
         L.titulos = { ...L.titulos, [k]: valor };
         return { mudanca: `Título da seção ${nomeBloco(k)}: "${corta(antes)}" → "${corta(valor)}"` };
       }
+      const mPol = /^politicas\.(trocas|envio|privacidade)$/.exec(campo);
+      if (mPol) {
+        const NOMES = { trocas: 'Política de trocas e arrependimento', envio: 'Política de envio', privacidade: 'Política de privacidade' };
+        if (valor.length < 20) return { motivo: `"${NOMES[mPol[1]]}" não pode ficar vazia nem curta demais: ${MOTIVO_LEGAL}` };
+        if (valor.length > 3000) return { motivo: `"${NOMES[mPol[1]]}" pode ter no máximo 3.000 caracteres` };
+        const antes = e.conteudo.politicas?.[mPol[1]] || '';
+        if (antes === valor) return { motivo: 'a política já está com esse texto' };
+        e.conteudo.politicas = { ...(e.conteudo.politicas || {}), [mPol[1]]: valor };
+        return { mudanca: `${NOMES[mPol[1]]} (rodapé): "${corta(antes)}" → "${corta(valor)}"` };
+      }
       const def = CAMPOS_TEXTO[campo];
       if (!def) return { motivo: `o texto "${campo}" não pode ser editado por aqui` };
       if (!valor && OBRIGATORIOS.includes(campo)) return { motivo: `"${def[0]}" não pode ficar vazio` };
@@ -168,10 +184,17 @@ function aplicarCustom(e, op, ctx) {
       if (op.acao === 'adicionar') {
         if (!p || !r) return { motivo: 'pergunta nova precisa de pergunta e resposta' };
         if (faq.length >= MAX_FAQ) return { motivo: `o limite é de ${MAX_FAQ} perguntas` };
-        faq.push({ p, r }); e.conteudo.faq = faq;
+        const depois = Number.isInteger(Number(op.depoisDe)) && faq[Number(op.depoisDe)] ? Number(op.depoisDe) + 1 : faq.length;
+        faq.splice(depois, 0, { p, r }); e.conteudo.faq = faq;
         return { mudanca: `Perguntas frequentes: nova pergunta "${corta(p)}"` };
       }
       if (!Number.isInteger(i) || !faq[i]) return { motivo: 'essa pergunta frequente não existe' };
+      if (op.acao === 'mover') {
+        const j = i + (op.direcao === 'subir' ? -1 : 1);
+        if (!faq[j]) return { motivo: `a pergunta já está ${op.direcao === 'subir' ? 'no topo' : 'no fim'}` };
+        [faq[i], faq[j]] = [faq[j], faq[i]]; e.conteudo.faq = faq;
+        return { mudanca: `Perguntas frequentes: "${corta(faq[j].p)}" ${op.direcao === 'subir' ? 'sobe' : 'desce'} uma posição` };
+      }
       if (op.acao === 'remover') { const [x] = faq.splice(i, 1); e.conteudo.faq = faq; return { mudanca: `Perguntas frequentes: sai "${corta(x.p)}"` }; }
       if (op.acao === 'editar') {
         const novo = { p: p || faq[i].p, r: r || faq[i].r };
@@ -239,8 +262,82 @@ function aplicarCustom(e, op, ctx) {
       L.imagens = { ...L.imagens, [bloco]: { materialId: m.id, url: m.url, nome: m.nome || 'imagem' } };
       return { mudanca: `Bloco ${nomeBloco(bloco)}: imagem "${antes}" → "${m.nome || 'imagem dos Materiais'}"` };
     }
+    case 'elemento': return aplicarElemento(e, op);
+    case 'extra': return aplicarExtra(e, op, ctx);
     default: return { motivo: `a operação "${op.op}" não existe neste site` };
   }
+}
+
+/** Um elemento ("Apontar no site"): tirar/voltar, espaço (P/M/G/GG), tamanho (-2..+2) e ordem dentro da seção. */
+function aplicarElemento(e, op) {
+  const L = e.layout, id = String(op.id || '');
+  if (!elementoValido(id)) return { motivo: `não existe o elemento "${id}" neste site` };
+  const nome = nomeElemento(id, { layout: L, estado: e });
+  const atual = { ...(L.elementos?.[id] || {}) };
+  const gravar = (x) => { const limpo = Object.fromEntries(Object.entries(x).filter(([, v]) => v)); const el = { ...(L.elementos || {}) }; if (Object.keys(limpo).length) el[id] = limpo; else delete el[id]; L.elementos = el; };
+  if (op.acao === 'ocultar' || op.acao === 'mostrar') {
+    if (ehSecao(id)) return { motivo: 'para tirar a seção inteira, use ocultar o bloco' };
+    if (op.acao === 'ocultar' && ehLegal(id)) return { motivo: `${nome} ${MOTIVO_LEGAL}` };
+    if (Boolean(atual.oculto) === (op.acao === 'ocultar')) return { motivo: `${nome} já está ${op.acao === 'ocultar' ? 'fora do site' : 'no site'}` };
+    gravar({ ...atual, oculto: op.acao === 'ocultar' });
+    return { mudanca: `${nome}: ${op.acao === 'ocultar' ? 'sai do site' : 'volta para o site'}` };
+  }
+  if (op.acao === 'espaco' || op.acao === 'tamanho') {
+    const [min, max] = op.acao === 'espaco' ? [-1, 2] : [-2, 2];
+    const antes = atual[op.acao] || 0, depois = limitar(antes + (Number(op.passo) || 0), min, max);
+    if (depois === antes) return { motivo: `${nome}: já está no ${op.acao === 'espaco' ? 'espaço' : 'tamanho'} ${depois < 0 ? 'mínimo' : 'máximo'}` };
+    gravar({ ...atual, [op.acao]: depois });
+    if (op.acao === 'espaco') return { mudanca: `${nome}: espaço ${ehSecao(id) ? 'entre seções' : 'em volta'} ${ESPACOS[antes]} → ${ESPACOS[depois]}` };
+    return { mudanca: `${nome}: tamanho ${antes > 0 ? '+' : ''}${antes} → ${depois > 0 ? '+' : ''}${depois}` };
+  }
+  if (op.acao === 'mover') {
+    const [g, k] = id.split('.');
+    const base = ORDENAVEIS[g];
+    if (!base?.includes(k)) return { motivo: `${nome} não muda de ordem dentro da seção` };
+    const lista = [...(L.ordemElementos?.[g]?.length ? L.ordemElementos[g] : base)];
+    for (const x of base) if (!lista.includes(x)) lista.push(x);
+    const i = lista.indexOf(k), passo = op.direcao === 'subir' ? -1 : 1;
+    // Vizinho que aparece na página (op.visiveis, vindo da prévia): pula o que não está lá.
+    const conta = (x) => !Array.isArray(op.visiveis) || !op.visiveis.length || op.visiveis.includes(x);
+    let j = i + passo; while (j >= 0 && j < lista.length && !conta(lista[j])) j += passo;
+    if (j < 0 || j >= lista.length) return { motivo: `${nome} já está ${op.direcao === 'subir' ? 'em cima' : 'embaixo'} na seção` };
+    [lista[i], lista[j]] = [lista[j], lista[i]];
+    L.ordemElementos = { ...(L.ordemElementos || {}), [g]: lista };
+    return { mudanca: `${nome}: ${op.direcao === 'subir' ? 'sobe' : 'desce'} uma posição na seção` };
+  }
+  return { motivo: 'ação de elemento desconhecida' };
+}
+
+/** "Adicionar abaixo": texto, selo, foto (pelo código, lida dos Materiais) ou botão, logo depois de um elemento. */
+function aplicarExtra(e, op, ctx) {
+  const L = e.layout, extras = [...(L.extras || [])];
+  if (op.acao === 'adicionar') {
+    if (!elementoValido(op.apos) || String(op.apos).startsWith('extra.')) return { motivo: 'o lugar do acréscimo não existe neste site' };
+    if (ehLegal(op.apos) && !ehSecao(op.apos)) return { motivo: 'no rodapé legal não entra acréscimo' };
+    if (!TIPOS_EXTRA[op.tipo] || op.tipo === 'pergunta') return { motivo: 'dá para acrescentar texto, selo, foto ou botão' };
+    if (extras.length >= 30) return { motivo: 'o limite é de 30 acréscimos no site' };
+    const texto = txt(op.texto);
+    if (op.tipo === 'foto') {
+      const cod = String(op.codigo || '').toUpperCase();
+      if (!(ctx.materiais || []).some((m) => String(m.codigo || '').toUpperCase() === cod)) return { motivo: `a foto "${cod || '?'}" não existe nos Materiais do cliente` };
+    } else if (!texto || texto.length > (op.tipo === 'texto' ? 600 : 60)) return { motivo: `o ${TIPOS_EXTRA[op.tipo]} precisa ter de 1 a ${op.tipo === 'texto' ? 600 : 60} caracteres` };
+    const n = Math.max(0, ...extras.map((x) => Number(String(x.id).split('.')[1]) || 0)) + 1;
+    const id = `extra.${n}`; op.id = id; // a escolha de versão (texto da IA) acha o acréscimo por este id
+    extras.push({ id, apos: op.apos, tipo: op.tipo, ...(op.tipo === 'foto' ? { codigo: String(op.codigo).toUpperCase() } : { texto }) });
+    L.extras = extras;
+    return { mudanca: `${nomeElemento(op.apos, { layout: L, estado: e })}: entra ${TIPOS_EXTRA[op.tipo]} abaixo${op.tipo === 'foto' ? ` (${String(op.codigo).toUpperCase()})` : ` ("${corta(texto)}")`}` };
+  }
+  const i = extras.findIndex((x) => x.id === op.id);
+  if (i < 0) return { motivo: 'esse acréscimo não existe mais' };
+  if (op.acao === 'remover') { const [x] = extras.splice(i, 1); L.extras = extras; return { mudanca: `${TIPOS_EXTRA[x.tipo]} acrescentado sai${x.texto ? ` ("${corta(x.texto)}")` : ''}` }; }
+  if (op.acao === 'editar') {
+    const texto = txt(op.texto);
+    if (!texto || extras[i].tipo === 'foto') return { motivo: 'escreva o texto novo' };
+    if (extras[i].texto === texto) return { motivo: 'o acréscimo já está com esse texto' };
+    const antes = extras[i].texto; extras[i] = { ...extras[i], texto }; L.extras = extras;
+    return { mudanca: `${TIPOS_EXTRA[extras[i].tipo]} acrescentado: "${corta(antes)}" → "${corta(texto)}"` };
+  }
+  return { motivo: 'ação de acréscimo desconhecida' };
 }
 
 /**
@@ -337,8 +434,9 @@ function aplicarPacote(e, op, ctx = {}) {
     }
     case 'faq': {
       const faq = [...(P.textosPagina.faq || [])], i = Number(op.indice), p = txt(op.p), r = txt(op.r);
-      if (op.acao === 'adicionar') { if (!p || !r) return { motivo: 'pergunta nova precisa de pergunta e resposta' }; if (faq.length >= MAX_FAQ) return { motivo: `o limite é de ${MAX_FAQ} perguntas` }; faq.push({ p, r }); P.textosPagina.faq = faq; return { mudanca: `FAQ do pacote: nova pergunta "${corta(p)}"` }; }
+      if (op.acao === 'adicionar') { if (!p || !r) return { motivo: 'pergunta nova precisa de pergunta e resposta' }; if (faq.length >= MAX_FAQ) return { motivo: `o limite é de ${MAX_FAQ} perguntas` }; const dep = Number.isInteger(Number(op.depoisDe)) && faq[Number(op.depoisDe)] ? Number(op.depoisDe) + 1 : faq.length; faq.splice(dep, 0, { p, r }); P.textosPagina.faq = faq; return { mudanca: `FAQ do pacote: nova pergunta "${corta(p)}"` }; }
       if (!Number.isInteger(i) || !faq[i]) return { motivo: 'essa pergunta frequente não existe' };
+      if (op.acao === 'mover') { const j = i + (op.direcao === 'subir' ? -1 : 1); if (!faq[j]) return { motivo: 'a pergunta já está na ponta' }; [faq[i], faq[j]] = [faq[j], faq[i]]; P.textosPagina.faq = faq; return { mudanca: `FAQ do pacote: "${corta(faq[j].p)}" ${op.direcao === 'subir' ? 'sobe' : 'desce'} uma posição` }; }
       if (op.acao === 'remover') { const [x] = faq.splice(i, 1); P.textosPagina.faq = faq; return { mudanca: `FAQ do pacote: sai "${corta(x.p)}"` }; }
       if (op.acao === 'editar') { const novo = { p: p || faq[i].p, r: r || faq[i].r }; if (novo.p === faq[i].p && novo.r === faq[i].r) return { motivo: 'a pergunta já está assim' }; const antes = faq[i]; faq[i] = novo; P.textosPagina.faq = faq; return { mudanca: `FAQ do pacote, pergunta ${i + 1}: "${corta(antes.p)}" → "${corta(novo.p)}"` }; }
       return { motivo: 'ação de pergunta frequente desconhecida' };
@@ -398,19 +496,37 @@ function aplicarFoto(e, op, ctx) {
  * Valida e aplica uma lista de operações sobre uma CÓPIA do estado. Nunca lança erro por operação ruim:
  * { estado, mudancas: [texto], aplicadas: [op], descartadas: [{ op, motivo }] }.
  */
-export function aplicarOperacoes(estado, operacoes, { modo = 'custom', materiais = [], produtos = [] } = {}) {
+/**
+ * Dado da loja (rodapé: razão social, CNPJ, endereço, e-mail, telefone). Mora no cliente (cliente.dadosLoja): no
+ * rascunho fica à parte (e.dadosLoja) e só é gravado no cliente ao aplicar. Nunca vazio (é exigência legal).
+ */
+function aplicarDadoLoja(e, op, atuais = {}) {
+  const campo = String(op.campo || ''), def = CAMPOS_DADOS_LOJA.find(([k]) => k === campo), valor = txt(op.valor);
+  if (!def) return { motivo: `o dado "${campo}" não existe nos dados da loja` };
+  if (!valor) return { motivo: `${def[1]} não pode ficar vazio: ${MOTIVO_LEGAL}` };
+  if (campo === 'cnpj' && !tipoDocumento(valor)) return { motivo: 'os dígitos desse CNPJ/CPF não conferem: confira com o cliente' };
+  if (campo === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valor)) return { motivo: 'esse e-mail não parece válido' };
+  const antes = { ...atuais, ...(e.dadosLoja || {}) }[campo] || '';
+  if (antes === valor) return { motivo: `${def[1]} já está assim` };
+  e.dadosLoja = { ...(e.dadosLoja || {}), [campo]: valor };
+  return { mudanca: `Rodapé › ${def[1]}: "${corta(antes)}" → "${corta(valor)}"` };
+}
+
+export function aplicarOperacoes(estado, operacoes, { modo = 'custom', materiais = [], produtos = [], dadosLoja = {} } = {}) {
   const e = clone(estado);
   if (modo === 'custom') { e.conteudo = e.conteudo || {}; e.config = e.config || {}; e.layout = normalizarLayout(e.layout); } else e.pacote = e.pacote || {};
   const mudancas = [], aplicadas = [], descartadas = [];
   for (const op of (Array.isArray(operacoes) ? operacoes : []).slice(0, 30)) {
     if (!op || typeof op !== 'object' || !op.op) { descartadas.push({ op, motivo: 'operação sem formato válido' }); continue; }
-    const protegido = motivoProtegido(op);
+    // Política com texto (nunca vazia) e dado da loja são EDITÁVEIS; o que não pode é tirar do site.
+    const editavelLegal = (op.op === 'texto' && /^politicas\.(trocas|envio|privacidade)$/.test(String(op.campo || '')) && modo === 'custom') || op.op === 'dadoLoja';
+    const protegido = editavelLegal ? null : motivoProtegido(op);
     if (protegido) { descartadas.push({ op, motivo: protegido }); continue; }
     // Imagem do banner/história escolhida em "Usar em" (seletor) vence: só muda pedindo a foto pelo código.
     const usoImg = op.op === 'imagem' ? ({ hero: 'banner', banner: 'banner', marca: 'sobre' }[op.bloco || (modo === 'custom' ? '' : 'banner')]) : null;
     const fixa = usoImg && imagemDoLugar(comUsos(materiais, Object.entries(e.usosFotos || {}).map(([id, usos]) => ({ id, usos }))), usoImg);
     if (fixa?.por === 'manual') { descartadas.push({ op, motivo: `a imagem ${usoImg === 'banner' ? 'do banner' : 'da história'} foi escolhida em Materiais do cliente (${fixa.codigo}, "Usar em"); para trocar, peça a foto pelo código (ex.: "usar F5 no banner")` }); continue; }
-    const r = op.op === 'foto' ? aplicarFoto(e, op, { materiais, produtos }) : modo === 'custom' ? aplicarCustom(e, op, { materiais }) : aplicarPacote(e, op, { materiais });
+    const r = op.op === 'foto' ? aplicarFoto(e, op, { materiais, produtos }) : op.op === 'dadoLoja' ? aplicarDadoLoja(e, op, dadosLoja) : modo === 'custom' ? aplicarCustom(e, op, { materiais }) : aplicarPacote(e, op, { materiais });
     if (r.mudanca) { mudancas.push(r.mudanca); aplicadas.push(op); } else descartadas.push({ op, motivo: r.motivo || 'operação inválida' });
   }
   return { estado: e, mudancas, aplicadas, descartadas };

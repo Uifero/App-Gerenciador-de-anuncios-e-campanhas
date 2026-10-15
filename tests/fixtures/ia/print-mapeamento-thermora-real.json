@@ -1,0 +1,17 @@
+{
+ "chamadaReal": true,
+ "tarefa": "ajuste_entender_print",
+ "data": "2026-10-15",
+ "descricao": "Print da página do produto da Thermora com um círculo + \"tira isso daqui\": o círculo do teste caiu no botão \"Adicionar ao carrinho\", e a IA ligou a marca ao produto.botao (certo para a imagem enviada)",
+ "uso": {
+  "entrada": 2,
+  "saida": 905,
+  "cacheEscrita": 5529,
+  "cacheLeitura": 8460,
+  "buscasWeb": 0,
+  "custoUsd": 0,
+  "modelo": "claude-haiku-4-5",
+  "provedor": "cli"
+ },
+ "texto": "{\"global\": false, \"oque\": \"Remover o botão \\\"Adicionar ao carrinho\\\" marcado no print.\", \"secoes\": [{\"id\": \"produto\", \"oque\": \"Some o botão de compra \\\"Adicionar ao carrinho\\\" da página do produto.\", \"estrutura\": true, \"elementos\": [\"produto.botao\"]}], \"perguntas\": [], \"fora\": [], \"referencia\": null}"
+}

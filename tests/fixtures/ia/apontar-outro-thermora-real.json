@@ -1,0 +1,17 @@
+{
+ "chamadaReal": true,
+ "tarefa": "ajuste_secao",
+ "data": "2026-10-15",
+ "descricao": "\"Apontar no site\" > \"Outro: escrever\" no subtítulo do banner: só a seção hero e o id do elemento",
+ "uso": {
+  "entrada": 2,
+  "saida": 641,
+  "cacheEscrita": 14460,
+  "cacheLeitura": 0,
+  "buscasWeb": 0,
+  "custoUsd": 0,
+  "modelo": "claude-haiku-4-5",
+  "provedor": "cli"
+ },
+ "texto": "{\"tipo\": \"proposta\", \"resposta\": \"Deixo o subtítulo mais curto. O sentido continua o mesmo. Você pode revisar antes de aplicar.\", \"operacoes\": [{\"op\":\"texto\",\"campo\":\"heroSubtitulo\",\"valor\":\"Cápsulas de cafeína e chá verde para o seu dia, com mais foco\"}], \"naoFeito\": []}"
+}

@@ -131,6 +131,6 @@ describe('requisitos legais da loja', () => {
   it('os dados da loja aparecem no rodapé da prévia e do site', () => {
     const cliente = { nome: 'Loja', dadosLoja: { razaoSocial: 'Loja Ltda', cnpj: '11.222.333/0001-81' } };
     expect(gerarPreviaLojaHTML(dadosDoPacote({ cliente, site: {}, produtos: [] }))).toContain('data-dados-loja>Loja Ltda<br>CNPJ 11.222.333/0001-81');
-    expect(gerarSiteHTML({ cliente, produtos: [], conteudo: {} })).toContain('data-dados-loja>Loja Ltda<br>CNPJ 11.222.333/0001-81');
+    expect(gerarSiteHTML({ cliente, produtos: [], conteudo: {} }).replace(/<span[^>]*>|<\/span>/g, '')).toContain('data-dados-loja>Loja Ltda<br>CNPJ 11.222.333/0001-81'); // cada dado é um elemento (data-el)
   });
 });

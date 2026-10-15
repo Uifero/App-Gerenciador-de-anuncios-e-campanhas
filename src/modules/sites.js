@@ -17,6 +17,7 @@ import { estadoDoSite, registrarVersao, versoesDoModo, aplicarOperacoes, resumoM
 import { normalizarVisual, nomeSecaoLoja, imagensParaBanner, printsDoCliente, semRepetirDepoimentos, AJUSTES_FOTO } from '../lib/visual-site.js';
 import { printsPainelHtml, abrirBorrar, autorizarPrints, baixarPrintsZip } from './prints-clientes.js';
 import { montarAjusteSite } from './ajuste-site.js';
+import { barraApontarHtml, ligarApontar } from './apontar-site.js';
 import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal, resumoMaterialSite, linhasDeProva, ehModelo } from '../lib/prova-social.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, moeda, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado, confirmar, faixaRolavel } from '../core/ui.js';
@@ -298,6 +299,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   // Só a seção da sugestão muda: o que o app resolve sem IA (fotos pelo código, recursos, seções) vai direto para o
   // "Antes × Depois"; o que precisa de texto novo vira um "Entendi assim" com a seção e o custo (IA só depois do clique).
   let ajusteApi = null;
+  let apontar = null; // "Apontar no site" (passo 4)
   const TIPOS_SEM_IA = new Set(['banner_fotos', 'clientes_fotos', 'produto_fotos', 'galeria_fotos', 'sobre_fotos', 'nao_fotos', 'frete_gratis', 'pagamentos', 'colunas_produtos', 'botao_grande', 'compre_junto', 'faq', 'depoimentos_home', 'ordem_secoes', 'ocultar_secao', 'fotos_ajuste', 'cores']);
   const refParaOp = (r) => ({ op: 'foto', codigo: r.codigo, uso: r.uso, ...(r.uso === 'produto' ? { produto: r.produtoNome, principal: Boolean(r.principal), ordem: r.ordem } : {}), acao: 'usar' });
   function abrirAjuste() {
@@ -363,7 +365,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   // ---------- partes comuns ----------
   const matsCom = (usosFotos) => (usosFotos ? comUsos(materiais, patchesDe(usosFotos)) : materiais);
   // Sempre o estado ACEITO (conteúdo + cores + layout dos ajustes); uma mudança proposta em aberto nunca entra no download.
-  const htmlDe = (e, extra = {}) => { const mats = matsCom(e.usosFotos); return gerarSiteHTML({ cliente, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site?.linkPublicado || '', provas: semRepetirDepoimentos(printsDoCliente(mats), e.conteudo?.depoimentos), materiais: mats, design: site?.design || null, animacoes: site?.animacoes || null, ...extra }); };
+  const htmlDe = (e, extra = {}) => { const mats = matsCom(e.usosFotos); const cli = e.dadosLoja ? { ...cliente, dadosLoja: { ...(cliente.dadosLoja || {}), ...e.dadosLoja } } : cliente; return gerarSiteHTML({ cliente: cli, produtos, conteudo: e.conteudo || {}, config: e.config || {}, layout: e.layout || null, url: site?.linkPublicado || '', provas: semRepetirDepoimentos(printsDoCliente(mats), e.conteudo?.depoimentos), materiais: mats, design: site?.design || null, animacoes: site?.animacoes || null, ...extra }); };
   const previaPacote = (pacote, usosFotos) => { const mats = matsCom(usosFotos); return gerarPreviaLojaHTML(dadosDoPacote({ cliente, site: { ...site, pacote }, produtos, provas: printsDoCliente(mats), materiais: mats })); };
   const html = (extra) => htmlDe({ conteudo: site.conteudo, config: site.config, layout: site.layout }, extra);
   const dadosPacote = () => dadosDoPacote({ cliente, site, produtos, provas: printsDoCliente(materiais), materiais });
@@ -552,6 +554,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <button class="${custom ? 'btn-ghost' : 'btn-primary'} btn-sm" data-sincronizar-inverso><i class="fa-solid fa-arrows-rotate"></i> Levar o texto do pacote para o site personalizado</button></div></div>` : ''}
         ${gerado ? `<div class="mt-4" data-area-resultado>
           <div class="flex flex-wrap gap-2"><button type="button" class="btn-ghost btn-sm" data-mostrar-previa-loja aria-expanded="true" aria-controls="area-previa-loja"><i class="fa-solid fa-eye-slash"></i> Esconder prévia</button>${custom ? '<button type="button" class="btn-ghost btn-sm" data-preview><i class="fa-solid fa-up-right-from-square"></i> Abrir em nova aba</button>' : ''}</div>
+          ${barraApontarHtml()}
           <div class="mt-2" id="area-previa-loja" data-area-previa-loja>${custom ? '<iframe title="Prévia do site" sandbox="allow-scripts allow-popups allow-forms" class="h-[70vh] w-full rounded-lg border border-slate-200 bg-white" data-previa-custom></iframe>' : previaLojaHtml({ telaCheia: true })}</div>
           ${designHtml(cliente, site)}
           ${animacoesHtml(cliente, site)}
@@ -644,8 +647,14 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
         },
         substituirLinks: async () => { const { substituirLinksPorVersao } = await import('./aprovacoes-site.js'); return substituirLinksPorVersao(cliente, versoesDoModo(site, modoV)[0]?.n); },
         gerarLinkNovo: async () => { const { gerarLinkSite } = await import('./aprovacoes-site.js'); const r = await gerarLinkSite(cliente, site, produtos); return { quando: dataHoraBR(r.criadoEm) }; },
-        verPlano: (id, n) => abrirPlanoDaVersao(site, id, n, { saude }) })
-        .then((api) => { ajusteApi = api; })
+        verPlano: (id, n) => abrirPlanoDaVersao(site, id, n, { saude }),
+        destacar: (id) => apontar?.destacar(id) })
+        .then((api) => {
+          ajusteApi = api;
+          if (gerado) apontar = ligarApontar(alvo, { modo: modoV, cliente, produtos, site: () => site, salvarSite, api: () => ajusteApi,
+            iframe: () => $(custom ? '[data-previa-custom]' : '[data-iframe-loja]', alvo),
+            htmlBase: (e) => (custom ? htmlDe(e) : previaPacote(e.pacote || site.pacote, e.usosFotos)) });
+        })
         .catch((e) => { console.warn('[ajuste do site]', e); $('[data-ajuste]', alvo).innerHTML = '<p class="hint text-rose-600">Não consegui abrir "Ajustar este site". Recarregue a página.</p>'; });
     }
   }
@@ -765,6 +774,17 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   }
 
   // ==================== 6. Subir na plataforma ====================
+  // "Ajustar no tema" (pacote): pedidos do "Apontar no site" que só o tema da plataforma faz (espaço, tamanho, acréscimos).
+  function ajustarNoTemaHtml() {
+    const lista = site?.ajustesTema || [];
+    if (!lista.length) return '';
+    const feitos = lista.filter((x) => x.feito).length;
+    return `<div class="card mt-4" data-ajustar-tema><h3 class="font-semibold"><i class="fa-solid fa-paintbrush mr-1 text-slate-400" aria-hidden="true"></i> Ajustar no tema <span class="text-sm font-normal text-slate-500">(${feitos} de ${lista.length} feito(s))</span></h3>
+      <p class="caption">Pedidos feitos em "Apontar no site" que dependem do tema da ${esc(plat ? PLATAFORMAS_SITE.find(([k]) => k === plat)?.[1] || 'plataforma' : 'plataforma')} (espaço, tamanho, acréscimos). Faça no editor do tema e marque "Feito".</p>
+      <ul class="mt-2 space-y-1 text-sm">${lista.map((x) => `<li class="flex items-start gap-2 rounded bg-slate-50 p-2" data-item-tema="${esc(x.id)}">
+        <label class="flex min-h-[44px] flex-1 cursor-pointer items-start gap-2"><input type="checkbox" class="mt-1 h-5 w-5" data-tema-feito="${esc(x.id)}" ${x.feito ? 'checked' : ''}>
+          <span class="min-w-0 ${x.feito ? 'text-slate-500 line-through' : ''}"><b>${esc(x.elemento)}</b> (${esc(x.secao)}): ${esc(x.oque)}<span class="block text-xs text-slate-500">Anotado em ${esc(dataBR(x.em))}</span></span></label></li>`).join('')}</ul></div>`;
+  }
   async function passo6() {
     const lista = etapas[5].checklist || [];
     const prints = printsDoCliente(materiais);
@@ -799,11 +819,17 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
           <p class="hint">A aba Campanhas sugere este link como destino dos anúncios${custom ? ', e o site baixado de novo já sai com a prévia certa para o WhatsApp' : ''}.</p></div>
           <div><label class="label">Status</label><select class="input" data-status ${site ? '' : 'disabled'}>${opcoes(STATUS_SITE, site?.status)}</select></div></div></div>
       ${tarefasLojaHtml(site, plat, site?.tema)}
+      ${ajustarNoTemaHtml()}
       ${alegacoesSiteHtml(site, modoV)}
       ${legalHtml({ cliente, site, produtos: produtosComF() })}
       <div class="card mt-4" data-checklist-final><h3 class="font-semibold">Checklist final</h3><ul class="mt-2 space-y-1 text-sm">${lista.map((x) => `<li class="flex flex-wrap items-center gap-2" data-check="${x.id}" data-ok="${x.ok}">
         <i class="fa-solid ${x.ok ? 'fa-circle-check text-emerald-600' : 'fa-circle-xmark text-amber-600'}"></i><span class="flex-1">${esc(x.texto)}</span>${x.ok ? '' : `<span class="text-xs text-amber-800">${esc(x.falta)}</span>`}</li>`).join('')}</ul></div>`;
     ligarLegal(alvo, { cliente, getSite: () => site, salvarEVersionar, recarregar });
+    on(alvo, 'change', '[data-tema-feito]', (c) => ocupado(c, async () => {
+      await salvarSite({ ajustesTema: (site.ajustesTema || []).map((x) => (x.id === c.dataset.temaFeito ? { ...x, feito: c.checked, feitoEm: c.checked ? new Date().toISOString() : null } : x)) });
+      recarregar();
+      setTimeout(() => mostrarResultado('[data-ajustar-tema]', c.checked ? 'Marcado como feito.' : 'Voltou para a lista do que falta.'), 50);
+    }));
     const marcarExportado = () => salvarSite({ exportadoEm: new Date().toISOString(), status: site?.status === 'rascunho' ? 'pronto' : site?.status });
     on(alvo, 'click', '[data-copiar-item]', (b) => { const [gi, ii] = b.dataset.copiarItem.split('-').map(Number); const it = grupos[gi]?.itens[ii]; if (it) copiar(it.valor); });
     on(alvo, 'click', '[data-baixar-site]', async () => { baixarTexto(`${slug(cliente.nome) || 'loja'}-index.html`, html(), 'text/html;charset=utf-8'); await marcarExportado(); recarregar(); });

@@ -1,0 +1,5 @@
+{
+ "escritaAMao": true,
+ "tarefa": "ajuste_entender_print",
+ "texto": "{\"global\":false,\"oque\":\"banner parecido com o do print\",\"secoes\":[{\"id\":\"hero\",\"oque\":\"banner com o texto à esquerda e a foto do produto à direita\",\"estrutura\":true,\"elementos\":[\"hero.titulo\",\"hero.foto\"]}],\"perguntas\":[],\"fora\":[],\"referencia\":{\"copiar\":\"banner com o texto à esquerda e a foto do produto grande à direita\"}}"
+}

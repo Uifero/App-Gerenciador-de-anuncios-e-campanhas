@@ -12,6 +12,7 @@ import { normalizarRecursos, SECOES_PRODUTO, textoSecaoProduto, sugeridoPara, re
 import { comDestaques } from './textos-site.js';
 import { designDoSite, cssVariaveis } from './design-site.js';
 import { linhasDadosLoja } from './pacote-loja.js';
+import { marcarElemento, htmlExtras, grupoOrdenado, idFaq, CSS_ELEMENTOS } from './elementos-site.js';
 import { normalizarAnimacoes, prazoDaOferta, cssAnimacoes, classesBody, htmlContador, JS_CONTADOR } from './animacoes-site.js';
 
 /** Formas de pagamento que o selo "compra segura" pode mostrar (ícones genéricos desenhados aqui, sem logo de bandeira). */
@@ -80,39 +81,47 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
   const junto = (p) => (R.compreJunto && produtos.length > 1 ? sugeridoPara(p.id, produtos, R) : null);
   const dados = produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.precoPromocional || p.preco || 0), foto: p.fotos?.[0]?.url || '', variacoes: p.variacoes || [], junto: junto(p)?.id || null }));
 
-  const card = (p) => {
+  // "Apontar no site" (lib/elementos-site.js): marca cada elemento com o id pelo significado e aplica o que o operador
+  // mudou nele (tirar, espaço, tamanho, ordem) e os acréscimos de "Adicionar abaixo". Sem mudança, o HTML sai igual.
+  const estadoNomes = { conteudo: c, layout: L };
+  const M = (id, html, produto = '') => marcarElemento(html, id, { layout: L, estado: estadoNomes, produto, extras: (x) => htmlExtras(L, x, { materiais, esc }) });
+  const card = (p, bloco = 'catalogo') => {
     const foto = p.fotos?.[0]?.url;
     const vars = (p.variacoes || []).filter((v) => v.nome && v.valores?.length);
-    return `<article class="card" data-cat="${esc(p.categoria)}">
-      <div class="ph">${foto ? `<img src="${esc(foto)}" alt="${esc(p.nome)}" width="600" height="600" loading="lazy"${p.fotos[0].foco && L.ajusteFotos !== 'contain' ? ` style="object-position:${posicaoCss(p.fotos[0].foco)}"` : ''}>` : '<span>sem foto</span>'}${p.precoPromocional ? '<b class="badge">OFERTA</b>' : ''}</div>
-      <h3>${esc(p.nome)}</h3>
-      <p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>
-      ${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}
-      ${Number(p.preco) ? `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>` : '<!-- sem preço cadastrado: sem botão de compra -->'}${R.paginaProduto ? `<a class="ver" href="#p-${esc(p.id)}">Ver detalhes</a>` : ''}</article>`;
+    // Cada parte do cartão é um elemento ("Apontar no site": ids pelo significado, iguais em todos os cartões da vitrine).
+    return `<article class="card${grupoOrdenado(L, bloco) && bloco !== 'sale' ? ' ord' : ''}" data-cat="${esc(p.categoria)}" data-produto="${esc(p.id)}">
+      ${M(`${bloco}.foto`, `<div class="ph">${foto ? `<img src="${esc(foto)}" alt="${esc(p.nome)}" width="600" height="600" loading="lazy"${p.fotos[0].foco && L.ajusteFotos !== 'contain' ? ` style="object-position:${posicaoCss(p.fotos[0].foco)}"` : ''}>` : '<span>sem foto</span>'}${p.precoPromocional ? '<b class="badge">OFERTA</b>' : ''}</div>`, p.id)}
+      ${M(`${bloco}.nome`, `<h3>${esc(p.nome)}</h3>`)}
+      ${M(`${bloco}.preco`, `<p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>`)}
+      ${vars.length ? M(`${bloco}.variacoes`, `<div class="vars">${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}</div>`) : ''}
+      ${Number(p.preco) ? M(`${bloco}.botao`, `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>`) : '<!-- sem preço cadastrado: sem botão de compra -->'}${R.paginaProduto ? M(`${bloco}.detalhes`, `<a class="ver" href="#p-${esc(p.id)}">Ver detalhes</a>`) : ''}</article>`;
   };
   // Página do produto (aparece pelo :target, sem script): todas as fotos, descrição, seções e "Compre junto".
   const paginaProduto = (p) => {
     const vars = (p.variacoes || []).filter((v) => v.nome && v.valores?.length);
     const sug = R.compreJunto?.onde === 'produto' ? junto(p) : null;
-    return `<section id="p-${esc(p.id)}" class="pdp-pagina"><div class="wrap"><a href="#catalogo" class="ver">&larr; Voltar</a><div class="pdp card">
-      <div class="pdp-fotos">${(p.fotos || []).map((f) => `<img src="${esc(f.url)}" alt="${esc(p.nome)}" width="800" height="800" loading="lazy">`).join('') || '<span>sem foto</span>'}</div>
-      <div><h2>${esc(p.nome)}</h2>${contador}<p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>${R.freteGratis ? `<p class="frete-pdp">Frete grátis acima de ${esc(reais(R.freteGratis.valor))}</p>` : ''}
-        ${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}
-        ${Number(p.preco) ? `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>` : ''}
-        ${p.descricao ? `<div class="story">${esc(p.descricao)}</div>` : ''}
-        ${R.secoesProduto.map((k) => (textoSecaoProduto(p, k) ? `<details class="secao-prod" open><summary>${esc(SECOES_PRODUTO[k])}</summary><p>${esc(textoSecaoProduto(p, k))}</p></details>` : '')).join('')}
-        ${sug ? `<div class="junto card"><b>Compre junto</b><p>+ ${esc(sug.nome)} · ${Number(sug.preco) ? brl(sug.precoPromocional || sug.preco) : 'sob consulta'}</p>${Number(sug.preco) ? `<button class="btn" data-add="${esc(sug.id)}">Adicionar ${esc(sug.nome)}</button>` : ''}</div>` : ''}</div></div></div></section>`;
+    const secoesP = R.secoesProduto.map((k) => (textoSecaoProduto(p, k) ? `<details class="secao-prod" open><summary>${esc(SECOES_PRODUTO[k])}</summary><p>${esc(textoSecaoProduto(p, k))}</p></details>` : '')).join('');
+    return M('produto', `<section id="p-${esc(p.id)}" class="pdp-pagina" data-produto="${esc(p.id)}"><div class="wrap"><a href="#catalogo" class="ver">&larr; Voltar</a><div class="pdp card">
+      ${M('produto.fotos', `<div class="pdp-fotos">${(p.fotos || []).map((f) => `<img src="${esc(f.url)}" alt="${esc(p.nome)}" width="800" height="800" loading="lazy">`).join('') || '<span>sem foto</span>'}</div>`, p.id)}
+      <div${grupoOrdenado(L, 'produto') ? ' class="ord"' : ''}>${M('produto.nome', `<h2>${esc(p.nome)}</h2>`)}${M('produto.contador', contador)}${M('produto.preco', `<p class="preco">${!Number(p.preco) ? 'Preço sob consulta' : p.precoPromocional ? `<s>${brl(p.preco)}</s> ${brl(p.precoPromocional)}` : brl(p.preco)}</p>`)}${R.freteGratis ? M('produto.frete', `<p class="frete-pdp">Frete grátis acima de ${esc(reais(R.freteGratis.valor))}</p>`) : ''}
+        ${vars.length ? M('produto.variacoes', `<div class="vars">${vars.map((v) => `<select data-var="${esc(v.nome)}" aria-label="${esc(v.nome)}">${v.valores.map((x) => `<option>${esc(x)}</option>`).join('')}</select>`).join('')}</div>`) : ''}
+        ${Number(p.preco) ? M('produto.botao', `<button class="btn" data-add="${esc(p.id)}">Adicionar ao carrinho</button>`) : ''}
+        ${p.descricao ? M('produto.descricao', `<div class="story">${esc(p.descricao)}</div>`) : ''}
+        ${secoesP ? M('produto.secoes', `<div class="secoes-prod">${secoesP}</div>`) : ''}
+        ${sug ? M('produto.junto', `<div class="junto card"><b>Compre junto</b><p>+ ${esc(sug.nome)} · ${Number(sug.preco) ? brl(sug.precoPromocional || sug.preco) : 'sob consulta'}</p>${Number(sug.preco) ? `<button class="btn" data-add="${esc(sug.id)}">Adicionar ${esc(sug.nome)}</button>` : ''}</div>`) : ''}</div></div></div></section>`);
   };
   // Cada vitrine com um desenho ("Loja sem cara de IA": ritmo variado, não blocos iguais): Mais vendidos = faixa que rola
   // para o lado com cartões largos; Sale = lista compacta (foto pequena + preço em destaque); Catálogo = grade densa.
   // Colunas escolhidas pelo operador ("Ajustar este site") vencem: aí a vitrine vira grade com essas colunas.
-  const grade = (lista, bloco) => { const n = L.variacoes[bloco]?.colunas; return `<div class="grid${n ? ` cols${n}` : ` g-${bloco}`}" data-vitrine="${bloco}">${lista.map(card).join('')}</div>`; };
+  const grade = (lista, bloco) => { const n = L.variacoes[bloco]?.colunas; return `<div class="grid${n ? ` cols${n}` : ` g-${bloco}`}" data-vitrine="${bloco}">${lista.map((p) => card(p, bloco)).join('')}</div>`; };
   // Depoimentos lidos da fonte (perfil de marca, prints com a cópia borrada), não da cópia da última geração.
   const deps = depoimentosVivos({ cliente, materiais, guardados: c.depoimentos || [], provasOcultas: c.provasOcultas || [] }).filter((d) => !L.depoimentosOcultos.includes(d.texto));
   const alturaHero = { curto: '40px', alto: '140px' }[L.variacoes.hero?.altura] || '';
   const imgMarca = L.imagens.marca?.url;
   const fotoHero = produtos.find((p) => p.fotos?.[0]?.url) || null;
   const ident = linhasDadosLoja(cliente.dadosLoja);
+  const dl = cliente.dadosLoja || {};
+  const identCampos = [['razaoSocial', dl.razaoSocial], ['cnpj', dl.cnpj && `CNPJ ${dl.cnpj}`], ['endereco', dl.endereco], ['email', dl.email], ['telefone', dl.telefone]].filter(([, t]) => String(t || '').trim());
 
   const destinoCta = visivel('vendidos') ? '#vendidos' : '#catalogo';
   const prints = (provas || []).filter((p) => p?.url);
@@ -121,24 +130,24 @@ export function gerarSiteHTML({ cliente, produtos: produtosBase, conteudo: c = {
     // Textos do operador escolhidos no plano ("Seu texto", "Versão melhorada" ou "Versão segura"), sem reescrever nada.
     destaques: () => (destaques.length ? destaques.map((g, i) => `<section id="destaques${i ? `-${i + 1}` : ''}" class="destaques" data-destaques><div class="wrap"><h2>${esc(g.titulo || 'Destaques')}</h2><ol class="lista-destaques">${g.linhas.filter((l) => String(l?.texto || '').trim()).map((l) => `<li>${esc(l.texto)}</li>`).join('')}</ol></div></section>`).join('\n') : ''),
     // Prints reais de clientes: toque/clique abre a imagem inteira (legível no celular). Nunca editamos o conteúdo do print.
-    provas: () => (prints.length ? `<section id="clientes-reais" class="provas"><div class="wrap"><h2>${esc(tituloBloco(L, 'provas'))}</h2><div class="prints">${prints.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener" title="Toque para ampliar"><img src="${esc(p.url)}" alt="${p.foto ? 'Foto de cliente real' : 'Print de cliente real'}${p.legenda ? ` (${esc(p.legenda)})` : ''}" loading="lazy"${p.foto ? ` class="foto-cliente" style="object-position:${posicaoCss(p.foco)}"` : ''}></a>`).join('')}</div><p class="dica-print">Toque no print para ampliar.</p></div></section>` : ''),
-    hero: () => { const texto = `<h1>${esc(c.heroTitulo || cliente.nome)}</h1><p>${esc(c.heroSubtitulo || cliente.nicho)}</p>${contador}<a href="${destinoCta}">${esc(c.heroCta || 'Ver produtos')}</a>`;
+    provas: () => (prints.length ? `<section id="clientes-reais" class="provas"><div class="wrap">${M('provas.titulo', `<h2>${esc(tituloBloco(L, 'provas'))}</h2>`)}<div class="prints">${prints.map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener" title="Toque para ampliar"><img src="${esc(p.url)}" alt="${p.foto ? 'Foto de cliente real' : 'Print de cliente real'}${p.legenda ? ` (${esc(p.legenda)})` : ''}" loading="lazy"${p.foto ? ` class="foto-cliente" style="object-position:${posicaoCss(p.foco)}"` : ''}></a>`).join('')}</div><p class="dica-print">Toque no print para ampliar.</p></div></section>` : ''),
+    hero: () => { const texto = `<div class="hero-txt${grupoOrdenado(L, 'hero') ? ' ord' : ''}">${M('hero.titulo', `<h1>${esc(c.heroTitulo || cliente.nome)}</h1>`)}${M('hero.subtitulo', `<p>${esc(c.heroSubtitulo || cliente.nicho)}</p>`)}${M('hero.contador', contador)}${M('hero.botao', `<a href="${destinoCta}">${esc(c.heroCta || 'Ver produtos')}</a>`)}</div>`;
       return slides.length ? `<div id="topo" class="hero com-carrossel">${carrosselHtml({ slides, medida: med.banner, conteudo: texto, id: 'bn', alt: cliente.nome })}</div>`
         // Sem foto escolhida para o banner: a foto real do primeiro produto que tiver foto, ao lado do texto.
-        : fotoHero ? `<div id="topo" class="hero com-foto" data-banner-produto><div class="wrap"><div>${texto}</div><a class="hero-img" href="${R.paginaProduto ? `#p-${esc(fotoHero.id)}` : destinoCta}"><img src="${esc(fotoHero.fotos[0].url)}" alt="${esc(fotoHero.nome)}" width="800" height="800"></a></div></div>`
+        : fotoHero ? `<div id="topo" class="hero com-foto" data-banner-produto><div class="wrap"><div>${texto}</div>${M('hero.foto', `<a class="hero-img" href="${R.paginaProduto ? `#p-${esc(fotoHero.id)}` : destinoCta}"><img src="${esc(fotoHero.fotos[0].url)}" alt="${esc(fotoHero.nome)}" width="800" height="800"></a>`, fotoHero.id)}</div></div>`
         : `<div id="topo" class="hero"${alturaHero ? ` style="padding:${alturaHero} 0;"` : ''}><div class="wrap">${texto}</div></div>`; },
-    categorias: () => (categorias.length && visivel('catalogo') ? `<section id="categorias"><div class="wrap"><h2>${esc(tituloBloco(L, 'categorias'))}</h2><div class="cats"><button data-filtro="">Todas</button>${categorias.map((x) => `<button data-filtro="${esc(x)}">${esc(x)}</button>`).join('')}</div></div></section>` : ''),
-    vendidos: () => `<section id="vendidos" class="alt"><div class="wrap"><h2>${esc(tituloBloco(L, 'vendidos'))}</h2>${produtos.length ? grade(maisVendidos, 'vendidos') : '<p>Cadastre produtos para exibi-los aqui.</p>'}</div></section>`,
-    sale: () => (promo.length ? `<section id="sale"><div class="wrap"><h2>${esc(tituloBloco(L, 'sale'))}</h2>${grade(promo, 'sale')}</div></section>` : ''),
-    catalogo: () => `<section id="catalogo" class="${promo.length ? 'alt' : ''}"><div class="wrap"><h2>${esc(tituloBloco(L, 'catalogo'))}</h2><div id="catalogoGrade">${grade(produtos, 'catalogo')}</div></div></section>`,
-    marca: () => (c.storytelling ? `<section id="marca"><div class="wrap"><h2>${esc(tituloBloco(L, 'marca'))}</h2>${imgMarca ? `<img class="story-img" src="${esc(imgMarca)}" alt="${esc(cliente.nome)}" loading="lazy" style="object-position:${posicaoCss(L.imagens.marca.foco)}">` : ''}<div class="story">${esc(c.storytelling)}</div></div></section>` : '<span id="marca"></span>'),
-    galeria: () => (galeria.length ? `<section id="galeria"><div class="wrap"><h2>${esc(tituloBloco(L, 'galeria'))}</h2><div class="galeria">${galeria.map((f) => `<img src="${esc(f.url)}" alt="${esc(cliente.nome)}" loading="lazy" style="object-position:${posicaoCss(f.foco)}">`).join('')}</div></div></section>` : ''),
-    depoimentos: () => (deps.length ? `<section class="alt" id="depoimentos"><div class="wrap"><h2>${esc(tituloBloco(L, 'depoimentos'))}</h2><div class="dep">${deps.map((d) => `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.origem === 'prova_social' ? 'Print de avaliação real de cliente' : d.nome)}" class="dep-midia${d.origem === 'prova_social' ? ' dep-print' : ''}" loading="lazy">`) : ''}${d.exibir === 'print' ? '' : `“${esc(d.texto)}”`}<cite>— ${esc(d.nome)}</cite></blockquote>`).join('')}</div>
+    categorias: () => (categorias.length && visivel('catalogo') ? `<section id="categorias"><div class="wrap">${M('categorias.titulo', `<h2>${esc(tituloBloco(L, 'categorias'))}</h2>`)}<div class="cats"><button data-filtro="">Todas</button>${categorias.map((x) => `<button data-filtro="${esc(x)}">${esc(x)}</button>`).join('')}</div></div></section>` : ''),
+    vendidos: () => `<section id="vendidos" class="alt"><div class="wrap">${M('vendidos.titulo', `<h2>${esc(tituloBloco(L, 'vendidos'))}</h2>`)}${produtos.length ? grade(maisVendidos, 'vendidos') : '<p>Cadastre produtos para exibi-los aqui.</p>'}</div></section>`,
+    sale: () => (promo.length ? `<section id="sale"><div class="wrap">${M('sale.titulo', `<h2>${esc(tituloBloco(L, 'sale'))}</h2>`)}${grade(promo, 'sale')}</div></section>` : ''),
+    catalogo: () => `<section id="catalogo" class="${promo.length ? 'alt' : ''}"><div class="wrap">${M('catalogo.titulo', `<h2>${esc(tituloBloco(L, 'catalogo'))}</h2>`)}<div id="catalogoGrade">${grade(produtos, 'catalogo')}</div></div></section>`,
+    marca: () => (c.storytelling ? `<section id="marca"><div class="wrap${grupoOrdenado(L, 'marca') ? ' ord' : ''}">${M('marca.titulo', `<h2>${esc(tituloBloco(L, 'marca'))}</h2>`)}${imgMarca ? M('marca.foto', `<img class="story-img" src="${esc(imgMarca)}" alt="${esc(cliente.nome)}" loading="lazy" style="object-position:${posicaoCss(L.imagens.marca.foco)}">`) : ''}${M('marca.texto', `<div class="story">${esc(c.storytelling)}</div>`)}</div></section>` : '<span id="marca"></span>'),
+    galeria: () => (galeria.length ? `<section id="galeria"><div class="wrap">${M('galeria.titulo', `<h2>${esc(tituloBloco(L, 'galeria'))}</h2>`)}<div class="galeria">${galeria.map((f) => M(`galeria.foto.${String(f.codigo || '').toUpperCase()}`, `<img src="${esc(f.url)}" alt="${esc(cliente.nome)}" loading="lazy" style="object-position:${posicaoCss(f.foco)}">`)).join('')}</div></div></section>` : ''),
+    depoimentos: () => (deps.length ? `<section class="alt" id="depoimentos"><div class="wrap">${M('depoimentos.titulo', `<h2>${esc(tituloBloco(L, 'depoimentos'))}</h2>`)}<div class="dep">${deps.map((d) => { const iDep = (c.depoimentos || []).findIndex((x) => x.texto === d.texto); const q = `<blockquote>${d.midiaUrl ? (d.midiaTipo === 'video' ? `<video src="${esc(d.midiaUrl)}" controls playsinline class="dep-midia"></video>` : `<img src="${esc(d.midiaUrl)}" alt="${esc(d.origem === 'prova_social' ? 'Print de avaliação real de cliente' : d.nome)}" class="dep-midia${d.origem === 'prova_social' ? ' dep-print' : ''}" loading="lazy">`) : ''}${d.exibir === 'print' ? '' : `“${esc(d.texto)}”`}<cite>— ${esc(d.nome)}</cite></blockquote>`; return iDep >= 0 ? M(`depoimentos.item.${iDep}`, q) : q; }).join('')}</div>
 <!-- ATENÇÃO: depoimentos escritos à mão (sem foto/vídeo anexado) podem ser MODELOS — troque por depoimentos reais antes de publicar. Os que têm foto/vídeo vieram de criativos aprovados ou de prints de avaliação reais (com dados pessoais cobertos) guardados no app. --></div></section>` : ''),
-    faq: () => (faq.length ? `<section id="faq" class="alt"><div class="wrap faq"><h2>${esc(tituloBloco(L, 'faq'))}</h2>${faq.map((f) => `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`).join('')}</div></section>` : ''),
-    newsletter: () => `<section class="news" id="newsletter"><div class="wrap"><h2>${esc(c.newsletterTitulo || 'Receba novidades')}</h2><p>${esc(c.newsletterTexto || '')}</p>
+    faq: () => (faq.length ? `<section id="faq" class="alt"><div class="wrap faq">${M('faq.titulo', `<h2>${esc(tituloBloco(L, 'faq'))}</h2>`)}${faq.map((f) => M(idFaq(f.p), `<details><summary>${esc(f.p)}</summary><p>${esc(f.r)}</p></details>`)).join('')}</div></section>` : ''),
+    newsletter: () => `<section class="news" id="newsletter"><div class="wrap${grupoOrdenado(L, 'newsletter') ? ' ord' : ''}">${M('newsletter.titulo', `<h2>${esc(c.newsletterTitulo || 'Receba novidades')}</h2>`)}${M('newsletter.texto', `<p>${esc(c.newsletterTexto || '')}</p>`)}
 <!-- PONTO DE ENCAIXE: ligue este formulário à sua ferramenta de e-mail (Mailchimp, Brevo, etc.). Hoje ele só mostra uma confirmação local. -->
-<form id="news"><input type="email" required placeholder="Seu e-mail" aria-label="E-mail"><button>Quero receber</button></form><p class="nota" id="newsOk"></p></div></section>`,
+${M('newsletter.form', `<form id="news"><input type="email" required placeholder="Seu e-mail" aria-label="E-mail"><button>Quero receber</button></form>`)}<p class="nota" id="newsOk"></p></div></section>`,
   };
 
   return `<!doctype html>
@@ -210,20 +219,21 @@ ${slides.length ? carrosselCss({ n: slides.length, id: 'bn' }) : ''}
 #cookies.on{display:flex;flex-wrap:wrap;align-items:center;gap:10px}#cookies p{margin:0;flex:1 1 260px}#cookies button{border:0;border-radius:var(--raio);padding:8px 16px;font:inherit;font-weight:600;cursor:pointer}
 #cookies .ok{background:var(--cor);color:var(--sobre-cor)}#cookies .nao{background:#374151;color:#fff}.linkcookies{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit}
 ${cssAnimacoes(A, { acento: cor })}
+${CSS_ELEMENTOS}
 </style></head><body${classesBody(A) ? ` class="${classesBody(A)}"` : ''}>
-${R.freteGratis ? `<div class="barra-frete">Frete grátis acima de ${esc(reais(R.freteGratis.valor))}</div>` : ''}
+${R.freteGratis ? M('geral.barraFrete', `<div class="barra-frete">Frete grátis acima de ${esc(reais(R.freteGratis.valor))}</div>`) : ''}
 <header><div class="wrap"><input type="checkbox" id="menu-site" class="menu-toggle" aria-label="Abrir o menu"><label for="menu-site" class="hamb" title="Menu"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></label><a class="logo" href="#topo">${logoUrl ? `<img src="${esc(logoUrl)}" alt="${esc(cliente.nome)}">` : esc(cliente.nome)}</a>
 <nav>${visivel('categorias') ? '<a href="#categorias">Categorias</a>' : ''}${visivel('vendidos') ? '<a href="#vendidos">Mais vendidos</a>' : ''}${promo.length && visivel('sale') ? '<a href="#sale">Sale</a>' : ''}${visivel('marca') ? '<a href="#marca">A marca</a>' : ''}${faq.length && visivel('faq') ? '<a href="#faq">Dúvidas</a>' : ''}</nav>
 <button class="cartbtn" id="abrirCarrinho">Carrinho (<span id="qtd">0</span>)</button></div></header>
 
-${comDestaques(L.ordem.filter(visivel), 'hero').map((k) => blocoHTML[k]()).filter(Boolean).join('\n')}
+${comDestaques(L.ordem.filter(visivel), 'hero').map((k) => M(k, blocoHTML[k]())).filter(Boolean).join('\n')}
 
 ${R.paginaProduto ? produtos.map(paginaProduto).join('') : ''}
-<footer><div class="wrap"><div class="cols">
-<div><h4>${esc(cliente.nome)}</h4><p>${esc(cliente.nicho)}</p>${ident.length ? `<p class="ident" data-dados-loja>${ident.map(esc).join('<br>')}</p>` : ''}${R.pagamentos.length ? `<div class="pags-rodape">${pagamentos.map((k) => `<span class="l">${ICONE_PAG[k]}${esc(FORMAS_PAGAMENTO.find(([x]) => x === k)[1])}</span>`).join('')}</div>` : ''}</div>
-<div><h4>Trocas e devoluções</h4><p>${esc(c.politicas?.trocas || 'Preencha a política de trocas.')}</p></div>
-<div><h4>Envio</h4><p>${esc(c.politicas?.envio || 'Preencha a política de envio.')}</p></div>
-<div><h4>Privacidade</h4><p>${esc(c.politicas?.privacidade || 'Preencha a política de privacidade.')}</p></div></div>
+<footer data-el="rodape" data-el-nome="Seção Rodapé"><div class="wrap"><div class="cols">
+<div><h4>${esc(cliente.nome)}</h4><p>${esc(cliente.nicho)}</p>${ident.length ? `<p class="ident" data-dados-loja>${identCampos.map(([k, t]) => M(`rodape.${k}`, `<span>${esc(t)}</span>`)).join('<br>')}</p>` : ''}${R.pagamentos.length ? `<div class="pags-rodape">${pagamentos.map((k) => `<span class="l">${ICONE_PAG[k]}${esc(FORMAS_PAGAMENTO.find(([x]) => x === k)[1])}</span>`).join('')}</div>` : ''}</div>
+${M('rodape.trocas', `<div><h4>Trocas e devoluções</h4><p>${esc(c.politicas?.trocas || 'Preencha a política de trocas.')}</p></div>`)}
+${M('rodape.envio', `<div><h4>Envio</h4><p>${esc(c.politicas?.envio || 'Preencha a política de envio.')}</p></div>`)}
+${M('rodape.privacidade', `<div><h4>Privacidade</h4><p>${esc(c.politicas?.privacidade || 'Preencha a política de privacidade.')}</p></div>`)}</div>
 <p style="margin-top:24px">© ${new Date().getFullYear()} ${esc(cliente.nome)}. Todos os direitos reservados. · <button class="linkcookies" id="prefCookies">Preferências de cookies</button></p></div></footer>
 
 <!-- Aviso de cookies (LGPD): aparece na 1ª visita; a escolha fica no navegador do visitante (localStorage). -->

@@ -64,6 +64,15 @@ describe('admin logado', () => {
     await assertSucceeds(admin().ref('gcc/c1/previews/cr2/p.jpg').put(BYTES, { contentType: 'image/jpeg' }));
     await assertFails(admin().ref('gcc/c1/previews/cr2/p.txt').put(BYTES, { contentType: 'text/plain' }));
   });
+  it('print de ajuste do site (gcc/<cliente>/ajustes/): só imagem, até 5 MB; visitante não lê', async () => {
+    await assertSucceeds(admin().ref('gcc/c1/ajustes/p1.jpg').put(BYTES, { contentType: 'image/jpeg' }));
+    await assertSucceeds(admin().ref('gcc/c1/ajustes/p1.jpg').getMetadata());
+    await assertFails(admin().ref('gcc/c1/ajustes/p2.txt').put(BYTES, { contentType: 'text/plain' }));
+    await assertFails(admin().ref('gcc/c1/ajustes/p3.mp4').put(BYTES, { contentType: 'video/mp4' }));
+    await assertFails(admin().ref('gcc/c1/ajustes/grande.jpg').put(new Uint8Array(5 * 1024 * 1024 + 10), { contentType: 'image/jpeg' }));
+    await assertFails(visitante().ref('gcc/c1/ajustes/p1.jpg').getMetadata());
+    await assertSucceeds(admin().ref('gcc/c1/ajustes/p1.jpg').delete());
+  });
   it('fora de gcc/ nada é permitido, nem para o admin', async () => {
     await assertFails(admin().ref('outro-app/x.png').put(BYTES, { contentType: 'image/png' }));
   });

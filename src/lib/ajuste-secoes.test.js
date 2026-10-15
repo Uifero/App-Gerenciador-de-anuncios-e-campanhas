@@ -32,7 +32,8 @@ describe('cada operação mexe numa seção', () => {
     expect(secaoDaOperacao({ op: 'foto', codigo: 'F27', uso: 'produto', produto: 'Thermora' })).toBe('produto');
     expect(secaoDaOperacao({ op: 'foto', codigo: 'F27', uso: 'banner' })).toBe('hero');
     expect(secaoDaOperacao({ op: 'paleta', corPrimaria: '#000000' })).toBe('geral');
-    expect(secaoDaOperacao({ op: 'texto', campo: 'politicas.trocas' })).toBeNull();
+    expect(secaoDaOperacao({ op: 'texto', campo: 'politicas.trocas' })).toBe('rodape'); // editável (nunca sai)
+    expect(secaoDaOperacao({ op: 'texto', campo: 'xyz' })).toBeNull();
   });
   it('pacote', () => {
     expect(secaoDaOperacao({ op: 'texto', campo: 'banner.0.titulo' }, 'pacote')).toBe('banner');
@@ -122,13 +123,13 @@ describe('custo estimado e modelo', () => {
 
 describe('"Entendi assim" do pedido livre', () => {
   it('seção inventada sai; pergunta precisa de 2 opções; global vira "Site todo"', () => {
-    const e = normalizarEntendimento({ secoes: [{ id: 'hero', oque: 'banner mais curto' }, { id: 'rodape', oque: 'x' }, { id: 'hero', oque: 'repetida' }], perguntas: [{ texto: 'Qual?', opcoes: ['só uma'] }, { texto: 'A galeria da loja ou do produto?', opcoes: [{ texto: 'Da loja', secoes: ['galeria'] }, { texto: 'Do produto', secoes: ['produto'], instrucao: 'na galeria do produto' }] }] });
+    const e = normalizarEntendimento({ secoes: [{ id: 'hero', oque: 'banner mais curto' }, { id: 'checkout', oque: 'x' }, { id: 'hero', oque: 'repetida' }], perguntas: [{ texto: 'Qual?', opcoes: ['só uma'] }, { texto: 'A galeria da loja ou do produto?', opcoes: [{ texto: 'Da loja', secoes: ['galeria'] }, { texto: 'Do produto', secoes: ['produto'], instrucao: 'na galeria do produto' }] }] });
     expect(e.secoes.map((s) => s.id)).toEqual(['hero']);
     expect(e.perguntas).toHaveLength(1);
     const r = responderEntendimento(e, 'q1', 1);
     expect(r.secoes.map((s) => s.id)).toEqual(['hero', 'produto']);
     expect(r.perguntas[0].resposta).toBe('Do produto');
-    expect(normalizarEntendimento({ global: true, oque: 'tom mais informal em tudo' }).secoes).toEqual([{ id: TODO, nome: 'Site todo', oque: 'tom mais informal em tudo', estrutura: true }]);
+    expect(normalizarEntendimento({ global: true, oque: 'tom mais informal em tudo' }).secoes).toEqual([{ id: TODO, nome: 'Site todo', oque: 'tom mais informal em tudo', estrutura: true, elementos: [] }]);
   });
   it('"Mudar esta seção" põe o nome no começo e dispensa a IA', () => {
     expect(prefixoSecao('faq')).toBe('Na seção "Perguntas frequentes": ');
