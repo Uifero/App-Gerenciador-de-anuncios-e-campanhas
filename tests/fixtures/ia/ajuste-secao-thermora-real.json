@@ -1,0 +1,17 @@
+{
+ "chamadaReal": true,
+ "tarefa": "ajuste_secao",
+ "data": "2026-10-14",
+ "descricao": "Conferência \"Não feito\" do subtítulo do banner (texto do operador): só a seção hero foi enviada",
+ "uso": {
+  "entrada": 2,
+  "saida": 768,
+  "cacheEscrita": 14089,
+  "cacheLeitura": 0,
+  "buscasWeb": 0,
+  "custoUsd": 0,
+  "modelo": "claude-haiku-4-5",
+  "provedor": "cli"
+ },
+ "texto": "{\"tipo\": \"proposta\", \"resposta\": \"Troco o subtítulo do banner pela frase escolhida por você. O título e o resto da página ficam como estão.\", \"operacoes\": [{\"op\": \"texto\", \"campo\": \"heroSubtitulo\", \"valor\": \"Cápsulas com cafeína e chá verde, sem açúcar\", \"segura\": \"Cápsulas com cafeína e chá verde, sem açúcar\"}], \"naoFeito\": []}"
+}

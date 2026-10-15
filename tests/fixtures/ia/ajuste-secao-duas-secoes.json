@@ -1,0 +1,5 @@
+{
+ "escritaAMao": true,
+ "tarefa": "ajuste_secao",
+ "texto": "{\"tipo\":\"proposta\",\"resposta\":\"Encurtei o subtítulo e tirei a pergunta 1.\",\"operacoes\":[{\"op\":\"texto\",\"campo\":\"heroSubtitulo\",\"valor\":\"Cafeína e chá verde que aceleram o metabolismo\",\"segura\":\"Cápsulas com cafeína e chá verde\"},{\"op\":\"faq\",\"acao\":\"remover\",\"indice\":0},{\"op\":\"foto\",\"codigo\":\"F5\",\"uso\":\"galeria\",\"acao\":\"usar\"}],\"naoFeito\":[]}"
+}

@@ -1,0 +1,5 @@
+{
+ "escritaAMao": true,
+ "tarefa": "ajuste_secao",
+ "texto": "{\"tipo\":\"proposta\",\"resposta\":\"Troquei a F12 pela F28 na galeria do Thermora.\",\"operacoes\":[{\"op\":\"foto\",\"codigo\":\"F12\",\"uso\":\"produto\",\"produto\":\"Thermora\",\"acao\":\"tirar\"},{\"op\":\"foto\",\"codigo\":\"F28\",\"uso\":\"produto\",\"produto\":\"Thermora\",\"acao\":\"usar\"}],\"naoFeito\":[]}"
+}

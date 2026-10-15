@@ -47,6 +47,7 @@ export function statusDoLink(link, resposta, agora = Date.now()) {
   if (r?.status === 'aprovado') return { tipo: 'aprovado', texto: `Aprovado em ${dataHoraCurta(r.em)}`, comentario: lerSecao(r.comentario).texto };
   if (r?.status === 'ajuste') { const { secao, texto } = lerSecao(r.comentario); return { tipo: 'ajuste', texto: `Ajuste pedido em ${dataHoraCurta(r.em)}`, secao, comentario: texto }; }
   if (link.desativadoEm) return { tipo: 'desativado', texto: `Desativado em ${dataHoraCurta(link.desativadoEm)}` };
+  if (link.substituidoEm && link.substituidoMotivo === 'versao' && !link.substituidoPor) return { tipo: 'substituido', texto: `Substituído: o site mudou (v${link.substituidoVersao || '?'}) em ${dataHoraCurta(link.substituidoEm)}` };
   if (link.substituidoEm) return { tipo: 'substituido', texto: `Substituído por link de ${dataHoraCurta(link.substituidoPorEm || link.substituidoEm)}` };
   if (!(link.expiraMs > agora)) return { tipo: 'expirado', texto: 'Expirado' };
   return { tipo: 'aguardando', texto: 'Aguardando cliente' };

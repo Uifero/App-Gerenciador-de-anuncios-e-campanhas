@@ -7,6 +7,7 @@ import { NARRATIVAS, narrativaPorId, linhaNarrativa, narrativaDevolvida, rotuloN
 import { ehProdutoSaude, REGRA_SAUDE, achadosSaude } from '../lib/saude.js';
 import { exigirTamanho } from '../lib/textos-site.js';
 import { limparModelo } from '../lib/modelo-pedido-site.js';
+import { mapaDasSecoes, resumoDasSecoes, nomeSecao, filtrarOperacoes, normalizarEntendimento, textosDoOperador, LIMITE_PEDIDO_AJUSTE } from '../lib/ajuste-secoes.js';
 import { dividirSecoes, codigosDoTexto, temCodigo, porCodigo, resumoUsos, nomeArquivo } from '../lib/fotos-site.js';
 import { tipoMaterial } from '../lib/prova-social.js';
 import { ehVertical } from '../lib/medidas-site.js';
@@ -980,6 +981,66 @@ Saída JSON: {"tipo": "explicacao"|"proposta"|"recusa", "resposta": string, "ope
 ${SO_JSON}`;
   const { dados } = await gerarJSON({ tarefa, cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
   return { ...normalizarAjusteSite(dados), tarefa };
+}
+
+// ---------- ajuste POR SEÇÃO (lib/ajuste-secoes.js): primeiro entende, depois muda só as seções afetadas ----------
+/**
+ * "Entendi assim" do pedido livre: quais seções ele mexe (IA barata, sem os textos do site). Não muda nada.
+ * Devolve { global, secoes: [{ id, nome, oque, estrutura }], perguntas, fora } (lib/ajuste-secoes.js normalizarEntendimento).
+ */
+export async function entenderAjuste({ cliente, modo, mensagem, materiais = [] }) {
+  const pedidoLivre = String(mensagem || '').trim();
+  if (!pedidoLivre) throw new Error('Escreva o que quer mudar no site.');
+  if (pedidoLivre.length > LIMITE_PEDIDO_AJUSTE) throw new Error(`O pedido tem ${pedidoLivre.length} caracteres; o limite é ${LIMITE_PEDIDO_AJUSTE}. Encurte e tente de novo.`);
+  const system = 'Você só identifica QUAIS partes de um site de loja um pedido mexe. Não escreve texto novo e não muda nada. Português do Brasil, frases curtas.';
+  const pedido = `SEÇÕES DO SITE (id: nome):
+${mapaDasSecoes({}, modo)}
+Fotos com código nos Materiais: ${materiais.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo).map((m) => m.codigo).join(', ') || 'nenhuma'}
+
+PEDIDO DO OPERADOR: "${pedidoLivre}"
+
+Regras:
+- Liste SÓ as seções que o pedido cita ou que mudam por causa dele. Nunca acrescente seção que ele não pediu.
+- Foto pelo código vai na seção do lugar: banner/topo = ${modo === 'pacote' ? 'banner' : 'hero'}; galeria da loja = galeria; "galeria do produto", "fotos do produto" = produto; depoimentos em print = provas; sobre/história = ${modo === 'pacote' ? 'sobre' : 'marca'}.
+- "estrutura": true só quando muda o layout da seção (ordem, mostrar/ocultar, altura, colunas, imagem); texto e foto = false.
+- "global": true SÓ quando o pedido vale para o site todo (ex.: "muda as cores do site todo", "deixa o tom mais informal em tudo"). Nesse caso "oque" resume a mudança.
+- Ambíguo (não dá para saber a seção ou o que fazer) ou "não sei": faça uma pergunta com 2 ou 3 opções clicáveis, cada uma {"texto", "secoes": [ids], "instrucao": o que fazer nessa opção}. Nunca chute.
+- O que não dá para mudar por aqui (Pixel, cookies, carrinho/pagamento, políticas, cabeçalho, rodapé, WhatsApp) vai em "fora".
+Saída JSON: {"global": boolean, "oque": string, "secoes": [{"id", "oque": o que muda nela em 1 frase, "estrutura": boolean}], "perguntas": [{"texto", "opcoes": [...]}], "fora": [string]}
+${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa: 'ajuste_entender', cliente, system, messages: [{ role: 'user', content: pedido }] });
+  return normalizarEntendimento(dados || {}, modo);
+}
+
+/**
+ * Faz o ajuste só nas seções do "Entendi assim": a IA recebe os dados DESSAS seções (nunca o site inteiro, a não ser no
+ * pedido global), a instrução e as regras do cliente, e devolve operações; o app recusa as que saem das seções
+ * (lib/ajuste-secoes.js filtrarOperacoes). Devolve { tipo, resposta, operacoes, foraDasSecoes, naoFeito, tarefa }.
+ */
+export async function ajustarSecoes({ cliente, modo, site, estado, secoes = [], instrucao, materiais = [], produtos = [], tarefa = 'ajuste_secao' }) {
+  const custom = modo !== 'pacote';
+  const dele = textosDoOperador(site, modo);
+  const textosDele = Object.entries(dele).map(([campo, t]) => `${campo}: "${t.original}"`).join(' | ');
+  const system = `Você ajusta SÓ algumas seções de um site de loja já pronto${custom ? ', montado em blocos fixos' : ' (pacote para Nuvemshop/Shopify)'}. Você NÃO escreve HTML: responde só com operações do formato permitido. Fale com uma pessoa leiga, em frases curtas.`;
+  const pedido = `SEÇÕES QUE VOCÊ PODE MUDAR (só estas; operação em outra seção é recusada pelo app): ${secoes.map((id) => `${id} (${nomeSecao(id, modo)})`).join(', ')}
+DADOS ATUAIS DESSAS SEÇÕES:
+${resumoDasSecoes(estado, secoes, modo, { materiais, produtos })}
+${textosDele ? `\nTEXTOS QUE O OPERADOR ESCREVEU E APROVOU (${textosDele}): só mexa neles se o pedido mandar; se mexer, mande na operação também "segura": a versão sem promessa de efeito no corpo e sem número sem fonte (o app mostra as três versões para ele escolher).` : ''}
+PRODUTOS: ${produtos.slice(0, 15).map((p) => `"${p.nome}"`).join(', ') || '(nenhum)'}
+
+${custom ? OPS_CUSTOM : OPS_PACOTE}
+
+${NUNCA}${regraSite(cliente)}
+
+PEDIDO: ${String(instrucao || '').slice(0, LIMITE_PEDIDO_AJUSTE + 600)}
+
+Faça SÓ o que foi pedido, nessas seções. Textos novos no idioma e tom da marca, curtos para o celular. Nunca invente dado, número, preço, prazo, garantia nem depoimento: se faltar, não faça e diga em "naoFeito". Onde ele escreveu "não sei", não invente: diga em "naoFeito". ${idiomaLinha(cliente)}
+Saída JSON: {"tipo": "proposta"|"recusa"|"explicacao", "resposta": 1-2 frases do que muda, "operacoes": [ ... ], "naoFeito": [string]}
+${SO_JSON}`;
+  const { dados } = await gerarJSON({ tarefa, cliente, estavel: estavelDe(cliente), system, messages: [{ role: 'user', content: pedido }] });
+  const r = normalizarAjusteSite(dados);
+  const { dentro, fora } = filtrarOperacoes(r.operacoes, secoes, modo);
+  return { ...r, operacoes: dentro, tipo: dentro.length ? 'proposta' : r.tipo === 'proposta' ? 'recusa' : r.tipo, foraDasSecoes: fora, tarefa };
 }
 
 /** "id (F3): nome [usos]" de cada imagem, para a IA entender pedidos como "usar F5 no banner". */

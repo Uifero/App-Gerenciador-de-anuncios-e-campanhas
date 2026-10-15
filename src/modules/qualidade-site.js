@@ -9,6 +9,7 @@ import { esc, $, on, ocupado, toast, mostrarResultado, tag } from '../core/ui.js
 import { designDoSite, parPorId, textoPar, corDominante } from '../lib/design-site.js';
 import { verificarCaraDeIa, corrigirLocal, pedidoClichesIa } from '../lib/cara-de-ia.js';
 import { ANIMACOES_SITE, normalizarAnimacoes, prazoDaOferta } from '../lib/animacoes-site.js';
+import { chaveAchado, ignoradas, comIgnorada, semIgnorada } from '../lib/sugestoes.js';
 import { checklistLegal, CAMPOS_DADOS_LOJA, normalizarDadosLoja, TRECHO_ARREPENDIMENTO, tipoDocumento } from '../lib/legal-loja.js';
 
 /** Cores do logo (lidas uma vez num canvas pequeno). Falha calada: sem permissão de leitura (CORS), fica sem. */
@@ -55,27 +56,48 @@ export function ligarDesign(el, { cliente, getSite, salvarSite, recarregar }) {
 
 // ---------- passo 4: "Cara de IA" ----------
 const ICONE = { cliche: 'quote-left', travessao: 'minus', exclamacao: 'exclamation', emoji: 'face-smile', parede: 'align-justify', cor: 'palette', banner: 'image' };
+/** Achados da Cara de IA divididos em visíveis e ignorados (site.sugestoesIgnoradas). */
+export function achadosCaraDeIa({ cliente, site, modo, produtos }) {
+  const ign = ignoradas(site);
+  const todos = verificarCaraDeIa({ site, modo, design: designDoSite({ cliente, site }), produtos });
+  return { achados: todos.filter((a) => !ign.has(chaveAchado(a))), ignorados: todos.filter((a) => ign.has(chaveAchado(a))) };
+}
 export function caraDeIaHtml({ cliente, site, modo, produtos }) {
-  const design = designDoSite({ cliente, site });
-  const achados = verificarCaraDeIa({ site, modo, design, produtos });
+  const { achados, ignorados } = achadosCaraDeIa({ cliente, site, modo, produtos });
   const locais = achados.filter((a) => a.corrige === 'local').length, cliches = achados.filter((a) => a.tipo === 'cliche').length;
   return `<div class="mt-4 rounded-lg border-2 ${achados.length ? 'border-amber-300 bg-amber-50/40' : 'border-emerald-300 bg-emerald-50/40'} p-3" data-cara-de-ia data-ancora="cara-de-ia" data-achados="${achados.length}">
     <h4 class="font-semibold"><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i> Conferência: cara de IA</h4>
     <p class="caption">O app confere o texto e o visual contra o que denuncia site feito por IA (sem IA, sem custo). Seus textos do plano e os depoimentos reais não são mexidos.</p>
     ${achados.length ? `<ul class="mt-2 space-y-1 text-sm" data-lista-cara-de-ia>${achados.map((a) => `<li class="flex flex-wrap items-start gap-2 rounded bg-slate-50 px-2 py-1" data-achado="${esc(a.tipo)}">
         <i class="fa-solid fa-${ICONE[a.tipo] || 'circle'} mt-1 text-amber-700" aria-hidden="true"></i><span class="min-w-0 flex-1"><b>${esc(a.titulo)}</b> · ${esc(a.onde)}${a.trecho ? ` · <span class="text-slate-600">"${esc(a.trecho)}"</span>` : ''}<br><span class="text-xs text-slate-600">${esc(a.sugestao)}</span></span>
-        ${tag(a.corrige === 'local' ? 'corrige na hora' : a.corrige === 'ia' ? 'reescrever' : 'você ajusta', a.corrige === 'manual' ? '' : 'tag-info')}</li>`).join('')}</ul>
+        ${tag(a.corrige === 'local' ? 'corrige na hora' : a.corrige === 'ia' ? 'reescrever' : 'você ajusta', a.corrige === 'manual' ? '' : 'tag-info')}
+        <span class="flex w-full flex-wrap gap-2">${a.corrige === 'manual' ? '' : `<button type="button" class="btn-primary btn-sm min-h-[44px]" data-fazer-achado="${esc(a.id)}"><i class="fa-solid fa-wand-magic-sparkles"></i> Fazer essa mudança</button>`}<button type="button" class="btn-ghost btn-sm min-h-[44px]" data-ignorar-achado="${esc(a.id)}">Ignorar</button></span></li>`).join('')}</ul>
       <div class="mt-2 flex flex-wrap gap-2">${locais ? `<button type="button" class="btn-primary btn-sm min-h-[44px]" data-corrigir-cara><i class="fa-solid fa-wand-sparkles"></i> Corrigir (${locais} na hora${cliches ? `, ${cliches} clichê(s) com IA` : ''})</button>` : ''}
         ${!locais && cliches ? `<button type="button" class="btn-ia btn-sm min-h-[44px]" data-corrigir-cara><i class="fa-solid fa-wand-magic-sparkles"></i> Corrigir ${cliches} clichê(s) com IA</button>` : ''}</div>
       <p class="hint">Clichê vira uma mudança proposta em "Ajustar este site" (Atual × Com a mudança): nada muda sem você aceitar. Sem IA: edite em "Editar os textos à mão".</p>`
       : '<p class="mt-1 text-sm text-emerald-800" data-sem-cara-de-ia><i class="fa-solid fa-circle-check"></i> Nada encontrado: sem clichê, travessão, exclamação em série, emoji em título nem parede de texto.</p>'}
+    ${ignorados.length ? `<details class="mt-2 text-sm" data-achados-ignorados><summary class="flex min-h-[44px] cursor-pointer items-center text-slate-600">Ignorados (${ignorados.length})</summary><ul class="space-y-1">${ignorados.map((a) => `<li class="flex flex-wrap items-center gap-2 rounded bg-slate-50 px-2 py-1 text-slate-600"><span class="flex-1">${esc(a.titulo)} · ${esc(a.onde)}</span><button type="button" class="btn-ghost btn-sm min-h-[44px]" data-mostrar-achado="${esc(a.id)}">Mostrar de novo</button></li>`).join('')}</ul></details>` : ''}
     <p class="hint">O modelo do app já evita gradiente roxo, fileira de ícones genéricos e seções todas iguais; a foto real do produto vai no banner.</p></div>`;
 }
-/** ctx: { cliente, getSite, modo, produtos, salvarEVersionar, corrigirComIa (async (achados) => void), recarregar }. */
+/**
+ * ctx: { cliente, getSite, modo, produtos, salvarEVersionar, corrigirComIa (async (achados) => void), recarregar,
+ * salvarSite, fazerAchado (async (achado) => void): "Fazer essa mudança" de um achado só, pelo "Antes × Depois" }.
+ */
 export function ligarCaraDeIa(el, ctx) {
+  const achar = (id) => verificarCaraDeIa({ site: ctx.getSite(), modo: ctx.modo, design: designDoSite({ cliente: ctx.cliente, site: ctx.getSite() }), produtos: ctx.produtos }).find((a) => a.id === id);
+  on(el, 'click', '[data-fazer-achado]', (b) => ocupado(b, async () => { const a = achar(b.dataset.fazerAchado); if (a) await ctx.fazerAchado(a); }));
+  const ignorar = (ignorar) => (b) => ocupado(b, async () => {
+    const a = achar(ignorar ? b.dataset.ignorarAchado : b.dataset.mostrarAchado); if (!a) return;
+    const chave = chaveAchado(a);
+    await ctx.salvarSite({ sugestoesIgnoradas: ignorar ? comIgnorada(ctx.getSite(), { chave, fonte: 'cara_de_ia', secao: '', oque: `${a.titulo} · ${a.onde}` }) : semIgnorada(ctx.getSite(), chave) });
+    ctx.recarregar();
+    setTimeout(() => mostrarResultado('[data-cara-de-ia]', ignorar ? 'Ignorado: não volta enquanto o texto for o mesmo.' : 'Voltou para a lista.'), 50);
+  });
+  on(el, 'click', '[data-ignorar-achado]', ignorar(true));
+  on(el, 'click', '[data-mostrar-achado]', ignorar(false));
   on(el, 'click', '[data-corrigir-cara]', (b) => ocupado(b, async () => {
     const site = ctx.getSite();
-    const achados = verificarCaraDeIa({ site, modo: ctx.modo, design: designDoSite({ cliente: ctx.cliente, site }), produtos: ctx.produtos });
+    const { achados } = achadosCaraDeIa({ cliente: ctx.cliente, site, modo: ctx.modo, produtos: ctx.produtos });
     const r = corrigirLocal({ conteudo: site.conteudo, pacote: site.pacote }, achados, { modo: ctx.modo });
     if (r.mudancas.length) {
       await ctx.salvarEVersionar(ctx.modo === 'custom' ? { conteudo: r.estado.conteudo } : { pacote: r.estado.pacote, conteudo: r.estado.conteudo }, `Cara de IA: ${r.mudancas.join('; ')}`.slice(0, 200));

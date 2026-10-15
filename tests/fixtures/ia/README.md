@@ -39,6 +39,12 @@ Regra do CLAUDE.md: no máximo 1 chamada real por função nova ou alterada em c
 | `ajuste-cliches-moda.json` | "Cara de IA" > Corrigir: reescrita dos clichês pela proposta de "Ajustar este site" | escrita à mão |
 | `refino-natural-thermora.json` | "Parece anúncio?" > Aplicar as sugestões numa ideia com cara de vitrine | escrita à mão |
 | `plano-modelo-secoes.json` | "Analisar meu pedido" com o modelo pronto preenchido em parte (S1, S2, S3, S6): FAQ vazia da IA e um preço inventado no "não sei" (o app tira) | escrita à mão |
+| `ajuste-secao-thermora-real.json` | Ajuste por seção (tarefa `ajuste_secao`, Haiku 4.5) a partir da sugestão da Conferência "Não feito" do subtítulo do banner: só a seção hero enviada, devolveu só a operação dela | chamada real, 14/10/2026 |
+| `ajuste-entender-thermora-real.json` | "Entendi assim" do texto livre "troca a F12 pela F28 na galeria do produto" (tarefa `ajuste_entender`, Haiku 4.5): só a seção produto | chamada real, 14/10/2026 |
+| `ajuste-secao-galeria-thermora.json` | Troca F12 → F28 na galeria do Thermora (operações de foto) | escrita à mão |
+| `ajuste-entender-duas-secoes.json` / `ajuste-secao-duas-secoes.json` | Pedido em duas seções (banner + FAQ), com uma operação fora delas (a F5 na galeria, que o app recusa) e uma alegação de saúde | escrita à mão |
+| `ajuste-entender-ambiguo.json` | "muda a foto": pergunta com duas opções | escrita à mão |
+| `conferencia-ajuste-thermora.json` | "Conferir de novo" com o motivo reescrito pela IA (a sugestão ignorada não volta) | escrita à mão |
 | `animacao-thermora-real.json` | Biblioteca de animações: "Preencher os textos com IA" (tarefa `animacao`, Haiku 4.5, limite 900) no preset "Foto com zoom lento + legenda falada" pela ideia "Rotina" da Thermora | chamada real, 14/10/2026 |
 | `simulador-navegador.js` | IA simulada no navegador com as fixtures acima: `await import('/tests/fixtures/ia/simulador-navegador.js')` no console (modo demo) | sem IA |
 | `cli-limite.mjs` | CLI falsa: imprime o aviso de limite da assinatura e trava | sem IA |

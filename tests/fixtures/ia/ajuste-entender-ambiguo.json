@@ -1,0 +1,5 @@
+{
+ "escritaAMao": true,
+ "tarefa": "ajuste_entender",
+ "texto": "{\"global\":false,\"secoes\":[],\"perguntas\":[{\"texto\":\"Qual foto você quer trocar, e onde?\",\"opcoes\":[{\"texto\":\"Foto do banner\",\"secoes\":[\"hero\"],\"instrucao\":\"trocar a foto do banner\"},{\"texto\":\"Foto principal do Thermora\",\"secoes\":[\"produto\"],\"instrucao\":\"trocar a foto principal do Thermora\"}]}],\"fora\":[]}"
+}

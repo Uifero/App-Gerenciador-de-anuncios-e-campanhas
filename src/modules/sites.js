@@ -34,12 +34,15 @@ import { abrirProduto, garantirMigracaoFotos } from './produtos.js';
 import { tarefasSiteHtml, ligarTarefasSite } from './tarefas-site.js';
 import { ETAPAS, STATUS_ETAPA, statusEtapas, primeiraEtapaComFalta, plataformaDoSite, patchPlataforma, PLATAFORMAS_SITE, TEMAS_SHOPIFY, nomeTema } from '../lib/etapas-site.js';
 import { itensAceitos, aplicacaoDoPlano, checklistObrigatorio, itensFaltando, recursosDoSite, TIPOS_PEDIDO, planoDasFotos } from '../lib/plano-site.js';
-import { blocoAnaliseHtml, ligarAnalise, planoAplicado, planoAtual, conferenciaHtml, conferirPlano, abrirPlanoDaVersao, tarefasLojaHtml, alegacoesSiteHtml } from './plano-site.js';
+import { blocoAnaliseHtml, ligarAnalise, planoAplicado, planoAtual, conferenciaHtml, conferirPlano, abrirPlanoDaVersao, tarefasLojaHtml, alegacoesSiteHtml, faltandoSemIgnorar } from './plano-site.js';
 import { aplicarTextosNoEstado, alegacoesMantidas, alegacoesParaCliente } from '../lib/textos-site.js';
 import { ehProdutoSaude } from '../lib/saude.js';
 import { resumoBlocosSite } from './ajuste-site.js';
 import { designHtml, ligarDesign, caraDeIaHtml, ligarCaraDeIa, legalHtml, ligarLegal, animacoesHtml, ligarAnimacoes } from './qualidade-site.js';
-import { pedidoClichesIa } from '../lib/cara-de-ia.js';
+import { pedidoClichesIa, corrigirAchado } from '../lib/cara-de-ia.js';
+import { secaoDoItemPlano, secaoDoAchado } from '../lib/ajuste-secoes.js';
+import { chaveConferencia, comIgnorada, semIgnorada } from '../lib/sugestoes.js';
+import { dataHoraBR } from '../lib/aprovacao-site.js';
 
 /** { materialId: usos } (rascunho do "Ajustar este site") -> patches para comUsos. */
 const patchesDe = (usosFotos) => Object.entries(usosFotos || {}).map(([id, usos]) => ({ id, usos }));
@@ -262,10 +265,10 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   }
   // "Corrigir o que faltou": só os itens Parcial/Não atendido. Estrutura: aplica de novo. Texto: a IA propõe uma mudança
   // em "Ajustar este site" (Atual × Com a mudança), para aceitar. Dado que só o operador tem (fórmula etc.): diz onde preencher.
-  async function corrigirFaltou() {
+  async function corrigirFaltou(lista = null) {
     const p = planoAplicado(site), conf = site?.conferencia;
     if (!p || !conf) return;
-    const faltando = itensFaltando(itensAceitos(p), conf.resultados);
+    const faltando = lista || faltandoSemIgnorar(site, p, conf);
     const ligada = (x) => !/não está ligada/.test(conf.resultados[x.id]?.motivo || '');
     const semDado = faltando.filter((x) => x.tipo === 'secoes_produto' || (custom && x.tipo === 'pagina_produto' && ligada(x)));
     const deTexto = faltando.filter((x) => !semDado.includes(x) && (conf.resultados[x.id]?.por !== 'codigo' || (x.tipo === 'pagina_produto' && ligada(x))));
@@ -290,6 +293,61 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     mostrarResultado('[data-conferencia]', 'Correção feita: a conferência foi refeita.');
   }
 
+
+  // ---------- sugestões com "Fazer essa mudança" (Conferência do pedido e Cara de IA) ----------
+  // Só a seção da sugestão muda: o que o app resolve sem IA (fotos pelo código, recursos, seções) vai direto para o
+  // "Antes × Depois"; o que precisa de texto novo vira um "Entendi assim" com a seção e o custo (IA só depois do clique).
+  let ajusteApi = null;
+  const TIPOS_SEM_IA = new Set(['banner_fotos', 'clientes_fotos', 'produto_fotos', 'galeria_fotos', 'sobre_fotos', 'nao_fotos', 'frete_gratis', 'pagamentos', 'colunas_produtos', 'botao_grande', 'compre_junto', 'faq', 'depoimentos_home', 'ordem_secoes', 'ocultar_secao', 'fotos_ajuste', 'cores']);
+  const refParaOp = (r) => ({ op: 'foto', codigo: r.codigo, uso: r.uso, ...(r.uso === 'produto' ? { produto: r.produtoNome, principal: Boolean(r.principal), ordem: r.ordem } : {}), acao: 'usar' });
+  function abrirAjuste() {
+    if (!ajusteApi) throw new Error('"Ajustar este site" ainda está abrindo. Espere um instante e tente de novo.');
+    return ajusteApi;
+  }
+  async function fazerItensConferencia(itens) {
+    const api = abrirAjuste();
+    const conf = site.conferencia || { resultados: {} };
+    const ligada = (x) => !/não está ligada/.test(conf.resultados[x.id]?.motivo || '');
+    const semDado = itens.filter((x) => x.tipo === 'secoes_produto' || (custom && x.tipo === 'pagina_produto' && ligada(x)));
+    const locais = itens.filter((x) => !semDado.includes(x) && TIPOS_SEM_IA.has(x.tipo));
+    const comIa = itens.filter((x) => !semDado.includes(x) && !locais.includes(x));
+    const semSecao = comIa.filter((x) => !secaoDoItemPlano(x, modoV));
+    const avisos = [];
+    if (locais.length) {
+      const mats = await garantirCodigos(cliente, await db.listar(COL.materiais, { clienteId: cliente.id }));
+      const atuais = recursosDoSite(site, modoV);
+      const a = aplicacaoDoPlano(locais, { modo: modoV, materiais: mats, produtos, recursosAtuais: atuais });
+      const mudouRec = JSON.stringify(a.recursos) !== JSON.stringify(atuais);
+      const recTipos = locais.filter((x) => ['frete_gratis', 'pagamentos', 'botao_grande', 'compre_junto', 'colunas_produtos'].includes(x.tipo));
+      const faqAtual = (custom ? site.conteudo?.faq : site.pacote?.textosPagina?.faq) || [];
+      const faqOps = locais.filter((x) => x.tipo === 'faq').flatMap((x) => (x.params?.pares || []).filter((q) => !faqAtual.some((f) => f.p === q.p)).map((q) => ({ op: 'faq', acao: 'adicionar', p: q.p, r: q.r })));
+      // Foto principal só quando o item pede (params.principal): a principal marcada à mão no seletor continua valendo.
+      const pedePrincipal = (c) => locais.some((x) => x.tipo === 'produto_fotos' && String(x.params?.principal || '').toUpperCase() === c);
+      await api.proporOperacoes([...a.ops, ...faqOps, ...a.refs.map((r) => refParaOp({ ...r, principal: r.principal && pedePrincipal(r.codigo) }))], { fonte: 'conferencia', pedido: locais.map((x) => x.pedido || TIPOS_PEDIDO[x.tipo]).join('; '),
+        ...(mudouRec ? { recursos: a.recursos, textoRecursos: `Recursos da loja: ${recTipos.map((x) => x.pedido || TIPOS_PEDIDO[x.tipo]).join('; ') || 'ajustados'}`, secaoRecursos: secaoDoItemPlano(recTipos[0] || locais[0], modoV) || 'produto' } : {}) });
+    }
+    const porSecao = comIa.filter((x) => !semSecao.includes(x));
+    if (porSecao.length) {
+      await api.prepararSugestao({ fonte: 'conferencia', secoes: porSecao.map((x) => secaoDoItemPlano(x, modoV)), oque: porSecao.map((x) => x.pedido || TIPOS_PEDIDO[x.tipo]).join('; '),
+        instrucao: `Corrija SÓ ${porSecao.length > 1 ? 'estes pedidos' : 'este pedido'} do plano, sem mexer em mais nada: ${porSecao.map((x) => `"${x.pedido || TIPOS_PEDIDO[x.tipo]}" (${x.como}; hoje: ${conf.resultados[x.id]?.motivo || 'não atendido'})`).join('; ')}` });
+    }
+    if (semSecao.length) { await corrigirFaltou(semSecao); avisos.push(`${semSecao.length} item(ns) sem seção própria seguiram pelo "Corrigir o que faltou".`); }
+    if (semDado.length) avisos.push(`Precisa de dado real (a IA não inventa): ${semDado.map((x) => conf.resultados[x.id]?.motivo).join('; ')}. Preencha no produto (aba Produtos > Mais opções).`);
+    if (avisos.length) toast(avisos.join(' '), semDado.length ? 'erro' : 'info');
+  }
+  /** "Fazer essa mudança" de um achado da Cara de IA: mecânico = sem IA, só no texto dele; clichê = a IA reescreve só a seção dele. */
+  async function fazerAchado(a) {
+    const api = abrirAjuste();
+    const secao = secaoDoAchado(a, modoV);
+    if (a.corrige === 'local') {
+      const ok = await api.proporLocal((base) => corrigirAchado(base, a, { modo: modoV }), { fonte: 'cara_de_ia', secao: secao || 'geral', pedido: a.titulo });
+      if (!ok) toast('Esse ponto já está corrigido.', 'info');
+      else mostrarResultado('[data-rascunho]', 'Antes × Depois: confira e clique em "Aplicar".');
+      return;
+    }
+    if (secao) return api.prepararSugestao({ fonte: 'cara_de_ia', secoes: [secao], oque: `Reescrever ${a.titulo} em ${a.onde}`, instrucao: pedidoClichesIa([a]) });
+    await corrigirClichesIa([a]); recarregar(); setTimeout(() => mostrarResultado('[data-ajuste]', 'A reescrita virou uma mudança "Antes × Depois" em "Ajustar este site".'), 50);
+  }
 
   // "Cara de IA" > Corrigir: os clichês viram uma mudança proposta em "Ajustar este site" (Atual × Com a mudança),
   // como em "Corrigir o que faltou". Nada é aplicado sem o "Aceitar" do operador.
@@ -521,10 +579,28 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       ligarAjustesRapidos();
       ligarDesign(alvo, { cliente, getSite: () => site, salvarSite, recarregar });
       ligarAnimacoes(alvo, { cliente, getSite: () => site, salvarSite, recarregar });
-      ligarCaraDeIa(alvo, { cliente, getSite: () => site, modo: modoV, produtos: produtosComF(), salvarEVersionar, corrigirComIa: corrigirClichesIa, recarregar });
+      ligarCaraDeIa(alvo, { cliente, getSite: () => site, modo: modoV, produtos: produtosComF(), salvarEVersionar, corrigirComIa: corrigirClichesIa, recarregar, salvarSite, fazerAchado });
       if (mostrarDepoisDeGerar.has(cliente.id)) { mostrarDepoisDeGerar.delete(cliente.id); mostrarResultado($('[data-area-resultado]', alvo), 'Pronto: site gerado. A prévia está aqui; ajuste à vontade e depois vá para "Aprovar".'); }
     }
     on(alvo, 'click', '[data-corrigir-faltou]', (b) => ocupado(b, () => corrigirFaltou()));
+    const itemConf = (id) => itensAceitos(planoAplicado(site)).find((x) => x.id === id);
+    on(alvo, 'click', '[data-fazer-conf]', (b) => ocupado(b, async () => { const x = itemConf(b.dataset.fazerConf); if (x) await fazerItensConferencia([x]); }));
+    on(alvo, 'click', '[data-fazer-secao-conf]', (b) => ocupado(b, async () => {
+      const p = planoAplicado(site);
+      const itens = faltandoSemIgnorar(site, p, site.conferencia).filter((x) => x.secao === b.dataset.fazerSecaoConf);
+      if (itens.length) await fazerItensConferencia(itens);
+    }));
+    const ignorarConf = (ignorar) => (b) => ocupado(b, async () => {
+      const id = ignorar ? b.dataset.ignorarConf : b.dataset.mostrarConf;
+      const x = itemConf(id); if (!x) return;
+      const motivo = site.conferencia?.resultados?.[x.id]?.motivo || '';
+      const chave = chaveConferencia(x, site.conferencia?.resultados?.[x.id]?.status);
+      await salvarSite({ sugestoesIgnoradas: ignorar ? comIgnorada(site, { chave, fonte: 'conferencia', secao: secaoDoItemPlano(x, modoV), oque: `${x.pedido}: ${motivo}` }) : semIgnorada(site, chave) });
+      recarregar();
+      setTimeout(() => mostrarResultado(`[data-conferido="${id}"]`, ignorar ? 'Ignorada: não volta enquanto o resultado for o mesmo.' : 'Voltou para a conferência.'), 50);
+    });
+    on(alvo, 'click', '[data-ignorar-conf]', ignorarConf(true));
+    on(alvo, 'click', '[data-mostrar-conf]', ignorarConf(false));
     // Conflitos das fotos (texto x seletor): "Usar F27" muda o seletor; o conflito resolvido sai da lista guardada.
     const caixaFotos = $('[data-fotos-texto-passo4]', alvo);
     if (caixaFotos) ligarEscolhas(caixaFotos, cliente, { depois: async ({ chave }) => {
@@ -560,8 +636,16 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     }));
     if (gerado || (custom && produtos.length)) {
       montarAjusteSite($('[data-ajuste]', alvo), { cliente, produtos, modo: modoV, get site() { return site; }, salvarSite, recarregar, htmlDe, pacoteHTML, previaPacote,
-        depoisDeMudar: async () => { if (planoAplicado(site)) await conferirDoSite().catch((e) => toast(`A conferência do pedido não rodou: ${e.message}`, 'erro')); },
+        depoisDeMudar: async (op = {}) => { if (planoAplicado(site)) await conferirDoSite(op).catch((e) => toast(`A conferência do pedido não rodou: ${e.message}`, 'erro')); },
+        conferenciaDasSecoes: (secoes) => {
+          const p = planoAplicado(site), conf = site?.conferencia;
+          if (!p || !conf) return [];
+          return itensAceitos(p).filter((x) => conf.resultados?.[x.id] && secoes.includes(secaoDoItemPlano(x, modoV))).map((x) => ({ pedido: x.pedido || TIPOS_PEDIDO[x.tipo], status: conf.resultados[x.id].status, motivo: conf.resultados[x.id].motivo || '' }));
+        },
+        substituirLinks: async () => { const { substituirLinksPorVersao } = await import('./aprovacoes-site.js'); return substituirLinksPorVersao(cliente, versoesDoModo(site, modoV)[0]?.n); },
+        gerarLinkNovo: async () => { const { gerarLinkSite } = await import('./aprovacoes-site.js'); const r = await gerarLinkSite(cliente, site, produtos); return { quando: dataHoraBR(r.criadoEm) }; },
         verPlano: (id, n) => abrirPlanoDaVersao(site, id, n, { saude }) })
+        .then((api) => { ajusteApi = api; })
         .catch((e) => { console.warn('[ajuste do site]', e); $('[data-ajuste]', alvo).innerHTML = '<p class="hint text-rose-600">Não consegui abrir "Ajustar este site". Recarregue a página.</p>'; });
     }
   }

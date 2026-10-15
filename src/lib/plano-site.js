@@ -14,6 +14,7 @@ import { FORMAS_PAGAMENTO } from './sitegen.js';
 import { normalizarRecursos, recursosDoSite, textoSecaoProduto, sugeridoPara, SECOES_PRODUTO, numero } from './recursos-loja.js';
 import { normalizarParte, atualizarItemTexto, ehItemTexto, conferirTextoItem, textosParaAplicar, DESTINOS_TEXTO } from './textos-site.js';
 import { paresFaq, naoSeiDoTexto } from './modelo-pedido-site.js';
+import { chaveItemPlano, ignoradas } from './sugestoes.js';
 
 const txt = (v) => String(v ?? '').trim();
 const sem = (s) => txt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -603,7 +604,7 @@ export function recomporPlano(plano, ctx = {}) {
     for (const x of [...(plano.itens || []).filter((y) => y.secao === s.id && !y.deFoto), ...itensFoto.filter((y) => y.id.startsWith(`${s.id}-`)).map((y) => ({ ...y, secao: s.id, deFoto: true }))]) {
       const ant = antigos.get(x.id);
       // Item de foto refeito: continua aceito se a seção já foi aplicada (e ele está pronto).
-      itens.push(x.deFoto ? { ...x, aceito: x.status === 'pronto' && Boolean(s.aplicada || ant?.aceito) } : x);
+      itens.push(x.deFoto ? { ...x, ...(ant?.ignorado ? { ignorado: true } : {}), aceito: !ant?.ignorado && x.status === 'pronto' && Boolean(s.aplicada || ant?.aceito) } : x);
     }
   }
   const inexistentes = [...new Set(fotos.filter((f) => !f.existe).map((f) => f.codigo))].map((codigo) => ({ codigo, secoes: [...new Set(fotos.filter((f) => f.codigo === codigo).map((f) => f.secao))] }));
@@ -633,13 +634,28 @@ const comStatus = (plano, ctx) => ({ ...plano, secoes: plano.secoes.map((s) => (
 
 /** "Aplicar esta seção": os itens prontos dela ficam marcados (entram na aplicação) e a seção fica "aplicada". */
 export function aplicarSecao(plano, secaoId, ctx = {}) {
-  const itens = plano.itens.map((x) => (x.secao === secaoId && x.status === 'pronto' ? { ...x, aceito: true } : x));
+  const itens = plano.itens.map((x) => (x.secao === secaoId && x.status === 'pronto' && !x.ignorado ? { ...x, aceito: true } : x));
   return comStatus({ ...plano, itens, secoes: plano.secoes.map((s) => (s.id === secaoId ? { ...s, aplicada: true } : s)) }, ctx);
 }
 /** "Aplicar tudo": todas as seções. */
 export const aplicarTodasSecoes = (plano, ctx = {}) => plano.secoes.reduce((p, s) => aplicarSecao(p, s.id, ctx), plano);
 /** Seções que têm alguma coisa pronta para aplicar. */
-export const secoesAplicaveis = (plano) => (plano?.secoes || []).filter((s) => (plano.itens || []).some((x) => x.secao === s.id && x.status === 'pronto'));
+export const secoesAplicaveis = (plano) => (plano?.secoes || []).filter((s) => (plano.itens || []).some((x) => x.secao === s.id && x.status === 'pronto' && !x.ignorado));
+
+/**
+ * "Ignorar" no plano: item ignorado fica desmarcado e fora de "Aplicar esta seção"/"Aplicar tudo". Num plano novo, o item
+ * com o mesmo conteúdo de um ignorado antes (site.sugestoesIgnoradas) já nasce ignorado.
+ */
+export function marcarIgnorados(plano, site) {
+  const ign = ignoradas(site);
+  const marcar = (x) => (ign.has(chaveItemPlano(x)) ? { ...x, ignorado: true, aceito: false } : x);
+  return { ...plano, itens: (plano.itens || []).map(marcar), sugestoes: (plano.sugestoes || []).map(marcar) };
+}
+/** Liga/desliga o "Ignorar" de um item (ou sugestão) do plano. */
+export const ignorarItemPlano = (plano, id, ignorar = true) => {
+  const f = (x) => (x.id === id ? { ...x, ignorado: ignorar || undefined, aceito: ignorar ? false : x.aceito } : x);
+  return { ...plano, itens: (plano.itens || []).map(f), sugestoes: (plano.sugestoes || []).map(f) };
+};
 
 /**
  * Resposta de uma pergunta: a opção vale para o plano (as fotos dela entram no lugar das da mesma seção) e o que ela

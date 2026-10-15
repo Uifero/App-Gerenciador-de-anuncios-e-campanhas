@@ -120,5 +120,19 @@ export function corrigirLocal(estado = {}, achados = [], { modo = 'custom' } = {
   return { estado: e, mudancas, restantes };
 }
 
+/**
+ * "Fazer essa mudança" de UM achado mecânico (travessão, emoji, exclamação, parede): só no texto dele (a exclamação vale
+ * para o site todo, que é onde ela foi contada). Devolve { estado (cópia), mudancas }.
+ */
+export function corrigirAchado(estado = {}, a = {}, { modo = 'custom' } = {}) {
+  const e = JSON.parse(JSON.stringify(estado));
+  const fn = { travessao: tirarTravessao, emoji: tirarEmoji, exclamacao: tirarExclamacao, parede: quebrarParede }[a.tipo];
+  if (!fn) return { estado: e, mudancas: [] };
+  const caminhos = a.caminho ? [a.caminho] : textosDoSite({ conteudo: e.conteudo, pacote: e.pacote }, modo).map((t) => t.caminho);
+  let n = 0;
+  for (const c of caminhos) { const atual = pegar(e, c); if (typeof atual !== 'string') continue; const novo = fn(atual); if (novo !== atual) { pôr(e, c, novo); n++; } }
+  return { estado: e, mudancas: n ? [`${a.titulo} corrigido em ${a.onde}${n > 1 ? ` (${n} textos)` : ''}`] : [] };
+}
+
 /** Pedido para a IA reescrever SÓ os clichês achados (vai para "Ajustar este site", que mostra Atual × Com a mudança). */
 export const pedidoClichesIa = (achados = []) => `Reescreva SÓ estes trechos com clichê de texto de IA, mantendo o sentido, o tom da marca e o tamanho, com fato concreto do perfil no lugar do adjetivo (sem inventar dado): ${achados.filter((a) => a.tipo === 'cliche').map((a) => `${a.titulo} em ${a.onde} ("${a.trecho}")`).join('; ')}. Não mexa em mais nada.`;

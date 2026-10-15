@@ -13,8 +13,9 @@ import {
   normalizarPlano, responderPergunta, diferencaPlanos, itensAceitos, TIPOS_PEDIDO, STATUS_ITEM, ONDE, RESULTADO,
   ondeFunciona, contagemConferencia, conferirPorCodigo, itensFaltando, secoesDoModo, tarefasDaLoja,
   normalizarPlanoSecoes, recomporPlano, aplicarSecao, aplicarTodasSecoes, responderPerguntaSecao, substituirSecao, ehPlanoPorSecao,
-  secoesAplicaveis, conferenciaPorSecao, STATUS_SECAO,
+  secoesAplicaveis, conferenciaPorSecao, STATUS_SECAO, marcarIgnorados, ignorarItemPlano,
 } from '../lib/plano-site.js';
+import { chaveItemPlano, chaveConferencia, comIgnorada, semIgnorada, ignoradas } from '../lib/sugestoes.js';
 import { esc, $, on, toast, ocupado, mostrarResultado, modal, dataBR } from '../core/ui.js';
 
 export const MAX_PLANOS = 10;
@@ -77,8 +78,8 @@ function textosItemHtml(x, { saude, leitura }) {
 }
 
 function itemHtml(x, { leitura = false, saude = false } = {}) {
-  const pode = x.status === 'pronto';
-  return `<li class="rounded-lg border ${x.aceito && pode ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200'} p-2 text-sm" data-item-plano="${esc(x.id)}" data-status-item="${x.status}">
+  const pode = x.status === 'pronto' && !x.ignorado;
+  return `<li class="rounded-lg border ${x.ignorado ? 'border-dashed border-slate-300 opacity-80' : x.aceito && pode ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200'} p-2 text-sm" data-item-plano="${esc(x.id)}" data-status-item="${x.status}"${x.ignorado ? ' data-item-ignorado' : ''}>
     <div class="flex items-start gap-2">${leitura ? '' : `<input type="checkbox" class="mt-1" data-aceitar-item="${esc(x.id)}" ${x.aceito && pode ? 'checked' : ''} ${pode ? '' : 'disabled'} aria-label="Aceitar este item">`}
       <div class="min-w-0 flex-1">
         <p class="flex flex-wrap items-center gap-1"><span class="tag ${COR_STATUS[x.status]}">${esc(STATUS_ITEM[x.status])}</span>${x.sugestao ? '<span class="tag tag-info">sugestão</span>' : ''}<span class="tag ${COR_ONDE[x.onde?.tipo] || ''}" data-onde="${esc(x.onde?.tipo || '')}">${esc(ONDE[x.onde?.tipo] || '')}</span><span class="text-xs text-slate-500">${esc(TIPOS_PEDIDO[x.tipo] || '')}</span></p>
@@ -91,7 +92,8 @@ function itemHtml(x, { leitura = false, saude = false } = {}) {
         ${textosItemHtml(x, { saude, leitura })}
         ${x.status === 'pergunta' && x.pergunta && !leitura ? `<div class="mt-1 rounded bg-amber-50 p-2" data-pergunta-item><p class="text-xs font-semibold text-amber-800">${esc(x.pergunta.texto)}</p>
           <div class="mt-1 flex flex-wrap gap-1">${x.pergunta.opcoes.map((o, i) => `<button type="button" class="btn-ghost btn-sm" data-responder="${esc(x.id)}" data-opcao="${i}">${esc(o.texto)}</button>`).join('')}</div></div>` : ''}
-        ${x.resposta ? `<p class="text-xs text-emerald-800" data-resposta-item><i class="fa-solid fa-reply"></i> Sua resposta: ${esc(x.resposta)}</p>` : ''}</div></div></li>`;
+        ${x.resposta ? `<p class="text-xs text-emerald-800" data-resposta-item><i class="fa-solid fa-reply"></i> Sua resposta: ${esc(x.resposta)}</p>` : ''}
+        ${leitura ? '' : x.ignorado ? `<p class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600"><span class="tag">Ignorado</span> Não entra ao aplicar e não volta na próxima análise. <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-mostrar-item="${esc(x.id)}">Mostrar de novo</button></p>` : `<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-ignorar-item="${esc(x.id)}"><i class="fa-solid fa-eye-slash"></i> Ignorar</button>`}</div></div></li>`;
 }
 
 
@@ -268,7 +270,7 @@ export function ligarAnalise(alvo, ctx) {
     const novo = {
       id: `pl${Date.now().toString(36)}`, n: ((ctx.site?.planos || []).reduce((m, p) => Math.max(m, p.n || 0), 0)) + 1, criadoEm: new Date().toISOString(),
       base: { texto, gostei: String(ctx.cliente.preferenciasSite?.gostei || '').trim() }, plataforma: ctx.plataforma, tema: ctx.tema || '', modo: ctx.modo,
-      ...(porSecao ? normalizarPlanoSecoes(resposta, { ...contexto(), secoesTexto: partes }) : normalizarPlano(resposta, contexto())),
+      ...marcarIgnorados(porSecao ? normalizarPlanoSecoes(resposta, { ...contexto(), secoesTexto: partes }) : normalizarPlano(resposta, contexto()), ctx.site),
     };
     if (anterior) novo.diferenca = diferencaPlanos(anterior, novo);
     await ctx.salvarSite({ planos: [novo, ...(ctx.site?.planos || [])].slice(0, MAX_PLANOS) });
@@ -278,6 +280,20 @@ export function ligarAnalise(alvo, ctx) {
     mostrarResultado(area, porSecao ? `Entendi assim: ${novo.secoes.length} parte(s) do seu texto. Confira cada uma e clique em "Aplicar esta seção" ou "Aplicar tudo".${novo.ignorado.length ? ` ${novo.ignorado.length} ponto(s) não foram usados: veja nas partes marcadas.` : ''}`
       : `Plano pronto: ${novo.itens.length} item(ns)${novo.sugestoes.length ? ` e ${novo.sugestoes.length} sugestão(ões)` : ''}. Marque o que aceita e clique em "Aplicar o plano".`);
   }));
+  // "Ignorar" / "Mostrar de novo" de um item do plano: guardado no site para não voltar na próxima análise.
+  const ignorarItem = async (id, ignorar) => {
+    const p = planoAtual(ctx.site); if (!p) return;
+    const x = [...p.itens, ...(p.sugestoes || [])].find((y) => y.id === id); if (!x) return;
+    const chave = chaveItemPlano(x);
+    await ctx.salvarSite({ sugestoesIgnoradas: ignorar ? comIgnorada(ctx.site, { chave, fonte: 'analise', secao: x.secao, oque: x.pedido || x.como }) : semIgnorada(ctx.site, chave) });
+    const novo = ignorarItemPlano(p, id, ignorar);
+    await salvarPlano(ehPlanoPorSecao(novo) ? recomporPlano(novo, ctxPlano()) : novo);
+    redesenhar();
+    const el = $(`[data-item-plano="${id}"]`, alvo);
+    if (el) mostrarResultado(el, ignorar ? 'Ignorado: não entra ao aplicar e não volta na próxima análise.' : 'Voltou para o plano (desmarcado: marque se quiser aplicar).');
+  };
+  on(alvo, 'click', '[data-ignorar-item]', (b) => ocupado(b, () => ignorarItem(b.dataset.ignorarItem, true)));
+  on(alvo, 'click', '[data-mostrar-item]', (b) => ocupado(b, () => ignorarItem(b.dataset.mostrarItem, false)));
   on(alvo, 'change', '[data-aceitar-item]', async (c) => {
     const p = planoAtual(ctx.site); if (!p) return;
     const id = c.dataset.aceitarItem;
@@ -361,18 +377,29 @@ export function ligarAnalise(alvo, ctx) {
 const RESULTADO_SECAO = { atendido: 'Feito no site', parcial: 'Parcial', nao: 'Não feito' };
 const codigosHtml = (cs) => (cs?.length ? `<span class="mt-1 flex flex-wrap gap-1" data-codigos-conferidos>${cs.map((c) => `<span class="tag ${c.ok ? 'tag-ok' : 'tag-bad'}">${esc(c.codigo)} ${c.ok ? '<i class="fa-solid fa-check" aria-label="no lugar"></i>' : '<i class="fa-solid fa-xmark" aria-label="faltando"></i>'}</span>`).join('')}</span>` : '');
 /** Conferência por seção do texto do operador: cada item feito / não feito (motivo) e cada código de foto no lugar pedido. */
-function conferenciaSecoesHtml(plano, conf) {
+function conferenciaSecoesHtml(plano, conf, ign = new Set()) {
   return `<div class="mt-2 space-y-2" data-lista-conferencia data-conferencia-secoes>${conferenciaPorSecao(plano, conf.resultados).map(({ secao, linhas }) => {
     const feitos = linhas.filter((l) => l.status === 'atendido').length;
+    const abertas = linhas.filter((l) => l.status !== 'atendido' && !ign.has(chaveConferencia(l.item, l.status)));
     return `<details class="rounded border border-slate-200 bg-white" data-conferencia-secao="${esc(secao.id)}" ${feitos < linhas.length ? 'open' : ''}><summary class="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-2 px-2"><span class="tag ${!linhas.length ? '' : feitos === linhas.length ? 'tag-ok' : feitos ? 'tag-warn' : 'tag-bad'}">${linhas.length ? `${feitos} de ${linhas.length} feito(s)` : 'sem pedido'}</span><b class="min-w-0 flex-1 break-words text-sm">${esc(secao.titulo)}</b></summary>
-      <ul class="space-y-1 border-t border-slate-100 p-2 text-sm">${linhas.map((l) => `<li class="flex flex-wrap items-start gap-2" data-conferido="${esc(l.item.id)}" data-resultado="${l.status}"><span class="tag ${COR_RES[l.status]}">${esc(RESULTADO_SECAO[l.status])}</span><span class="min-w-0 flex-1"><b>${esc(l.item.pedido || TIPOS_PEDIDO[l.item.tipo])}</b>: ${esc(l.motivo || '')}${l.por === 'ia' ? ' <span class="text-xs text-slate-500">(conferido pela IA)</span>' : ''}${codigosHtml(l.codigos)}</span></li>`).join('') || '<li class="hint">Nada para conferir nesta parte.</li>'}</ul></details>`;
+      ${abertas.length > 1 ? `<div class="border-t border-slate-100 px-2 pt-2"><button type="button" class="btn-primary btn-sm min-h-[44px]" data-fazer-secao-conf="${esc(secao.id)}"><i class="fa-solid fa-wand-magic-sparkles"></i> Fazer todas as sugestões desta seção (${abertas.length})</button></div>` : ''}
+      <ul class="space-y-1 border-t border-slate-100 p-2 text-sm">${linhas.map((l) => linhaConferencia(l.item, { status: l.status, motivo: l.motivo, por: l.por }, ign, codigosHtml(l.codigos), RESULTADO_SECAO)).join('') || '<li class="hint">Nada para conferir nesta parte.</li>'}</ul></details>`;
   }).join('')}</div>`;
 }
-function conferenciaListaHtml(plano, conf) {
-  if (ehPlanoPorSecao(plano)) return conferenciaSecoesHtml(plano, conf);
+/** Uma linha da conferência; "Não feito"/"Parcial" ganham "Fazer essa mudança" e "Ignorar" (ignorada: cinza, com "Mostrar de novo"). */
+function linhaConferencia(x, r, ign, extra = '', rotulos = RESULTADO) {
+  const aberta = r.status !== 'atendido', ignorada = aberta && ign.has(chaveConferencia(x, r.status));
+  const botoes = !aberta ? '' : ignorada
+    ? `<span class="flex w-full flex-wrap items-center gap-2 text-xs text-slate-600"><span class="tag">Ignorada</span> Não volta enquanto o resultado for o mesmo. <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-mostrar-conf="${esc(x.id)}">Mostrar de novo</button></span>`
+    : `<span class="flex w-full flex-wrap gap-2"><button type="button" class="btn-primary btn-sm min-h-[44px]" data-fazer-conf="${esc(x.id)}"><i class="fa-solid fa-wand-magic-sparkles"></i> Fazer essa mudança</button><button type="button" class="btn-ghost btn-sm min-h-[44px]" data-ignorar-conf="${esc(x.id)}">Ignorar</button></span>`;
+  return `<li class="flex flex-wrap items-start gap-2 ${ignorada ? 'opacity-80' : ''}" data-conferido="${esc(x.id)}" data-resultado="${r.status}"${ignorada ? ' data-conferido-ignorado' : ''}><span class="tag ${ignorada ? '' : COR_RES[r.status]}">${esc(rotulos[r.status])}</span><span class="min-w-0 flex-1"><b>${esc(x.pedido || TIPOS_PEDIDO[x.tipo])}</b>: ${esc(r.motivo || '')}${r.por === 'ia' ? ' <span class="text-xs text-slate-500">(conferido pela IA)</span>' : ''}${extra}</span>${botoes}</li>`;
+}
+/** Itens que faltam e não foram ignorados (é o que "Corrigir o que faltou" e "Fazer todas" tratam). */
+export const faltandoSemIgnorar = (site, plano, conf) => itensFaltando(itensAceitos(plano), conf?.resultados || {}).filter((x) => !ignoradas(site).has(chaveConferencia(x, conf.resultados[x.id]?.status)));
+function conferenciaListaHtml(plano, conf, ign = new Set()) {
+  if (ehPlanoPorSecao(plano)) return conferenciaSecoesHtml(plano, conf, ign);
   const itens = [...plano.itens, ...plano.sugestoes].filter((x) => conf.resultados?.[x.id]);
-  return `<ul class="mt-2 space-y-1 text-sm" data-lista-conferencia>${itens.map((x) => { const r = conf.resultados[x.id]; return `<li class="flex flex-wrap items-start gap-2 rounded bg-slate-50 px-2 py-1" data-conferido="${esc(x.id)}" data-resultado="${r.status}">
-    <span class="tag ${COR_RES[r.status]}">${esc(RESULTADO[r.status])}</span><span class="min-w-0 flex-1"><b>${esc(x.pedido || TIPOS_PEDIDO[x.tipo])}</b>: ${esc(r.motivo || '')}${r.por === 'ia' ? ' <span class="text-xs text-slate-400">(conferido pela IA)</span>' : ''}</span></li>`; }).join('')}</ul>`;
+  return `<ul class="mt-2 space-y-1 text-sm" data-lista-conferencia>${itens.map((x) => linhaConferencia(x, conf.resultados[x.id], ign)).join('')}</ul>`;
 }
 
 /** Painel do passo 4: o plano aplicado conferido no estado atual do site. */
@@ -380,13 +407,14 @@ export function conferenciaHtml(site) {
   const p = planoAplicado(site); if (!p) return '';
   const conf = site.conferencia?.planoId === p.id ? site.conferencia : null;
   const c = contagemConferencia(conf?.resultados);
-  const faltam = conf ? itensFaltando(itensAceitos(p), conf.resultados).length : 0;
+  const faltam = conf ? faltandoSemIgnorar(site, p, conf).length : 0;
+  const ign = ignoradas(site);
   return `<div class="mt-4 rounded-lg border-2 ${faltam ? 'border-amber-300 bg-amber-50/40' : 'border-emerald-300 bg-emerald-50/40'} p-3" data-conferencia data-ancora="conferencia">
     <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="font-semibold"><i class="fa-solid fa-clipboard-check"></i> Conferência do pedido <span class="text-xs font-normal text-slate-500">(plano #${p.n || ''}${conf?.versao ? `, conferido na v${conf.versao}` : ''}${conf?.em ? ` em ${esc(quando(conf.em))}` : ''})</span></h4>
       <div class="flex flex-wrap gap-2">${faltam ? `<button type="button" class="btn-primary btn-sm" data-corrigir-faltou><i class="fa-solid fa-screwdriver-wrench"></i> Corrigir o que faltou (${faltam})</button>` : ''}
         <button type="button" class="btn-ghost btn-sm" data-conferir-de-novo><i class="fa-solid fa-rotate"></i> Conferir de novo</button>
         <button type="button" class="btn-ghost btn-sm" data-ver-plano="${esc(p.id)}"><i class="fa-solid fa-list-check"></i> Ver plano desta versão</button></div></div>
-    ${conf ? `<p class="mt-1 text-sm" data-contagem-conferencia><b>${c.atendido}</b> atendido(s) · <b>${c.parcial}</b> parcial(is) · <b>${c.nao}</b> não atendido(s)</p>${conferenciaListaHtml(p, conf)}${conf.notas?.length ? conf.notas.map((n) => `<p class="mt-1 text-xs text-amber-800" data-nota-conferencia><i class="fa-solid fa-circle-info"></i> ${esc(n)}</p>`).join('') : ''}`
+    ${conf ? `<p class="mt-1 text-sm" data-contagem-conferencia><b>${c.atendido}</b> atendido(s) · <b>${c.parcial}</b> parcial(is) · <b>${c.nao}</b> não atendido(s)</p>${conferenciaListaHtml(p, conf, ign)}${conf.notas?.length ? conf.notas.map((n) => `<p class="mt-1 text-xs text-amber-800" data-nota-conferencia><i class="fa-solid fa-circle-info"></i> ${esc(n)}</p>`).join('') : ''}`
     : '<p class="hint mt-1">Ainda não conferido.</p>'}</div>`;
 }
 

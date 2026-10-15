@@ -1,0 +1,17 @@
+{
+ "chamadaReal": true,
+ "tarefa": "ajuste_entender",
+ "data": "2026-10-14",
+ "descricao": "Texto livre \"troca a F12 pela F28 na galeria do produto\": quais seções o pedido mexe",
+ "uso": {
+  "entrada": 2,
+  "saida": 248,
+  "cacheEscrita": 2637,
+  "cacheLeitura": 8460,
+  "buscasWeb": 0,
+  "custoUsd": 0,
+  "modelo": "claude-haiku-4-5",
+  "provedor": "cli"
+ },
+ "texto": "{\"global\": false, \"oque\": \"Trocar a foto F12 pela F28 na galeria da página do produto.\", \"secoes\": [{\"id\": \"produto\", \"oque\": \"A foto F12 sai da galeria e a foto F28 entra no lugar dela.\", \"estrutura\": false}], \"perguntas\": [], \"fora\": []}"
+}

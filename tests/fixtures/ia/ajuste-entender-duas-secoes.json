@@ -1,0 +1,5 @@
+{
+ "escritaAMao": true,
+ "tarefa": "ajuste_entender",
+ "texto": "{\"global\":false,\"secoes\":[{\"id\":\"hero\",\"oque\":\"subtítulo do banner mais curto\",\"estrutura\":false},{\"id\":\"faq\",\"oque\":\"tirar a pergunta 1\",\"estrutura\":false}],\"perguntas\":[],\"fora\":[]}"
+}

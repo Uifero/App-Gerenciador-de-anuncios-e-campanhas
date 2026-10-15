@@ -69,6 +69,17 @@ export async function gerarLinkSite(cliente, site, produtos) {
   return { token, criadoEm };
 }
 
+/**
+ * O site mudou por "Aplicar" (ajuste por seção) ou "Voltar": os links ativos mostram uma versão velha e passam a
+ * "Substituído" (o cliente não aprova o que não vai ao ar). Um link novo é oferecido na tela. Devolve quantos mudaram.
+ */
+export async function substituirLinksPorVersao(cliente, versao) {
+  const em = new Date().toISOString();
+  const ativos = ordenarLinks(await db.listar(COL.aprovacoes, { clienteId: cliente.id })).filter((l) => linkAtivo(l));
+  for (const l of ativos) await db.atualizar(COL.aprovacoes, l.id, { substituidoEm: em, substituidoMotivo: 'versao', substituidoVersao: versao || null });
+  return ativos.length;
+}
+
 // ---------------- aba do cliente ----------------
 export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   const [sites, produtos, todos, respostas] = await Promise.all([

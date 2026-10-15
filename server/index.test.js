@@ -17,7 +17,7 @@ describe('referências fixas da fase de qualidade', () => {
   const com2 = (n) => comMetodologia(TAREFAS[n], 'PERFIL');
   const onde = (flag) => Object.entries(TAREFAS).filter(([, t]) => t[flag]).map(([n]) => n).sort();
   it('cada referência só nas tarefas que a usam', () => {
-    expect(onde('siteProfissional')).toEqual(['ajuste_site_amplo', 'pacote', 'plano_site', 'site']);
+    expect(onde('siteProfissional')).toEqual(['ajuste_secao_amplo', 'ajuste_site_amplo', 'pacote', 'plano_site', 'site']);
     expect(onde('paginaProduto')).toEqual(['pacote', 'plano_site', 'site']);
     expect(onde('legal')).toEqual(['pacote', 'site']);
     expect(onde('organico')).toEqual(['animacao', 'criativos', 'imagem', 'refino']);
