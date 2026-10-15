@@ -136,6 +136,38 @@ export function ehTextoInterno(linha, { materiais = [], cliente = null } = {}) {
   const auto = cliente?.autoPreenchido?.provasSociais;
   return Boolean(auto && auto.origem !== 'resposta');
 }
+// ---------- REGRA ÚNICA das provas sociais do perfil ----------
+// Linha DIGITADA (ou confirmada) pelo operador no campo "Provas sociais" do perfil = fato que pode ser citado no criativo e no
+// site, como fato do negócio (não como depoimento entre aspas), com a fonte "provas sociais do perfil". Descrição de print,
+// OCR, métrica lida do perfil e leitura automática ainda não confirmada nunca (ehTextoInterno). Todo lugar que conta, mostra ou
+// manda prova para a IA usa esta função.
+export const FONTE_PROVAS_PERFIL = 'provas sociais do perfil';
+/** Linhas das provas sociais do perfil que podem ser citadas. */
+export const provasCitaveis = (cliente, materiais = []) => linhasDeProva(cliente?.marca?.provasSociais).filter((l) => !ehTextoInterno(l, { materiais, cliente }));
+
+// Números de um texto, normalizados: "5.000", "5000" e "5 mil" viram 5000; "4,9" vira 4.9.
+const numerosDe = (t) => [...String(t || '').matchAll(/(\d+(?:[.,]\d+)*)\s*(mil\b)?/gi)].map(([, n, mil]) => {
+  const v = /^\d{1,3}(?:\.\d{3})+$/.test(n) ? Number(n.replace(/\./g, '')) : Number(n.replace(',', '.'));
+  return mil ? v * 1000 : v;
+}).filter((v) => Number.isFinite(v) && v >= 10);
+const TEXTO_DO_CRIATIVO = (c = {}) => [c.hook, c.copy, c.cta, ...(Array.isArray(c.cenas) ? c.cenas.flatMap((x) => [x?.texto, x?.fala]) : [])].map(txt).filter(Boolean).join('\n');
+/**
+ * Fontes das provas citadas no criativo. Uma linha conta como citada quando o texto do criativo traz a frase dela ou um número
+ * dela (10 ou mais: "5000", "5.000", "5 mil"). `citadas` = linhas que podem ser citadas (fonte: provas sociais do perfil);
+ * `semPermissao` = número/frase que só existe em descrição de print, OCR ou métrica de perfil (não pode ser citado).
+ */
+export function fontesDoCriativo(criativo, { cliente, materiais = [] } = {}) {
+  const texto = TEXTO_DO_CRIATIVO(criativo), chave = chaveTexto(texto), nums = new Set(numerosDe(texto));
+  const cita = (l) => { const s = semData(l); return (s.length > 12 && chave.includes(chaveTexto(s))) || numerosDe(s).some((n) => nums.has(n)); };
+  const citaveis = provasCitaveis(cliente, materiais);
+  const citadas = citaveis.filter(cita).map((l) => ({ texto: semData(l), fonte: FONTE_PROVAS_PERFIL }));
+  const internas = [...linhasDeProva(cliente?.marca?.provasSociais).filter((l) => !citaveis.includes(l)).map((l) => ({ texto: semData(l), origem: 'linha lida de print ou do perfil' })),
+    ...provasEmImagem(materiais).flatMap((m) => [m.descricao, m.citacao, m.textoOcr, m.ocr].filter((x) => txt(x)).map((x) => ({ texto: txt(x), origem: 'descrição/OCR de print' })))];
+  const jaCitado = new Set(citadas.flatMap((x) => numerosDe(x.texto)));
+  const semPermissao = internas.filter((x) => cita(x.texto) && !numerosDe(x.texto).some((n) => jaCitado.has(n)));
+  return { citadas, semPermissao };
+}
+
 /** Texto que o operador digitou para o print (as palavras do cliente, como estão no print). Nunca o OCR nem o resumo da IA. */
 export const textoDigitado = (material) => txt(material?.textoDepoimento);
 /** Chave estável de um depoimento (ocultar/mostrar): o texto; sem texto (só imagem), o material/criativo/mídia. */
@@ -178,7 +210,7 @@ const nomeDaLinha = (l) => (FONTES_TEXTO.find(([re]) => re.test(l)) || [, 'Clien
 export function provasEmTexto(cliente, materiais = [], excluirIds = new Set()) {
   const excluidas = new Set(provasEmImagem(materiais).filter((m) => excluirIds.has(m.id)).map((m) => chaveTexto(m.descricao)).filter(Boolean));
   // Descrição de print, OCR e métrica lida do perfil ficam de fora: são anotação interna, não palavra de cliente.
-  return linhasDeProva(cliente?.marca?.provasSociais).filter((l) => !ehTextoInterno(l, { materiais, cliente })).map(semData).filter((l) => l && !excluidas.has(chaveTexto(l)))
+  return provasCitaveis(cliente, materiais).map(semData).filter((l) => l && !excluidas.has(chaveTexto(l)))
     .map((l) => ({ nome: nomeDaLinha(l), texto: l, origem: 'prova_texto' }));
 }
 
@@ -224,7 +256,7 @@ export function depoimentosVivos({ cliente, materiais = [], guardados = [], prov
   }).filter((d) => d && (txt(d.texto) || d.midiaUrl));
 }
 /** Tem alguma prova real para os depoimentos? (a IA nem escreve modelo quando tem). Um print guardado já conta. */
-export const temProvaReal = (args) => !montarDepoimentos({ ...args, modelosIa: [] }).usouModelos || provasEmImagem(args?.materiais || []).length > 0 || linhasDeProva(args?.cliente?.marca?.provasSociais).length > 0;
+export const temProvaReal = (args) => !montarDepoimentos({ ...args, modelosIa: [] }).usouModelos || provasEmImagem(args?.materiais || []).length > 0 || provasCitaveis(args?.cliente, args?.materiais || []).length > 0;
 
 // ---------- resumo do material do site (passos 1 e 2 de "Montar site") ----------
 /**
@@ -236,7 +268,7 @@ export function resumoMaterialSite({ cliente, produtos = [], materiais = [], sit
   const cheio = (v) => Boolean(txt(v));
   const perfil = [['tomDeVoz', 'Tom de voz', 'tom'], ['usp', 'Diferencial', 'usp'], ['objecoes', 'Objeções', 'objecoes'], ['linguagemDor', 'Linguagem da dor', 'linguagemDor']];
   const faltaPerfil = perfil.filter(([k]) => !cheio(m[k]));
-  const provasTexto = linhasDeProva(m.provasSociais).length, provasImg = provasEmImagem(materiais).length;
+  const provasTexto = provasCitaveis(cliente, materiais).length, provasImg = provasEmImagem(materiais).length;
   const semPreco = produtos.filter((p) => !(Number(p.preco) > 0)).length, comFoto = produtos.filter((p) => (p.fotos || []).length).length;
   const qtd = contarMateriais(materiais);
   const itens = [

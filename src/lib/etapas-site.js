@@ -3,7 +3,7 @@
 // o status só diz o que falta, em linguagem simples, com a ação que resolve.
 import { rastreamentoDe } from './rastreamento.js';
 import { printsDoCliente, printsSemAutorizacao } from './visual-site.js';
-import { linhasDeProva, provasEmImagem, ehModelo } from './prova-social.js';
+import { provasCitaveis, provasEmImagem, ehModelo } from './prova-social.js';
 import { temCustom, temPacote } from './site-modos.js';
 import { checklistLegal } from './legal-loja.js';
 
@@ -64,7 +64,7 @@ export function statusEtapas({ cliente = {}, site = null, produtos = [], materia
   const semFoto = produtos.filter((p) => !(p.fotos || []).length);
   const gerado = plat ? (plat === 'custom' ? temCustom(site) : temPacote(site)) : false;
   const deps = (site?.conteudo?.depoimentos || []).concat(site?.pacote?.depoimentos || []);
-  const soModelos = deps.length > 0 && deps.every(ehModelo) && !linhasDeProva(m.provasSociais).length && !provasEmImagem(materiais).length;
+  const soModelos = deps.length > 0 && deps.every(ehModelo) && !provasCitaveis(cliente, materiais).length && !provasEmImagem(materiais).length;
 
   const e = {};
   // 1. Informações
@@ -85,7 +85,7 @@ export function statusEtapas({ cliente = {}, site = null, produtos = [], materia
       !temLogo && falta('Sem logo: envie o arquivo (PNG com fundo transparente é o melhor).', { tipo: 'ancora', alvo: 'logo' }),
       semAut.length && falta(`${semAut.length} print(s)/foto(s) de cliente sem borrar e sem autorização: borre nome, número e rosto, ou confirme a autorização.`, { tipo: 'ancora', alvo: 'prints' }),
     ].filter(Boolean),
-    dicas: [!linhasDeProva(m.provasSociais).length && !provasEmImagem(materiais).length && 'Sem provas sociais: sem elas, os depoimentos do site saem como modelos para trocar.'].filter(Boolean),
+    dicas: [!provasCitaveis(cliente, materiais).length && !provasEmImagem(materiais).length && 'Sem provas sociais: sem elas, os depoimentos do site saem como modelos para trocar.'].filter(Boolean),
   };
   // 3. Como quero
   e[3] = {

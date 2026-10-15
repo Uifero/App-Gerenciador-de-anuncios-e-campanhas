@@ -10,7 +10,7 @@ import { exigirTamanho } from '../lib/textos-site.js';
 import { limparModelo } from '../lib/modelo-pedido-site.js';
 import { mapaDasSecoes, resumoDasSecoes, nomeSecao, filtrarOperacoes, normalizarEntendimento, textosDoOperador, LIMITE_PEDIDO_AJUSTE } from '../lib/ajuste-secoes.js';
 import { dividirSecoes, codigosDoTexto, temCodigo, porCodigo, resumoUsos, nomeArquivo } from '../lib/fotos-site.js';
-import { tipoMaterial, ehTextoInterno } from '../lib/prova-social.js';
+import { tipoMaterial, provasCitaveis as linhasCitaveis } from '../lib/prova-social.js';
 import { capacidadesDoSite, semNotaDeSobra } from '../lib/capacidades-site.js';
 import { ehVertical } from '../lib/medidas-site.js';
 import { textoComoAnuncia } from '../lib/anuncio.js';
@@ -202,7 +202,7 @@ const REGRA_CRITICA = (cliente) => `REGRAS CRÍTICAS (valem para tudo que você 
 7. ${REGRA_SAUDE}` : ''}`;
 
 /** Linhas das provas sociais que podem ir para a IA citar (sem as anotações internas de print/OCR/perfil). */
-const provasCitaveis = (c) => String(c?.marca?.provasSociais || '').split('\n').map((l) => l.trim()).filter((l) => l && !ehTextoInterno(l, { cliente: c })).join('\n');
+const provasCitaveis = (c) => linhasCitaveis(c).join('\n'); // regra única: lib/prova-social.js
 export function contextoCliente(c) {
   const m = c.marca || {};
   const h = c.historico || {};
@@ -222,11 +222,11 @@ export function contextoCliente(c) {
     m.crencas && `Crenças do público (inclusive crenças erradas sobre o produto)${auto('crencas')}: ${m.crencas}`,
     // Só o que o operador digitou pode ser citado. Descrição de print, OCR e métrica de perfil são anotação interna:
     // nunca viram depoimento, citação, número nem título (no site nem no criativo).
-    provasCitaveis(c) && `Provas sociais disponíveis (únicas que podem ser citadas)${auto('provasSociais')}: ${provasCitaveis(c)}`,
+    provasCitaveis(c) && `Provas sociais disponíveis (únicas que podem ser citadas, como fato do negócio e não como depoimento entre aspas)${auto('provasSociais')}: ${provasCitaveis(c)}`,
     m.usp && `Diferencial (USP)${auto('usp')}: ${m.usp}`,
     m.estetica && `Estética visual / paleta de cor${auto('estetica')}: ${m.estetica}`,
-    c.leituraSite?.resumo && `Como a marca se apresenta no site dela (leitura automática — reforço de contexto; se divergir do briefing ou dos campos acima, valem eles): ${c.leituraSite.resumo}`,
-    c.leituraInstagram?.resumo && `Como a marca se apresenta no Instagram dela (lido de prints — reforço de contexto; se divergir do briefing ou dos campos acima, valem eles): ${c.leituraInstagram.resumo}`,
+    c.leituraSite?.resumo && `Como a marca se apresenta no site dela (leitura automática — só contexto: não cite números, frases nem depoimentos daqui; se divergir do briefing ou dos campos acima, valem eles): ${c.leituraSite.resumo}`,
+    c.leituraInstagram?.resumo && `Como a marca se apresenta no Instagram dela (lido de prints — só contexto: não cite números, frases nem depoimentos daqui; se divergir do briefing ou dos campos acima, valem eles): ${c.leituraInstagram.resumo}`,
     c.angulosSugeridos?.length && `Ângulos que costumam funcionar nesse tipo de produto (playbook "${c.playbookNome || ''}"): ${c.angulosSugeridos.join('; ')}`,
   ];
   if (c.estagio === 'rodando') {

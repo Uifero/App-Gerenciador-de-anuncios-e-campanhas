@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { NARRATIVAS, linhaNarrativa, narrativaDevolvida, narrativaPermitida, narrativaPorId, rotuloNarrativa } from './narrativas.js';
 
 const semProva = { marca: { provasSociais: '' } };
-const comProva = { marca: { provasSociais: 'Nota 4,9 no Google (do print enviado em 01/10)' } };
+const comProva = { marca: { provasSociais: 'Nota 4,9 em 320 avaliações no Google' } }; // digitada: pode ser citada (linha de print não libera)
 
 describe('narrativas (Metodologia Vortex)', () => {
   it('7 narrativas em topo, meio e fundo; só Antes e Depois e Resultado/Depoimento exigem prova', () => {

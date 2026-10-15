@@ -37,7 +37,7 @@ describe('guardarProvasRevisadas (envio de prints de prova social)', () => {
   it('guarda cada print em Materiais ANTES de acrescentar o texto, e o contador passa a contar os prints', async () => {
     const cliente = { id: 'c1', marca: { provasSociais: seteProvas } };
     docs.set('antigo', { id: 'antigo', clienteId: 'c1', origem: 'prova_social', url: 'https://x/antigo.jpg' }); // o print que já existia
-    expect(await contador(cliente)).toBe('7 em texto · 1 print(s) de avaliação');
+    expect(await contador(cliente)).toBe('0 em texto · 1 print(s) de avaliação') // linha vinda de print não é prova citável;
     const resumos = ['Cliente elogia a entrega rápida pelo WhatsApp', 'Cliente diz que o tecido é ótimo', 'Nota 5 pelo atendimento', 'Comprou de novo e recomendou', 'Elogio ao cheiro do produto', 'Chegou antes do prazo'];
     const r = await guardarProvasRevisadas(cliente, resumos.map((t, i) => item(i + 1, t)), { em: '2026-10-04T12:00:00Z' });
     expect(r.falhas).toEqual([]);
@@ -48,7 +48,7 @@ describe('guardarProvasRevisadas (envio de prints de prova social)', () => {
     expect(salvo.path).toMatch(/^gcc\/c1\/materiais\/prova_social-.*\.jpg$/);
     expect(docs.has('antigo')).toBe(true); // nada existente é tocado
     expect(cliente.provasHashes).toEqual(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
-    expect(await contador(cliente)).toBe('13 em texto · 7 print(s) de avaliação');
+    expect(await contador(cliente)).toBe('0 em texto · 7 print(s) de avaliação');
   });
 
   it('se guardar a imagem falha: o texto DELE não entra, o erro é devolvido e uma nova tentativa só manda o que faltou', async () => {

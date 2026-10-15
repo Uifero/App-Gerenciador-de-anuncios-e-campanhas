@@ -18,7 +18,7 @@ import { normalizarVisual, nomeSecaoLoja, imagensParaBanner, printsDoCliente, se
 import { printsPainelHtml, abrirBorrar, autorizarPrints, baixarPrintsZip } from './prints-clientes.js';
 import { montarAjusteSite } from './ajuste-site.js';
 import { barraApontarHtml, ligarApontar } from './apontar-site.js';
-import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal, resumoMaterialSite, linhasDeProva, ehModelo } from '../lib/prova-social.js';
+import { provasEmImagem, depoimentoDeProva, mesclarProvasNoSite, depoimentoGerido, EXIBICOES_PROVA, ORIGEM_PROVA, montarDepoimentos, temProvaReal, resumoMaterialSite, provasCitaveis, ehModelo } from '../lib/prova-social.js';
 import { PLATAFORMAS, STATUS_SITE } from '../lib/constantes.js';
 import { esc, $, on, montar, cabecalho, iaNota, tag, dataBR, moeda, toast, ocupado, lerForm, opcoes, baixarTexto, listaDeLinhas, copiar, mostrarResultado, confirmar, faixaRolavel, modal } from '../core/ui.js';
 import { dadosDoPacote, gruposPlataforma, gerarPreviaLojaHTML } from '../lib/pacote-loja.js';
@@ -510,7 +510,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   async function passo2() {
     const prints = printsDoCliente(materiais);
     const fotos = materiais.filter((m) => temCodigo(m) && m.codigo).sort(porCodigo);
-    const provasTexto = linhasDeProva(cliente.marca?.provasSociais).length;
+    const provasTexto = provasCitaveis(cliente, materiais).length;
     const lista = produtosComF();
     const mig = cliente.migracaoFotos;
     alvo.innerHTML = `<div class="grid gap-4 lg:grid-cols-2">

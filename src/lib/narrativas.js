@@ -3,7 +3,7 @@
 // muda no pedido. As narrativas que dependem de prova (Antes e Depois, Resultado/Depoimento) só valem com prova REAL
 // do perfil de marca; sem ela a IA escolhe outra abordagem e nunca inventa resultado. Em produto de saúde/emagrecimento
 // (lib/saude.js) elas ficam bloqueadas mesmo com prova real: a política do Meta proíbe antes e depois e resultado de peso.
-import { linhasDeProva } from './prova-social.js';
+import { provasCitaveis } from './prova-social.js';
 import { ehProdutoSaude, AVISO_META_SAUDE } from './saude.js';
 
 export const ETAPAS_FUNIL = { topo: 'Topo', meio: 'Meio', fundo: 'Fundo' };
@@ -20,7 +20,7 @@ export const NARRATIVAS = [
 export const narrativaPorId = (id) => NARRATIVAS.find((n) => n.id === id) || null;
 
 /** O perfil tem prova social real (as únicas que a IA pode citar)? */
-export const temProvaNoPerfil = (cliente) => linhasDeProva(cliente?.marca?.provasSociais).length > 0;
+export const temProvaNoPerfil = (cliente) => provasCitaveis(cliente).length > 0; // só linha digitada (regra única)
 
 /** A narrativa pode ser usada com este cliente? (as que exigem prova: só com prova real e nunca em produto de saúde/emagrecimento) */
 export const narrativaPermitida = (n, cliente) => Boolean(n) && (!n.exigeProva || (temProvaNoPerfil(cliente) && !ehProdutoSaude(cliente)));

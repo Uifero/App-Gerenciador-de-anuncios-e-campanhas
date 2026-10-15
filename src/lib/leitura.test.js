@@ -93,11 +93,11 @@ describe('uso na geração de criativos', () => {
     const ctx = contextoCliente(c);
     expect(ctx).toContain('Tom de voz (tirado do site do próprio cliente — é a voz real da marca): descontraído');
     expect(ctx).toContain('Diferencial (USP): u');
-    expect(ctx).toContain('reforço de contexto');
+    expect(ctx).toContain('só contexto: não cite números, frases nem depoimentos daqui');
     expect(ctx).toContain('Marca jovem de leggings.');
     const ig = contextoCliente({ nome: 'X', nicho: 'n', marca: { estetica: 'tons terrosos' }, autoPreenchido: { estetica: { origem: 'instagram' } }, leituraInstagram: { resumo: 'Perfil de cosméticos.' } });
     expect(ig).toContain('Estética visual / paleta de cor (tirado do Instagram do próprio cliente — é a voz real da marca): tons terrosos');
-    expect(ig).toContain('no Instagram dela (lido de prints — reforço de contexto');
+    expect(ig).toContain('no Instagram dela (lido de prints — só contexto: não cite');
   });
   it('catálogo real vai junto (nomes e preços)', () => {
     expect(contextoCatalogo([{ nome: 'Legging', preco: 129.9, origemAuto: { origem: 'site' } }])).toContain('"Legging" (R$ 129.9) [lido do site do cliente]');

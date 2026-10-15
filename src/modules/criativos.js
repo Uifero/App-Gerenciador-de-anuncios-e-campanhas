@@ -18,6 +18,7 @@ import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../li
 import { abrirMateriais } from './materiais-cliente.js';
 import { AVISO_META_SAUDE, ehProdutoSaude, alertaSaude, seloRiscoMeta, textoDoCriativo, trocarPelaSegura } from '../lib/saude.js';
 import { normalizarCenas, cenasDoCriativo } from '../lib/cenas.js';
+import { fontesDoCriativo } from '../lib/prova-social.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, ganchoPorNumero, rotuloModelo, descricaoModelo, motivoGancho } from '../lib/ganchos.js';
 import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
@@ -397,6 +398,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
     ${origemGancho(c)}
     ${produtoHtml()}
     ${roteiroHtml()}
+    ${fontesHtml()}
     <form id="fe" class="space-y-3" data-aviso-sair>
       <p class="caption">Edite direto (sem IA) e salve como nova versão, ou peça um ajuste ao chat abaixo.</p>
       <div><label class="label">Hook</label><input class="input" name="hook" value="${esc(c.hook)}"></div>
@@ -456,6 +458,16 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
         <p><b>Texto na tela:</b> ${x.texto ? `“${esc(x.texto)}”` : '<span class="text-slate-500">(nenhum)</span>'}</p>
         ${x.mostrar ? `<p class="text-xs text-slate-500"><b>O que mostrar (só para você):</b> ${esc(x.mostrar)}</p>` : ''}${x.fala ? `<p class="text-xs text-slate-600"><b>Fala:</b> ${esc(x.fala)}</p>` : ''}</li>`).join('')}</ol>
       <p class="hint">Para editar as cenas e as fotos de cada uma, abra o Estúdio.</p></details>`;
+  }
+  // Provas citadas no texto: linha digitada nas provas sociais do perfil mostra a fonte; número/frase que só existe em
+  // descrição de print, OCR ou métrica de perfil aparece como aviso (não pode ser citado). Só informação, nada bloqueia.
+  function fontesHtml() {
+    const { citadas, semPermissao } = fontesDoCriativo(c, { cliente, materiais: fonte?.materiais || [] });
+    if (!citadas.length && !semPermissao.length) return '';
+    return `<div class="mb-3 rounded-lg border border-slate-200 p-2 text-sm" data-fontes-criativo>
+      <p class="font-semibold"><i class="fa-solid fa-quote-left mr-1" aria-hidden="true"></i> Provas citadas neste criativo</p>
+      ${citadas.map((x) => `<p class="mt-1" data-fonte-citada>“${esc(x.texto)}” <span class="text-xs text-slate-500">· fonte: ${esc(x.fonte)}</span></p>`).join('')}
+      ${semPermissao.map((x) => `<p class="mt-1 text-amber-800" data-fonte-proibida><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> “${esc(x.texto)}” vem de ${esc(x.origem)}: é anotação interna e não pode ser citado. Tire do texto ou use um fato digitado nas Provas sociais do perfil.</p>`).join('')}</div>`;
   }
   function produtoHtml() {
     const d = dadosProduto();
