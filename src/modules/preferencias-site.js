@@ -35,9 +35,9 @@ export function preferenciasHtml(cliente, fotosTexto = null) {
     <div class="flex flex-wrap items-center justify-between gap-2"><label class="text-sm font-semibold" for="pref-texto"><i class="fa-solid fa-pen-to-square text-indigo-500"></i> Como eu quero o site</label>${botaoDitado('texto')}</div>
     <p class="hint !mt-0">Escreva do seu jeito. Ex: banner com a foto do produto, fotos inteiras sem cortar, poucas seções, tudo em fundo branco.</p>
     ${DICA_ESCREVER}
-    ${MODELO_BOTOES}
-    <textarea id="pref-texto" class="input mt-1" rows="5" maxlength="${LIMITE_TEXTO_SITE}" aria-describedby="pref-texto-contador" data-pref="texto">${esc(prefs(cliente).texto || '')}</textarea>
-    ${contadorHtml(prefs(cliente).texto || '')}
+    <div data-editor-texto role="group" aria-label="Como eu quero o site">${MODELO_BOTOES}
+    <textarea id="pref-texto" class="input campo-pedido mt-1" rows="8" maxlength="${LIMITE_TEXTO_SITE}" aria-describedby="pref-texto-contador" data-pref="texto">${esc(prefs(cliente).texto || '')}</textarea>
+    ${contadorHtml(prefs(cliente).texto || '')}</div>
     <p class="hint" data-pref-salvo>Vale para toda geração e todo ajuste do site (nos dois modos). Fica abaixo das regras do app: nada de prova inventada nem promessa que o Meta proíbe.</p>
     <div class="mt-2" data-fotos-codigos><p class="hint"><i class="fa-solid fa-spinner fa-spin"></i> Carregando as fotos…</p></div>
     <div data-leitura-referencias></div>${resultadoFotosTextoHtml(fotosTexto, { soAplicadas: true })}</div>`;
@@ -46,7 +46,8 @@ export function preferenciasHtml(cliente, fotosTexto = null) {
 // Modelo pronto (lib/modelo-pedido-site.js): "Usar modelo" põe no campo (nunca apaga o texto dele); "Copiar modelo" copia.
 const MODELO_BOTOES = `<div class="mt-1" data-modelo-pedido><div class="flex flex-wrap gap-2">
     <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-usar-modelo aria-controls="pref-texto"><i class="fa-solid fa-file-lines"></i> Usar modelo</button>
-    <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-copiar-modelo><i class="fa-regular fa-copy"></i> Copiar modelo</button></div>
+    <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-copiar-modelo><i class="fa-regular fa-copy"></i> Copiar modelo</button>
+    <button type="button" class="btn-ghost btn-sm min-h-[44px]" data-tela-cheia aria-pressed="false" aria-controls="pref-texto"><i class="fa-solid fa-expand"></i> Tela cheia</button></div>
   <div class="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800" role="group" aria-labelledby="modelo-pergunta" data-modelo-confirmar hidden>
     <p id="modelo-pergunta" class="font-medium">O campo já tem texto. Colocar o modelo no fim?</p>
     <div class="mt-1 flex flex-wrap gap-2"><button type="button" class="btn-primary btn-sm min-h-[44px]" data-modelo-no-fim>Colocar no fim</button>
@@ -208,6 +209,40 @@ export function ligarPreferencias(alvo, cliente, aoMudar = () => {}, { aplicarFo
     campo.dispatchEvent(new Event('change', { bubbles: true })); lerTexto(); contar(); confirmar(false);
     statusModelo(noFim ? 'Modelo colocado no fim do seu texto. Troque o que está entre [ ]; o que ficar com [ ] não vai para a IA.' : 'Modelo no campo. Troque o que está entre [ ]; o que ficar com [ ] não vai para a IA.');
   };
+  // Campo grande: cresce com o texto até a altura máxima do CSS (.campo-pedido) e depois rola dentro. Nunca encolhe
+  // sozinho (respeita o tamanho que o operador puxou no canto).
+  const crescer = () => {
+    const campo = $('[data-pref="texto"]', alvo); if (!campo || campo.closest('.editor-tela-cheia')) return;
+    const max = parseFloat(getComputedStyle(campo).maxHeight) || Infinity;
+    if (campo.scrollHeight > campo.clientHeight + 1) campo.style.height = `${Math.min(campo.scrollHeight + 2, max)}px`;
+  };
+  requestAnimationFrame(crescer);
+  on(alvo, 'input', '[data-pref="texto"]', crescer);
+  on(alvo, 'change', '[data-pref="texto"]', crescer); // texto posto pelo app (modelo, código de foto, ditado)
+  // "Tela cheia": o MESMO campo vai para a tela inteira (texto, salvamento, contador e modelo iguais); cursor e rolagem
+  // ficam onde estavam. No celular a altura segue a parte visível acima do teclado (botões e contador no topo).
+  let fecharTela = null;
+  const telaCheia = (abrir) => {
+    const editor = $('[data-editor-texto]', alvo), campo = $('[data-pref="texto"]', alvo), b = $('[data-tela-cheia]', alvo);
+    if (!editor || !campo || !b || Boolean(fecharTela) === abrir) return;
+    const { selectionStart: ini, selectionEnd: fim, scrollTop } = campo;
+    editor.classList.toggle('editor-tela-cheia', abrir);
+    document.body.style.overflow = abrir ? 'hidden' : '';
+    b.setAttribute('aria-pressed', String(abrir));
+    b.innerHTML = abrir ? '<i class="fa-solid fa-compress"></i> Fechar' : '<i class="fa-solid fa-expand"></i> Tela cheia';
+    if (abrir) {
+      const vv = window.visualViewport;
+      const ajustar = () => { if (!vv) return; editor.style.top = `${vv.offsetTop}px`; editor.style.height = `${vv.height}px`; editor.style.bottom = 'auto'; };
+      const tecla = (e) => { if (e.key === 'Escape') telaCheia(false); };
+      const saiu = () => telaCheia(false);
+      vv?.addEventListener('resize', ajustar); vv?.addEventListener('scroll', ajustar); ajustar();
+      document.addEventListener('keydown', tecla); window.addEventListener('hashchange', saiu);
+      fecharTela = () => { vv?.removeEventListener('resize', ajustar); vv?.removeEventListener('scroll', ajustar); document.removeEventListener('keydown', tecla); window.removeEventListener('hashchange', saiu); editor.style.top = editor.style.height = editor.style.bottom = ''; };
+    } else { fecharTela?.(); fecharTela = null; }
+    campo.focus({ preventScroll: true }); campo.setSelectionRange(ini, fim); campo.scrollTop = scrollTop;
+    if (!abrir) { crescer(); campo.scrollTop = scrollTop; editor.scrollIntoView({ block: 'nearest' }); }
+  };
+  on(alvo, 'click', '[data-tela-cheia]', () => telaCheia(!fecharTela));
   on(alvo, 'click', '[data-usar-modelo]', () => { const campo = $('[data-pref="texto"]', alvo); if (!campo) return; if (campo.value.trim()) confirmar(true); else porModelo(false); });
   on(alvo, 'click', '[data-modelo-no-fim]', () => porModelo(true));
   on(alvo, 'click', '[data-modelo-cancelar]', () => { confirmar(false); statusModelo('Nada mudou no seu texto.'); $('[data-usar-modelo]', alvo)?.focus(); });

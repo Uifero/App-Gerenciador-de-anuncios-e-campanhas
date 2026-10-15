@@ -49,6 +49,17 @@
 .dark [data-status-resultado] { background-color: #065f46; }
 .dark ::placeholder { color: #64748b; }
 
+/* ===== "Como eu quero o site" (modules/preferencias-site.js): campo grande que cresce com o texto + tela cheia =====
+   16px evita o zoom do iPhone. Cresce até ~65% da tela no computador (mín. 420px) e ~58% no celular; depois rola dentro.
+   Tela cheia = o MESMO campo (mesmo texto, cursor, rolagem e salvamento), com botões e contador no topo. */
+.campo-pedido { font-size: 16px; line-height: 1.6; padding: .75rem 1rem; min-height: 12rem; max-height: max(420px, 65vh); resize: vertical; overflow-y: auto; }
+@media (max-width: 639px) { .campo-pedido { max-height: 58vh; min-height: 10rem; resize: none; } }
+.editor-tela-cheia { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; gap: .5rem; padding: .75rem 1rem; background-color: var(--color-white, #fff); overflow: hidden; }
+.dark .editor-tela-cheia { background-color: #0b1120; }
+.editor-tela-cheia [data-modelo-pedido] { order: -2; margin-top: 0; }
+.editor-tela-cheia [data-contador-texto] { order: -1; margin-top: 0; }
+.editor-tela-cheia .campo-pedido { flex: 1 1 auto; min-height: 0; max-height: none; height: auto !important; resize: none; margin-top: 0; }
+
 /* ===== Diagrama da campanha (modules/campanhas.js diagramaHtml) =====
    Árvore campanha -> conjuntos -> criativos só com bordas: cada ramo desenha o traço vertical que sobe até a barra
    horizontal, e a barra é a soma dos ::after de cada ramo (o primeiro/último cortam a metade de fora). */
