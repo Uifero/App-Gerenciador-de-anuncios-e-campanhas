@@ -341,7 +341,7 @@ export async function montarAjusteSite(alvo, ctx) {
   }
   // No site, alegação de efeito pode ficar (decisão do operador): só avisa, em amarelo, sem bloquear.
   const avisoAlegacao = (d) => {
-    const ach = saude ? [...new Set(achadosSaudeSite([...d.mudancas.map((m) => String(m).split('→').pop()), ...(d.escolhas || []).map((e) => (e.escolha === 'original' ? e.original : e[e.escolha] || e.melhorada))].join(' ')))] : [];
+    const ach = saude ? [...new Set(achadosSaudeSite([...d.mudancas.map((m) => String(m).split('→').pop()), ...(d.escolhas || []).map((e) => (e.escolha === 'original' ? e.original : e[e.escolha] || e.melhorada))].join(' '), cliente, produtos))] : [];
     return ach.length ? `<p class="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-aviso-alegacao-ajuste><i class="fa-solid fa-triangle-exclamation"></i> ${esc(AVISO_SITE_SAUDE)} Trecho: ${ach.map((a) => `"${esc(a)}"`).join(', ')}.</p>` : '';
   };
   // Preço ou botão de compra tirados (pelo pedido, pelo print ou pela IA): o mesmo aviso do "Tirar daqui".

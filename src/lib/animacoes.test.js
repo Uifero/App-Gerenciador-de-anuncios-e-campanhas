@@ -59,20 +59,24 @@ describe('zona segura do texto animado', () => {
 });
 
 describe('bloqueio de saúde, colchete e política nos textos animados', () => {
-  it('promessa de efeito no corpo em produto de saúde bloqueia a gravação', () => {
+  it('promessa de efeito no corpo em produto de saúde NÃO bloqueia: vira alerta (nota amarela depois de gravar)', () => {
     const pl = planoInicial('kinetic', { criativo: { ...criativo, copy: 'Acelera o metabolismo e queima gordura.' }, produto, cliente: saude });
-    expect(conferirPlano(pl, { cliente: saude }).bloqueio).toMatch(/^Não dá para gravar: produto de saúde/);
+    const c = conferirPlano(pl, { cliente: saude });
+    expect(c.bloqueio).toBe('');
+    expect(c.alerta.nota).toBe('Aviso: este texto tem alegação de saúde ("acelera o metabolismo", "e queima gordura"). O Meta pode reprovar o anúncio.'); // cada cena é uma tela
     const editado = { ...planoInicial('zoom_legenda', { criativo, produto, cliente: saude }) };
     editado.cenas = [...editado.cenas, { texto: 'mais energia o dia todo', dur: 2, tipo: 'fala' }];
-    expect(conferirPlano(editado, { cliente: saude }).bloqueio).toMatch(/saúde/);
-    expect(conferirPlano(planoInicial('zoom_legenda', { criativo, produto, cliente: saude }), { cliente: saude }).bloqueio).toBe('');
+    expect(conferirPlano(editado, { cliente: saude })).toMatchObject({ bloqueio: '' });
+    expect(conferirPlano(editado, { cliente: saude }).alerta.trechos.join(' ')).toMatch(/energia/);
+    expect(conferirPlano(planoInicial('zoom_legenda', { criativo, produto, cliente: saude }), { cliente: saude }).alerta).toBeNull();
   });
   it('colchete do modelo de gancho bloqueia', () => {
     const pl = planoInicial('zoom_legenda', { criativo: { ...criativo, hook: 'A verdade sobre [produto]' }, produto, cliente: moda });
     expect(conferirPlano(pl, { cliente: moda }).bloqueio).toMatch(/colchete/);
   });
   it('antes e depois: proibido em saúde e cosmético; em moda, precisa de duas fotos reais', () => {
-    expect(motivoPreset('antes_depois', { cliente: saude, fotos: 2 })).toMatch(/saúde/);
+    expect(motivoPreset('antes_depois', { cliente: saude, fotos: 2 })).toBe(''); // saúde: só aviso (risco alto)
+    expect(conferirPlano({ preset: 'antes_depois', duracao: 4, cenas: [] }, { cliente: saude }).avisos.join(' ')).toMatch(/Risco alto; reprovações repetidas podem restringir a conta de anúncios/);
     expect(motivoPreset('antes_depois', { cliente: { nicho: 'cosméticos para pele' }, fotos: 2 })).toMatch(/cosmético/);
     expect(motivoPreset('antes_depois', { cliente: moda, fotos: 1 })).toMatch(/duas fotos/);
     expect(motivoPreset('antes_depois', { cliente: moda, fotos: 2 })).toBe('');

@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { ehCaminhoDePeca } from '../lib/pecas.js';
+import { lembrarNomesProtegidos } from '../lib/saude.js';
 
 export const COL = {
   config: 'gcc_configuracoes', clientes: 'gcc_clientes', criativos: 'gcc_criativos', hooks: 'gcc_hooks',
@@ -82,6 +83,7 @@ export const db = {
   /** Lista documentos; `filtro` é igualdade simples (ex.: {clienteId}). Ordena por criadoEm desc. */
   async listar(col, filtro) {
     const r = await drv.listar(col, filtro);
+    if (col === COL.produtos) lembrarNomesProtegidos(r); // nome do produto não conta como alegação de saúde
     return r.sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
   },
   obter: (col, id) => drv.obter(col, id),

@@ -6,7 +6,6 @@
 // As regras do Firestore (firestore.rules) permitem ao público APENAS ler o documento do token e gravar a própria resposta.
 import { db, COL } from '../core/storage.js';
 import { acharTermosDoCliente } from '../core/ia.js';
-import { motivoSaude } from '../lib/saude.js';
 import { motivoGancho } from '../lib/ganchos.js';
 import { CHECKLIST_QUALIDADE, FORMATOS } from '../lib/constantes.js';
 import { garantirPrevia, previaAtual } from '../lib/previa.js';
@@ -31,12 +30,10 @@ const BASE_PUBLICA = (import.meta.env.VITE_URL_PUBLICA || '').replace(/#.*$/, ''
 export const linkDe = (token) => `${BASE_PUBLICA || location.origin + location.pathname}#/aprovar/${token}`;
 export const linkSoLocal = () => !BASE_PUBLICA && /^(localhost|127.|[::1])/.test(location.hostname);
 
-/** Só vai para o cliente final o que passou no crivo interno: checklist completo e sem termos proibidos. */
+/** Só vai para o cliente final o que passou no crivo interno: checklist completo e sem termos proibidos. Alegação de saúde não bloqueia (só aviso). */
 export function motivoBloqueio(c, cliente) {
   if (!CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k])) return 'checklist de qualidade incompleto';
   if (acharTermosDoCliente(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) return 'contém termos proibidos';
-  const saude = motivoSaude(`${c.hook} ${c.copy} ${c.cta}`, cliente);
-  if (saude) return saude;
   const gancho = motivoGancho(c, cliente);
   if (gancho) return gancho;
   return null;

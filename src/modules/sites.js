@@ -217,7 +217,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
   }
 
   // Textos do site com alegação/número mantidos pelo operador: ficam no cliente para os criativos (lib/saude.js
-  // motivoSaude diz "Permitido no site, mas bloqueado em anúncio" e oferece a versão segura).
+  // alertaSaude avisa "Risco Meta" e o detalhe oferece a versão segura).
   async function guardarAlegacoesNoCliente() {
     const alegacoesSite = alegacoesParaCliente([...alegacoesMantidas(site, 'custom'), ...alegacoesMantidas(site, 'pacote')]);
     if (JSON.stringify(alegacoesSite) === JSON.stringify(cliente.alegacoesSite || [])) return;
@@ -592,7 +592,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     const abertas = lista.filter((x) => !x.confirmado).length;
     return `<div class="mt-4 rounded-lg border-2 ${abertas ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 bg-white'} p-3" data-saude-site data-ancora="saude">
       <h4 class="font-semibold"><i class="fa-solid fa-triangle-exclamation text-amber-600" aria-hidden="true"></i> Saúde: textos do site com resultado no corpo ou efeito (${lista.length})</h4>
-      <p class="caption">Vale para todo texto que aparece: banner, destaques, depoimentos, citações, títulos, FAQ e descrições. No site, só fica com o seu "Entendi e quero manter no site"; em anúncio continua bloqueado (política do Meta).</p>
+      <p class="caption">Vale para todo texto que aparece: banner, destaques, depoimentos, citações, títulos, FAQ e descrições. No site, só fica com o seu "Entendi e quero manter no site"; em anúncio vira o aviso "Risco Meta" (o Meta pode reprovar).</p>
       <ul class="mt-2 space-y-2 text-sm">${lista.map((x) => `<li class="rounded border border-slate-200 bg-white p-2" data-alegacao-site="${esc(x.chave.slice(0, 60))}"><p><span class="tag">${esc(x.onde)}</span> "${esc(x.texto.length > 220 ? `${x.texto.slice(0, 220)}…` : x.texto)}"</p>
         <p class="mt-1 text-xs text-amber-800">Trecho: ${x.achados.map((a) => `"${esc(a)}"`).join(', ')}</p>
         ${x.confirmado ? `<p class="mt-1 text-xs text-slate-600"><i class="fa-solid fa-check" aria-hidden="true"></i> Mantido no site por ${esc(x.confirmado.por || 'você')} em ${esc(dataBR(x.confirmado.em))}</p>`
@@ -677,7 +677,7 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       const k = b.dataset.manterAlegacao, lista = site.alegacoesConfirmadas || [];
       const x = alegacoesDoSite(argsTextos()).find((y) => y.chave === k);
       await salvarSite({ alegacoesConfirmadas: [...lista.filter((y) => y.chave !== k), { chave: k, texto: x?.texto || '', achados: x?.achados || [], por: 'operador', em: new Date().toISOString() }].slice(-80) });
-      recarregar(); setTimeout(() => mostrarResultado('[data-saude-site]', 'Mantido no site. Nos anúncios continua bloqueado.'), 50);
+      recarregar(); setTimeout(() => mostrarResultado('[data-saude-site]', 'Mantido no site. Nos anúncios aparece como aviso "Risco Meta".'), 50);
     }));
     on(alvo, 'click', '[data-mudar-alegacao]', (b) => {
       const campo = $('[data-pedido-ajuste]', alvo); if (!campo) return;

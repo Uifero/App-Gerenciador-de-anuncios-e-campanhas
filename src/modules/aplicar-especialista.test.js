@@ -42,13 +42,14 @@ describe('preparar x aceitar', () => {
     expect(gravados[0].patch.versoes.map((v) => v.hook)).toEqual(['Testei uma cápsula de manhã por 30 dias.', 'Medo de acelerar? Testei 1 cápsula por 30 dias.']);
     expect(c.hook).toBe('Medo de acelerar? Testei 1 cápsula por 30 dias.');
   });
-  it('reescrita que cria promessa de saúde: bloqueada e não salva', async () => {
+  it('reescrita com promessa de saúde: salva normalmente e devolve o alerta (nota amarela)', async () => {
     const c = novo();
     const p = await prepararReescrita({ cliente: thermora, criativo: c, acao, tipo: 'hook', refinar: async () => ({ hook: 'Testei por 30 dias e senti mais energia e o metabolismo acelerado.' }) });
-    expect(p.bloqueio).toMatch(/metabolismo|energia/);
-    await expect(aceitarReescrita({ cliente: thermora, criativo: c, proposta: p, nota: 'x' })).rejects.toThrow(/Não dá para salvar/);
-    expect(gravados).toHaveLength(0);
-    expect(c.versoes).toHaveLength(1);
+    expect(p.bloqueio).toBe('');
+    const r = await aceitarReescrita({ cliente: thermora, criativo: c, proposta: p, nota: 'x' });
+    expect(gravados).toHaveLength(1);
+    expect(c.versoes).toHaveLength(2);
+    expect(r.alerta.nota).toBe('Aviso: este texto tem alegação de saúde ("senti mais energia e o metabolismo"). O Meta pode reprovar o anúncio.');
   });
   it('proposta sem mudança não grava', async () => {
     const c = novo();

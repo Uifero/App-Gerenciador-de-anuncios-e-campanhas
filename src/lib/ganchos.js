@@ -24,12 +24,20 @@ const RE_CORPO = /\b(emagre\w*|engord\w*|peso|kg|quilos?|barriga|cintura|medidas
 export const resultadoNoCorpo = (texto) => RE_CORPO.exec(String(texto || ''))?.[0].toLowerCase() || '';
 
 /**
- * Motivo que impede aprovar/enviar o texto por causa do modelo de gancho, ou ''.
+ * Motivo que impede aprovar/enviar o texto por causa do modelo de gancho (só colchete que sobrou), ou ''.
  * `c` = criativo ({ modeloGancho, hook, copy, cta }) ou hook ({ modeloGancho, texto }).
+ * Resultado no corpo num modelo (*) não bloqueia mais (alegação de saúde em criativo é só informação: lib/saude.js
+ * alertaSaude); continua como aviso no lote da IA (avisoGanchoSaude).
  */
-export function motivoGancho(c, cliente) {
+export function motivoGancho(c) {
   const texto = [c?.hook, c?.copy, c?.cta, c?.texto].filter(Boolean).join(' ');
   if (temColchete(texto)) return 'sobrou colchete do modelo de gancho: escreva no lugar o texto do produto';
+  return '';
+}
+
+/** Aviso (não bloqueia): modelo (*) que virou resultado no corpo em cliente de saúde, ou ''. */
+export function avisoGanchoSaude(c, cliente) {
+  const texto = [c?.hook, c?.copy, c?.cta, c?.texto].filter(Boolean).join(' ');
   const g = ganchoPorNumero(c?.modeloGancho);
   if (g?.cuidado && ehProdutoSaude(cliente)) {
     const achado = resultadoNoCorpo(texto);
@@ -46,7 +54,7 @@ export function conferirGanchos(lista = [], cliente) {
     const avisosGancho = [];
     if (modeloGancho && vistos.has(modeloGancho)) avisosGancho.push(`modelo ${modeloGancho} repetido no lote`);
     if (modeloGancho) vistos.add(modeloGancho);
-    const motivo = motivoGancho({ ...x, modeloGancho }, cliente);
+    const motivo = motivoGancho({ ...x, modeloGancho }) || avisoGanchoSaude({ ...x, modeloGancho }, cliente);
     if (motivo) avisosGancho.push(motivo);
     return { ...x, modeloGancho, avisosGancho };
   });

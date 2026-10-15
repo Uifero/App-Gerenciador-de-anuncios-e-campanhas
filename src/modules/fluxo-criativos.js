@@ -23,7 +23,7 @@ import {
   formatoDaIdeia, briefingDoFluxo, ideiaDe, fluxoEmAndamento,
 } from '../lib/etapas-criativos.js';
 import { comoAnunciaDe } from '../lib/anuncio.js';
-import { motivoSaude, achadosSaude, ehProdutoSaude, AVISO_META_SAUDE, MOTIVO_ANUNCIO_SITE, textosDoSiteNoAnuncio, trocarPelaSegura } from '../lib/saude.js';
+import { alertaSaude, ehProdutoSaude, AVISO_META_SAUDE, textosDoSiteNoAnuncio, trocarPelaSegura } from '../lib/saude.js';
 import { versaoNova, propostaDeMudanca } from '../lib/aplicar-especialista.js';
 import { pareceAnuncio, instrucaoNatural, nomeRoteiro } from '../lib/parece-anuncio.js';
 import { avisosPolitica } from '../lib/politicas-anuncio.js';
@@ -31,7 +31,7 @@ import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, rotuloModelo, motivoGancho } from '.
 import { NARRATIVAS, ETAPAS_FUNIL } from '../lib/narrativas.js';
 import { FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS } from '../lib/constantes.js';
 import { STATUS_ETAPA } from '../lib/etapas-site.js';
-import { esc, $, on, cabecalho, tag, toast, ocupado, opcoes, confirmar, mostrarResultado, faixaRolavel, iaNota } from '../core/ui.js';
+import { esc, $, on, cabecalho, tag, toast, ocupado, opcoes, confirmar, mostrarResultado, faixaRolavel, iaNota, avisarRiscoMeta } from '../core/ui.js';
 
 const COR_STATUS = { completo: 'bg-emerald-50 text-emerald-800 border-emerald-300', falta: 'bg-amber-50 text-amber-800 border-amber-300' };
 const ICONE_STATUS = { completo: 'circle-check', falta: 'circle-exclamation' };
@@ -181,11 +181,11 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
   // ==================== 2. Ideias ====================
   const blocosIdeia = (i) => {
     const t = textoIdeia(i), texto = `${t.hook} ${t.copy} ${t.cta}`;
-    const saude = motivoSaude(texto, cliente);
+    const saude = alertaSaude(texto, cliente);
     const gancho = motivoGancho(t, cliente);
     const doSite = saude ? textosDoSiteNoAnuncio(texto, cliente).filter((l) => l.alegacao.length) : [];
     const seguras = doSite.filter((l) => l.segura);
-    return [saude && `<div class="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-700" data-bloqueio-ideia="saude"><p><i class="fa-solid fa-triangle-exclamation"></i> ${doSite.length ? `${esc(MOTIVO_ANUNCIO_SITE)} ` : ''}Bloqueado para aprovar (Meta): ${esc(achadosSaude(texto).join(', '))}. ${seguras.length ? `Versão segura: ${seguras.map((l) => `"${esc(l.segura)}"`).join('; ')}.` : 'Refaça a ideia ou ajuste o texto.'}</p>${seguras.length ? `<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-ideia="${esc(i.id)}"><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>` : ''}</div>`,
+    return [saude && `<div class="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-aviso-saude-ideia><p><span class="tag tag-warn" data-risco-meta>Risco Meta</span> ${esc(saude.nota)}${seguras.length ? ` Versão segura do site: ${seguras.map((l) => `"${esc(l.segura)}"`).join('; ')}.` : ''}</p>${seguras.length ? `<button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-ideia="${esc(i.id)}"><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>` : ''}</div>`,
       gancho && `<p class="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-700" data-bloqueio-ideia="gancho"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(gancho)}.</p>`,
       ...avisosPolitica(texto).map((a) => `<p class="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-aviso-politica="${esc(a.id)}"><i class="fa-solid fa-circle-exclamation"></i> Política do Meta: ${esc(a.texto)} ${esc(a.troca)}</p>`),
       ...(i.avisosGancho || []).filter((x) => x !== gancho && !String(x).startsWith('sobrou colchete')).map((x) => `<p class="text-xs text-amber-800">${esc(x)}</p>`)].filter(Boolean).join('');
@@ -222,7 +222,7 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
     const qtd = Number(cfg.variacoesPadrao) || 4;
     alvo.innerHTML = `<div class="card" data-ancora="gerar">
       <p class="text-sm">${produto ? `<b>${esc(produto.nome)}</b>` : '<span class="text-amber-700">Sem produto escolhido (passo 1)</span>'} · ${destino ? esc(rotulo(DESTINOS_FLUXO, destino)) : '<span class="text-amber-700">sem destino (passo 1)</span>'}${fluxo.pedido ? ` · “${esc(fluxo.pedido)}”` : ''}</p>
-      ${ehProdutoSaude(cliente) ? `<p class="hint">${esc(AVISO_META_SAUDE)}: a IA escreve sem efeito no corpo, e o que escapar aparece bloqueado no cartão.</p>` : ''}
+      ${ehProdutoSaude(cliente) ? `<p class="hint">${esc(AVISO_META_SAUDE)}: a IA escreve sem efeito no corpo; se algo escapar, o cartão mostra "Risco Meta" (só aviso, nada é bloqueado).</p>` : ''}
       <button type="button" class="btn-ia mt-3 min-h-[44px]" data-gerar-ideias><i class="fa-solid fa-wand-magic-sparkles"></i> ${(fluxo.ideias || []).length ? 'Gerar mais ideias' : 'Gerar ideias'}</button>
       <p class="hint">Cria <span data-qtd-ideias>${qtd}</span> ideias com ganchos de modelos diferentes da biblioteca. As marcadas ficam; as outras são trocadas.</p>
       ${maisOpcoes(`<form class="grid gap-3 sm:grid-cols-2" data-opcoes-ideias>
@@ -311,6 +311,7 @@ export async function viewFluxo(root, cliente, recarregar, passoPedido = null) {
       const c = criativoDaIdeia(i);
       if (c) { const patch = versaoNova(c, prop.depois, 'Mais natural ("Parece anúncio?")'); await db.atualizar(COL.criativos, c.id, patch); Object.assign(c, patch); }
       else await salvarFluxo({ ideias: fluxo.ideias.map((x) => (x.id === i.id ? { ...x, ...prop.depois } : x)) });
+      avisarRiscoMeta(prop.alerta);
       propostas.delete(i.id); redesenhar();
       const card = lista.querySelector(`[data-ideia="${CSS.escape(i.id)}"]`); card?.querySelector('[data-parece-anuncio]')?.setAttribute('open', '');
       mostrarResultado(card, `Mudança aplicada${c ? ' (nova versão do criativo)' : ''}. Nota agora: ${pareceAnuncio(textoIdeia(fluxo.ideias.find((x) => x.id === i.id) || i), { cliente }).nota}/100.`);

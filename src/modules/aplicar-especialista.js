@@ -11,7 +11,8 @@ import {
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
 import { abrirEstudio } from './estudio.js';
 import { abrirProduto } from './produtos.js';
-import { esc, $, on, ocupado, toast, tag, mostrarResultado, fecharModais } from '../core/ui.js';
+import { alertaSaude } from '../lib/saude.js';
+import { esc, $, on, ocupado, toast, tag, mostrarResultado, fecharModais, avisarRiscoMeta } from '../core/ui.js';
 
 const NO_TEXTO = { hook: 'no gancho', copy: 'no texto', cta: 'no CTA', roteiro: 'no roteiro' };
 const ROTULO_CAMPO = { hook: 'Gancho (hook)', copy: 'Texto / roteiro', cta: 'CTA' };
@@ -40,8 +41,8 @@ export async function prepararReescrita({ cliente, criativo, acao, tipo, produto
 }
 
 /**
- * "Aceitar": confere de novo (saúde e colchete) e só então grava a nova versão do criativo. Bloqueado = erro, nada gravado.
- * Devolve { versao, patch }.
+ * "Aceitar": confere de novo o colchete e grava a nova versão do criativo. Bloqueado = erro, nada gravado. Alegação de
+ * saúde não bloqueia: volta em `alerta` para a nota amarela. Devolve { versao, patch, alerta }.
  */
 export async function aceitarReescrita({ cliente, criativo, proposta, nota }) {
   const bloqueio = motivoBloqueioTexto(proposta.depois, cliente, criativo.modeloGancho);
@@ -50,7 +51,7 @@ export async function aceitarReescrita({ cliente, criativo, proposta, nota }) {
   const patch = versaoNova(criativo, proposta.depois, nota);
   await db.atualizar(COL.criativos, criativo.id, patch);
   Object.assign(criativo, patch);
-  return { versao: patch.versoes[patch.versoes.length - 1].n, patch };
+  return { versao: patch.versoes[patch.versoes.length - 1].n, patch, alerta: alertaSaude(`${patch.hook} ${patch.copy} ${patch.cta}`, cliente) };
 }
 
 /** Grava o que foi feito com a ação `i` na consulta (COL.analises, campo aplicacoes). */
@@ -173,12 +174,13 @@ export function ligarAplicacao(card, { cliente, consulta, especialista, dados, a
   on(card, 'click', '[data-aceitar-acao]', (b) => ocupado(b, async () => {
     const i = Number(b.dataset.aceitarAcao), zona = $(`[data-proposta="${i}"]`, card), prop = zona._proposta, c = criativo();
     // Confere de novo na hora de salvar (o texto que vai para o banco é o que passou pela conferência).
-    let versao;
-    try { ({ versao } = await aceitarReescrita({ cliente, criativo: c, proposta: prop, nota: `Especialista (${especialista.nome}): ${acoes[i].acao}`.slice(0, 160) })); }
+    let versao, alerta;
+    try { ({ versao, alerta } = await aceitarReescrita({ cliente, criativo: c, proposta: prop, nota: `Especialista (${especialista.nome}): ${acoes[i].acao}`.slice(0, 160) })); }
     catch (e) { if (e.bloqueio) { await registrar(i, { status: 'bloqueada', motivo: e.bloqueio, criativoId: c.id }); decidir(i); } throw e; }
     await registrar(i, { status: 'aceita', criativoId: c.id, versao });
     zona.innerHTML = `<p class="mt-1 text-sm text-emerald-700" data-versao-salva><i class="fa-solid fa-circle-check"></i> Salvo como versão v${versao} do criativo. A anterior continua no histórico de versões.</p>`;
     toast(`Nova versão (v${versao}) salva.`);
+    avisarRiscoMeta(alerta);
     if (classes[i].modo === 'peca' && peca) {
       abrirEstudio(c, cliente, { produtos: dados.produtos || [] }, {
         tipo: peca.tipo, formato: peca.formato, config: peca.config, baseadaEm: peca.id, especialista: { consultaId: consulta.id, acao: acoes[i].acao },

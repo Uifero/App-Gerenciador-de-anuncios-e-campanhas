@@ -45,7 +45,7 @@ export function textosVisiveis({ cliente = {}, site = {}, modo = 'pacote', produ
 /** Alegações de saúde em todo o site: [{ secao, onde, texto, achados, chave, confirmado }]. */
 export function alegacoesDoSite(args = {}) {
   const confirmadas = new Map((args.site?.alegacoesConfirmadas || []).map((x) => [x.chave, x]));
-  return textosVisiveis(args).map((t) => ({ ...t, achados: achadosSaudeSite(t.texto), chave: chave(t.texto) })).filter((t) => t.achados.length)
+  return textosVisiveis(args).map((t) => ({ ...t, achados: achadosSaudeSite(t.texto, args.cliente, args.produtos || []), chave: chave(t.texto) })).filter((t) => t.achados.length)
     .map((t) => ({ ...t, confirmado: confirmadas.get(t.chave) || null }));
 }
 

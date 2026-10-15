@@ -2,7 +2,7 @@
 // e a linha do pedido. As respostas reais gravadas ficam em tests/fixtures/ia/ganchos-*-real.json.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { GANCHOS, numeroModelo, temColchete, resultadoNoCorpo, motivoGancho, conferirGanchos, rotuloModelo, descricaoModelo, linhaGanchos } from './ganchos.js';
+import { GANCHOS, numeroModelo, temColchete, resultadoNoCorpo, motivoGancho, avisoGanchoSaude, conferirGanchos, rotuloModelo, descricaoModelo, linhaGanchos } from './ganchos.js';
 import { DOC_GANCHOS, documentosParaAnalise } from './documentos.js';
 
 const moda = { id: 'm', nome: 'Loja', nicho: 'moda fitness', marca: { produtoSaude: false } };
@@ -39,12 +39,12 @@ describe('biblioteca de ganchos', () => {
 });
 
 describe('motivoGancho (bloqueia aprovação)', () => {
-  it('(*) com resultado no corpo bloqueia só em cliente de saúde', () => {
+  it('(*) com resultado no corpo não bloqueia mais (só aviso, em cliente de saúde)', () => {
     const c = { modeloGancho: 37, hook: 'Eu testei Thermora por 30 dias e olha minha barriga', copy: '', cta: '' };
-    expect(motivoGancho(c, saude)).toMatch(/modelo 37 \(\*\) virou resultado no corpo \("barriga"\)/);
-    expect(motivoGancho(c, moda)).toBe('');
-    // o mesmo texto sem modelo (*) fica com a regra geral de saúde (acharTermosProibidos), não com esta
-    expect(motivoGancho({ ...c, modeloGancho: 31 }, saude)).toBe('');
+    expect(motivoGancho(c, saude)).toBe('');
+    expect(avisoGanchoSaude(c, saude)).toMatch(/modelo 37 \(\*\) virou resultado no corpo \("barriga"\)/);
+    expect(avisoGanchoSaude(c, moda)).toBe('');
+    expect(avisoGanchoSaude({ ...c, modeloGancho: 31 }, saude)).toBe('');
   });
   it('(*) adaptado para experiência de uso passa', () => {
     expect(motivoGancho({ modeloGancho: 84, hook: 'Eu não acreditei até experimentar uma cápsula na minha manhã corrida', copy: 'Uma cápsula na rotina da manhã.' }, saude)).toBe('');

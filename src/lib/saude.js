@@ -37,13 +37,57 @@ const RE_CONDICAO = new RegExp(`^(?:${CONDICAO})$`);
 const RE_FISICO = new RegExp(`${CONDICAO}|${EFEITO}`, 'g');
 const semAcento = (t) => [...t].map((c) => c.normalize('NFD')[0]).join('').toLowerCase();
 
+// ---------- nomes do próprio cliente nunca contam ----------
+// "Thermora Metabolic Formula" é o nome do produto, não promessa: o nome da marca e dos produtos (cadastro do cliente e
+// coleção de produtos, lembrados quando a lista é lida em core/storage.js) sai do texto antes da conferência. Só o que
+// está em volta conta ("acelera o metabolismo"). Vale para criativo e site.
+const nomesLembrados = new Map();
+/** Guarda os nomes dos produtos de cada cliente (chamado ao listar a coleção de produtos). */
+export function lembrarNomesProtegidos(produtos = []) {
+  for (const p of produtos) {
+    if (!p?.clienteId || !String(p.nome || '').trim()) continue;
+    const s = nomesLembrados.get(p.clienteId) || new Set();
+    s.add(String(p.nome).trim()); nomesLembrados.set(p.clienteId, s);
+  }
+}
+/** Esquece os nomes lembrados (testes). */
+export const esquecerNomesProtegidos = () => nomesLembrados.clear();
+/**
+ * Nomes que não contam como alegação: nome do cliente/marca e dos produtos. Sem o cliente (conferências do plano do
+ * site), valem os nomes de produto já lembrados: nome de produto nunca é promessa, seja de quem for.
+ */
+export function nomesProtegidos(cliente, produtos = []) {
+  const m = cliente?.marca || {};
+  const lembrados = cliente?.id ? nomesLembrados.get(cliente.id) || [] : [...nomesLembrados.values()].flatMap((s) => [...s]);
+  return [...new Set([cliente?.nome, m.nome, m.nomeMarca, ...(Array.isArray(cliente?.produtos) ? cliente.produtos.map((p) => p?.nome) : []),
+    ...lembrados, ...produtos.map((p) => p?.nome)].map((n) => String(n || '').trim()).filter((n) => n.length >= 3))];
+}
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Troca por espaços (mesmo tamanho) cada nome protegido e cada começo dele com 2+ palavras ("Thermora Metabolic"). */
+export function mascararNomes(texto, nomes = []) {
+  const t = String(texto || '');
+  if (!nomes.length) return t;
+  const orig = [...t];
+  const norm = semAcento(t);
+  for (const n of nomes) {
+    const pal = semAcento(n).split(/\s+/).filter(Boolean);
+    const variantes = pal.length > 1 ? pal.map((_, i) => pal.slice(0, i + 1)).filter((v) => v.length >= 2) : [pal];
+    for (const v of variantes.reverse()) {
+      for (const m of norm.matchAll(new RegExp(`(?<![a-z0-9])${v.map(escRe).join('\\s+')}(?![a-z0-9])`, 'g'))) {
+        for (let i = m.index; i < m.index + m[0].length; i++) orig[i] = ' ';
+      }
+    }
+  }
+  return orig.join('');
+}
+
 /**
  * Trechos de criativo que ferem a política: kg/cm de resultado, antes e depois, promessa de efeito no corpo
  * (metabolismo, energia, disposição, queima, apetite…) e condição de quem assiste ("sem energia", "seu corpo").
  * Devolve a lista sem repetição, em minúsculas.
  */
-export function achadosSaude(texto) {
-  const t = String(texto || '');
+export function achadosSaude(texto, cliente = null, produtos = []) {
+  const t = mascararNomes(texto, nomesProtegidos(cliente, produtos));
   const norm = semAcento(t), orig = [...t];
   const fisico = [...norm.matchAll(RE_FISICO)].map((m) => orig.slice(m.index, m.index + m[0].length).join(''));
   return [...new Set([...RE_ACHADOS.flatMap((re) => t.match(re) || []), ...fisico].map((x) => x.toLowerCase().replace(/\s+/g, ' ').trim()))];
@@ -58,20 +102,21 @@ export const semMarcasPreencher = (t) => String(t || '').replace(RE_PREENCHER, '
 const CORPO_SITE = String.raw`\bmedidas?\b|\bemagrec\w*|\broupas? (?:(?:ficou|ficaram|esta|estao|mais) )?(?:larga|largas|folgada|folgadas)\b|\bcompuls\w*|\binchac\w*|\bintestin\w*|\bcorpo\b|\bresultados?\b|\bfoto (?:de )?antes\b|\bantes e depois\b|\bperd(?:i|eu|a|er) (?:de )?peso\b|\bbarriga\b|\bgordura\w*`;
 const RE_CORPO_SITE = new RegExp(CORPO_SITE, 'g');
 /** Achados de saúde num texto do SITE (o que vale para anúncio + resultado no corpo contado por cliente). */
-export function achadosSaudeSite(texto) {
-  const t = semMarcasPreencher(texto);
+export function achadosSaudeSite(texto, cliente = null, produtos = []) {
+  const t = mascararNomes(semMarcasPreencher(texto), nomesProtegidos(cliente, produtos));
   const norm = semAcento(t), orig = [...t];
   const corpo = [...norm.matchAll(RE_CORPO_SITE)].map((m) => orig.slice(m.index, m.index + m[0].length).join('').toLowerCase().replace(/\s+/g, ' ').trim());
   return [...new Set([...achadosSaude(t), ...corpo])];
 }
 
 /**
- * Motivo em palavras simples que impede aprovar/enviar o texto num cliente de saúde, ou ''. Diz o que o Meta proíbe
+ * Explicação longa da alegação de saúde num texto de anúncio (cliente de saúde), ou ''. Não bloqueia nada (o salvar usa
+ * alertaSaude, só aviso); diz o que o Meta proíbe
  * (só as categorias encontradas), o trecho e o que pode no lugar.
  */
 export function motivoSaude(texto, cliente) {
   if (!ehProdutoSaude(cliente)) return '';
-  const achados = achadosSaude(texto);
+  const achados = achadosSaude(texto, cliente);
   if (!achados.length) return '';
   const corpo = achados.some((a) => RE_ACHADOS.some((re) => new RegExp(re.source, 'i').test(a)));
   const condicao = achados.some((a) => RE_CONDICAO.test(semAcento(a)));
@@ -84,11 +129,55 @@ export function motivoSaude(texto, cliente) {
   return `${MOTIVO_ANUNCIO_SITE} ${base}${seguras.length ? `. Versão segura para usar no lugar: ${seguras.join('; ')}` : ''}`;
 }
 
+// ---------- criativos: alegação de saúde é só informação (decisão do operador) ----------
+// Nada é bloqueado nem pede confirmação no salvar de criativo: depois de salvar aparece uma nota amarela e o cartão ganha
+// o selo "Risco Meta". O operador vê no Gerenciador de Anúncios se o Meta reprovar. A IA continua sem escrever alegação
+// (REGRA_SAUDE e os filtros da geração não mudam).
+const RE_RISCO_ALTO = /\d\s*(?:kg|quilo|kilo|cm|cent)|medida|antes|emagre|\bcorpo\b/i;
+// Trecho de cada achado com até duas palavras antes, na mesma frase ("acelera o metabolismo"); trechos que se
+// encostam viram um só ("acelera o metabolismo e queima gordura").
+function trechosDe(texto, achados) {
+  const norm = semAcento(String(texto || '')), orig = [...String(texto || '')];
+  const faixas = [];
+  for (const a of achados) {
+    const i = norm.indexOf(semAcento(a));
+    if (i < 0) continue;
+    const antes = norm.slice(0, i);
+    const corte = Math.max(...['.', '!', '?', ';', ':', '\n', '"', '(', ')', ','].map((c) => antes.lastIndexOf(c))) + 1;
+    faixas.push([corte + /(?:\S+\s+){0,2}$/.exec(antes.slice(corte)).index, i + a.length]);
+  }
+  const juntas = [];
+  for (const [a, b] of faixas.sort((x, y) => x[0] - y[0])) {
+    const u = juntas[juntas.length - 1];
+    if (u && a <= u[1] + 1) u[1] = Math.max(u[1], b); else juntas.push([a, b]);
+  }
+  return [...new Set(juntas.map(([a, b]) => orig.slice(a, b).join('').replace(/\s+/g, ' ').trim().toLowerCase()))];
+}
+/** Alegação de saúde num texto de criativo: null ou { trechos, altoRisco, nota }. Só em cliente de saúde. */
+export function alertaSaude(texto, cliente, produtos = []) {
+  if (!ehProdutoSaude(cliente, produtos)) return null;
+  const achados = achadosSaude(texto, cliente, produtos);
+  if (!achados.length) return null;
+  const trechos = trechosDe(mascararNomes(texto, nomesProtegidos(cliente, produtos)), achados);
+  const altoRisco = achados.some((a) => RE_RISCO_ALTO.test(semAcento(a)));
+  const nota = `Aviso: este texto tem alegação de saúde (${trechos.map((t) => `"${t}"`).join(', ')}). O Meta pode reprovar o anúncio.${altoRisco ? ' Risco alto; reprovações repetidas podem restringir a conta de anúncios.' : ''}`;
+  return { trechos, altoRisco, nota };
+}
+/** Texto do criativo (gancho + texto + CTA). */
+export const textoDoCriativo = (c) => [c?.hook, c?.copy, c?.cta].filter(Boolean).join(' ');
+/** Selo "Risco Meta" (só informação): toque mostra os trechos. '' quando não há alegação. */
+export function seloRiscoMeta(texto, cliente) {
+  const a = alertaSaude(texto, cliente);
+  if (!a) return '';
+  const e = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  return `<details class="inline-block align-middle" data-risco-meta><summary class="tag tag-warn cursor-pointer list-none py-1" title="Toque para ver os trechos">Risco Meta</summary><span class="mt-1 block rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800" data-risco-trechos>${e(a.nota)}</span></details>`;
+}
+
 // ---------- textos do site reaproveitados em anúncio ----------
 // No SITE o operador pode manter alegação de efeito (com aviso; lib/textos-site.js). Quando esse mesmo texto aparece num
-// criativo, o bloqueio de sempre vale e o motivo diz de onde veio; a "Versão segura" do texto é a troca oferecida.
+// criativo, vale o aviso "Risco Meta" (não bloqueia); a "Versão segura" do texto é a troca oferecida.
 // cliente.alegacoesSite = [{ texto, segura, alegacao: [..], fonte }] (gravado ao aplicar o plano do site).
-export const MOTIVO_ANUNCIO_SITE = 'Permitido no site, mas bloqueado em anúncio: política do Meta para saúde e suplementos.';
+export const MOTIVO_ANUNCIO_SITE = 'Texto mantido no site: em anúncio, a política do Meta para saúde e suplementos pode reprovar.';
 const chaveTexto = (t) => semAcento(String(t || '')).replace(/[^a-z0-9]+/g, ' ').trim();
 /** Textos do site (mantidos pelo operador) que aparecem neste texto de anúncio. */
 export function textosDoSiteNoAnuncio(texto, cliente) {

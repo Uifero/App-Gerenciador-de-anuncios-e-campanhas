@@ -1,9 +1,9 @@
 // Aplicar as sugestões de um especialista (Frente 3). Puro: classifica cada ação (reescrever o texto do criativo, nova
 // peça no Estúdio, virar tarefa, ou falta de dado com o campo a preencher), monta a instrução da reescrita, compara
-// "Atual × Com a mudança", confere saúde (achadosSaude via motivoSaude) e colchete do modelo de gancho antes de deixar
-// salvar, e guarda o que foi feito com cada ação. O especialista nunca muda nada sozinho: tudo passa pelo clique do
+// "Atual × Com a mudança", confere o colchete do modelo de gancho antes de deixar salvar (alegação de saúde não
+// bloqueia: vira `alerta` para a nota amarela depois de salvar, lib/saude.js alertaSaude), e guarda o que foi feito com cada ação. O especialista nunca muda nada sozinho: tudo passa pelo clique do
 // operador (modules/aplicar-especialista.js). Nada é mudado no Meta nem no perfil do cliente.
-import { motivoSaude } from './saude.js';
+import { alertaSaude } from './saude.js';
 import { motivoGancho } from './ganchos.js';
 
 const txt = (v) => String(v ?? '').trim();
@@ -100,19 +100,17 @@ export function instrucaoDaAcao(acao = {}, tipo = 'copy') {
 const CAMPOS_TEXTO = ['hook', 'copy', 'cta'];
 /**
  * "Atual × Com a mudança" e a conferência antes de salvar. r = resposta de refinarCriativo.
- * Devolve { antes, depois, campos (os que mudaram), bloqueio (motivo ou ''), explicacao }.
+ * Devolve { antes, depois, campos (os que mudaram), bloqueio (motivo ou ''), alerta (saúde, só informação), explicacao }.
  */
 export function propostaDeMudanca(criativo = {}, r = {}, cliente = {}) {
   const antes = Object.fromEntries(CAMPOS_TEXTO.map((k) => [k, txt(criativo[k])]));
   const depois = Object.fromEntries(CAMPOS_TEXTO.map((k) => [k, txt(r?.[k]) || antes[k]]));
   const campos = CAMPOS_TEXTO.filter((k) => depois[k] !== antes[k]);
-  return { antes, depois, campos, bloqueio: motivoBloqueioTexto(depois, cliente, criativo.modeloGancho), explicacao: txt(r?.explicacao) };
+  return { antes, depois, campos, bloqueio: motivoBloqueioTexto(depois, cliente, criativo.modeloGancho), alerta: alertaSaude(`${depois.hook} ${depois.copy} ${depois.cta}`, cliente), explicacao: txt(r?.explicacao) };
 }
 
-/** Saúde (Meta) e colchete/modelo (*) do gancho: o motivo que impede salvar o texto, ou ''. */
+/** Colchete que sobrou do modelo de gancho: o motivo que impede salvar o texto, ou ''. Saúde não bloqueia. */
 export function motivoBloqueioTexto({ hook = '', copy = '', cta = '' } = {}, cliente = {}, modeloGancho = null) {
-  const saude = motivoSaude(`${hook} ${copy} ${cta}`, cliente);
-  if (saude) return `Não dá para salvar: ${saude}.`;
   const gancho = motivoGancho({ hook, copy, cta, modeloGancho }, cliente);
   if (gancho) return `Não dá para salvar: ${gancho}.`;
   return '';

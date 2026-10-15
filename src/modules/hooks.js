@@ -3,8 +3,8 @@ import { db, COL } from '../core/storage.js';
 import { gerarHooks } from '../core/ia.js';
 import { CATEGORIAS_HOOK } from '../lib/constantes.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, ganchoPorNumero, rotuloModelo, descricaoModelo, motivoGancho } from '../lib/ganchos.js';
-import { motivoSaude } from '../lib/saude.js';
-import { esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, toast, ocupado, lerForm, opcoes, copiar, num, mostrarResultado } from '../core/ui.js';
+import { alertaSaude, seloRiscoMeta } from '../lib/saude.js';
+import { esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, toast, ocupado, lerForm, opcoes, copiar, num, mostrarResultado, avisarRiscoMeta } from '../core/ui.js';
 
 const nomeCat = (v) => (CATEGORIAS_HOOK.find(([k]) => k === v) || [, v || 'sem categoria'])[1];
 /** Etiqueta do modelo de gancho de onde o hook veio (texto do modelo no title). */
@@ -72,9 +72,9 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
     ev.preventDefault();
     const v = lerForm(f); if (!v.texto) return;
     const modeloGancho = Number(v.modeloGancho) || null;
-    const motivo = motivoGancho({ texto: v.texto, modeloGancho }, cliente) || motivoSaude(v.texto, cliente);
+    const motivo = motivoGancho({ texto: v.texto, modeloGancho });
     if (motivo) return toast(`Não salvei: ${motivo}.`, 'erro');
-    await ocupado(f.querySelector('button[type=submit]'), async () => { await salvar(v.texto, v.categoria, modeloGancho ? { modeloGancho } : {}); toast('Hook salvo.'); recarregar(); });
+    await ocupado(f.querySelector('button[type=submit]'), async () => { await salvar(v.texto, v.categoria, modeloGancho ? { modeloGancho } : {}); toast('Hook salvo.'); recarregar(); avisarRiscoMeta(alertaSaude(v.texto, cliente)); });
   });
 
   on(root, 'change', '#fm [name=modeloGancho]', (s) => {
@@ -96,16 +96,16 @@ export const view = (el, cliente) => montar(el, async (root, recarregar) => {
       const hooks = await gerarHooks({ cliente, tema: v.tema, categoria: v.categoria });
       const res = $('#res', f); res._h = hooks;
       res.innerHTML = `<div class="mt-3 space-y-2">${iaNota(`A IA criou ${hooks.length} hooks nativos/orgânicos para ${cliente.nome}. Salve os que servirem: eles vão para a lista abaixo. Use o hook como primeira frase de um criativo (aba Criativos) e, depois de ver o resultado do anúncio, dê uma nota aqui para saber quais reaproveitar.`)}
-        ${hooks.map((h, i) => `<div class="flex items-center justify-between gap-2 rounded-lg border border-slate-200 p-2"><span class="text-sm">“${esc(h.texto)}” ${tag(nomeCat(h.categoria), 'tag-info')}${tagModelo(h.modeloGancho)}${(h.avisosGancho || []).map((a) => tag(a, 'tag-bad')).join('')}${motivoSaude(h.texto, cliente) ? `<span class="tag tag-bad" data-tag-saude>${esc(motivoSaude(h.texto, cliente))}</span>` : ''}</span>
+        ${hooks.map((h, i) => `<div class="flex items-center justify-between gap-2 rounded-lg border border-slate-200 p-2"><span class="text-sm">“${esc(h.texto)}” ${tag(nomeCat(h.categoria), 'tag-info')}${tagModelo(h.modeloGancho)}${(h.avisosGancho || []).map((a) => tag(a, 'tag-bad')).join('')}${seloRiscoMeta(h.texto, cliente)}</span>
         <button type="button" class="btn-primary btn-sm shrink-0" data-salvar-h="${i}">Salvar na lista</button></div>`).join('')}</div>`;
       mostrarResultado(res, `Pronto: ${hooks.length} hooks abaixo. Salve os que servirem.`);
     });
   });
   on(root, 'click', '[data-salvar-h]', async (b) => {
     const h = $('#res', root)._h[Number(b.dataset.salvarH)];
-    const motivo = motivoGancho(h, cliente) || motivoSaude(h.texto, cliente);
+    const motivo = motivoGancho(h);
     if (motivo) return toast(`Não salvei: ${motivo}.`, 'erro');
-    await ocupado(b, async () => { await salvar(h.texto, h.categoria, h.modeloGancho ? { modeloGancho: h.modeloGancho } : {}); b.outerHTML = '<span class="tag tag-ok">Salvo</span>'; });
+    await ocupado(b, async () => { await salvar(h.texto, h.categoria, h.modeloGancho ? { modeloGancho: h.modeloGancho } : {}); b.outerHTML = '<span class="tag tag-ok">Salvo</span>'; avisarRiscoMeta(alertaSaude(h.texto, cliente)); });
   });
 
   on(root, 'click', '[data-copiar]', (b) => copiar(todos.find((h) => h.id === b.dataset.copiar).texto));

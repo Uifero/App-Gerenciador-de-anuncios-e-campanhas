@@ -14,6 +14,7 @@ Responda em português do Brasil.
 - Produção = VM + PM2. Mudou `server/` (tarefa nova ou flag em `TAREFAS`)? Avisar: `git pull`, `npm run build` e **`pm2 restart`**.
 - Site gerado de cliente nunca é hospedado na VM nem no Firebase do painel.
 - Toda função de IA tem caminho manual sem IA; a IA não inventa dado, número, preço nem depoimento.
+- Alegação de saúde em CRIATIVO é só informação (decisão do operador): nenhum caminho de salvar bloqueia nem pede confirmação; depois de salvar aparece a nota amarela e o selo "Risco Meta" (`alertaSaude`/`seloRiscoMeta` em `lib/saude.js`, `avisarRiscoMeta` em `core/ui.js`). Só o colchete de modelo de gancho bloqueia. A IA continua sem escrever alegação (`REGRA_SAUDE`). Nome da marca e dos produtos nunca conta como alegação (criativo e site; `nomesProtegidos`).
 - Descrição/leitura de print (resumo da IA, OCR, métrica do perfil) e as provas sociais do perfil são anotação interna: nunca viram depoimento, citação, número ou título (site e criativo). Depoimento no site = print como imagem + só texto digitado pelo operador (`lib/prova-social.js` `ehTextoInterno`). Falta dado do cliente: "[PREENCHER: …]" (`lib/pendencias-site.js`), nunca texto inventado.
 - Seções do pacote: uma fonte só (`pacote.visual`); o que a IA pode mudar por seção está em `lib/capacidades-site.js` (vai no prompt). "Aplicar" sem mudança no que o cliente vê não cria versão.
 - `semRaciocinio` em `TAREFAS` só onde foi medido sem perda de qualidade (ver comentário lá).

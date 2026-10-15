@@ -16,7 +16,7 @@ import { previaEmSegundoPlano, removerPrevia, previaAtual, tipoDaPeca } from '..
 import { padroesDoNicho, sugestaoNaoTestada } from './insights.js';
 import { NARRATIVAS, ETAPAS_FUNIL, rotuloNarrativa, linhaNarrativa } from '../lib/narrativas.js';
 import { abrirMateriais } from './materiais-cliente.js';
-import { AVISO_META_SAUDE, ehProdutoSaude, achadosSaude, motivoSaude, trocarPelaSegura } from '../lib/saude.js';
+import { AVISO_META_SAUDE, ehProdutoSaude, alertaSaude, seloRiscoMeta, textoDoCriativo, trocarPelaSegura } from '../lib/saude.js';
 import { GANCHOS, GRUPOS_GANCHO, nomeGrupo, ganchoPorNumero, rotuloModelo, descricaoModelo, motivoGancho } from '../lib/ganchos.js';
 import { acaoAoExcluir, planoCriativos, criativosVisiveis, semVersao, resultadosDoCriativo } from '../lib/exclusao.js';
 import { produtoDoCriativo, contextoProdutoAtual } from '../lib/conexoes.js';
@@ -28,7 +28,7 @@ import {
   FRAMEWORKS, MODELOS_CRIATIVO, FORMATOS, STATUS_CRIATIVO, STATUS_COR, CHECKLIST_QUALIDADE,
 } from '../lib/constantes.js';
 import {
-  esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, toast, modal, ocupado, lerForm, opcoes, copiar, confirmar, campoArquivo, mostrarResultado } from '../core/ui.js';
+  esc, $, on, montar, cabecalho, iaNota, vazio, tag, dataBR, diasDesde, toast, modal, ocupado, lerForm, opcoes, copiar, confirmar, campoArquivo, mostrarResultado, avisarRiscoMeta } from '../core/ui.js';
 
 const rotulo = (lista, v) => (lista.find(([k]) => k === v) || [, v])[1];
 /** Status em que o criativo já passou pelo crivo interno — os mesmos usados em campanhas.js para "disponível". */
@@ -329,10 +329,9 @@ function painelNovo(alvo, cliente, referencias, resultados, recarregar, base = n
 
 function variacao(x, i, cliente) {
   const texto = `${x.hook} ${x.copy} ${x.cta}`, proibidos = acharTermosDoCliente(texto, cliente);
-  const saude = motivoSaude(texto, cliente) ? achadosSaude(texto) : [];
   return `<div class="rounded-lg border border-slate-200 p-3">
     <div class="flex flex-wrap items-center gap-1">${tag(x.angulo || 'ângulo', 'tag-info')}${tagNarrativa(x)}${x.gatilho ? tag('gatilho: ' + x.gatilho) : ''}${tag(x.framework)}${tag(rotulo(FORMATOS, x.formato))}
-      ${proibidos.length ? tag('termos proibidos: ' + proibidos.join(', '), 'tag-bad') : ''}${saude.length ? `<span class="tag tag-bad" data-tag-saude title="${esc(motivoSaude(texto, cliente))}">saúde (Meta): ${esc(saude.join(', '))}</span>` : ''}${(x.avisosGancho || []).map((a) => tag(a, 'tag-bad')).join('')}</div>
+      ${proibidos.length ? tag('termos proibidos: ' + proibidos.join(', '), 'tag-bad') : ''}${seloRiscoMeta(texto, cliente)}${(x.avisosGancho || []).map((a) => tag(a, 'tag-bad')).join('')}</div>
     <p class="mt-2 font-semibold">“${esc(x.hook)}”</p>
     ${origemGancho(x)}
     <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700">${esc(x.copy)}</p>
@@ -380,7 +379,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
   const comSegura = (x) => { const s = segura(x); return s.hook !== x.hook || s.copy !== x.copy || s.cta !== x.cta; };
   const desenhar = () => {
     const proibidos = acharTermosDoCliente(`${c.hook} ${c.copy} ${c.cta}`, cliente);
-    const saude = motivoSaude(`${c.hook} ${c.copy} ${c.cta}`, cliente);
+    const saude = alertaSaude(textoDoCriativo(c), cliente);
     const versoes = c.versoes || [];
     const tudoOk = CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k]);
     alvo.innerHTML = `
@@ -392,7 +391,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
       <button class="btn-primary btn-sm mt-2" data-enviar-um><i class="fa-solid fa-paper-plane"></i> Gerar novo link de aprovação com o arquivo atual</button></div>` : ''}
     ${c.aprovacaoCliente ? `<div class="mb-3 rounded-lg border p-3 text-sm ${c.aprovacaoCliente.status === 'aprovado' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'}"><b>${c.aprovacaoCliente.status === 'aprovado' ? '<i class="fa-solid fa-circle-check"></i> O cliente aprovou' : '<i class="fa-solid fa-pen"></i> O cliente pediu ajuste'}</b> em ${dataBR(c.aprovacaoCliente.em)}${c.aprovacaoCliente.arquivoNome ? ` · arquivo que ele viu: <b>${esc(c.aprovacaoCliente.arquivoNome)}</b>${c.aprovacaoCliente.arquivoPath !== c.arquivoPath ? ' (não é mais o arquivo atual)' : ''}` : ''}${c.aprovacaoCliente.comentario ? `<p class="mt-1 whitespace-pre-wrap">“${esc(c.aprovacaoCliente.comentario)}”</p>` : ''}</div>` : ''}
     ${proibidos.length ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i> Contém termos proibidos do cliente: <b>${esc(proibidos.join(', '))}</b>. Ajuste antes de aprovar.</div>` : ''}
-    ${saude ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-saude><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não dá para aprovar nem enviar ao cliente: ${esc(saude)}.${comSegura(c) ? ' <button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura><i class="fa-solid fa-shield-halved"></i> Usar a versão segura (nova versão)</button>' : ''}</div>` : ''}
+    ${saude ? `<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800" data-aviso-saude>${seloRiscoMeta(textoDoCriativo(c), cliente)} <span class="text-xs">Só aviso: nada é bloqueado.</span>${comSegura(c) ? ' <button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura><i class="fa-solid fa-shield-halved"></i> Usar a versão segura (nova versão)</button>' : ''}</div>` : ''}
     ${motivoGancho(c, cliente) ? `<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700" data-bloqueio-gancho><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${esc(motivoGancho(c, cliente))}. Ajuste antes de aprovar.</div>` : ''}
     ${origemGancho(c)}
     ${produtoHtml()}
@@ -502,7 +501,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
 
   on(alvo, 'click', '[data-usar-segura]', (b) => ocupado(b, async () => {
     await novaVersao(segura(c), 'Texto do site trocado pela versão segura (política do Meta para saúde)');
-    desenhar(); recarregar(); mostrarResultado($('[data-bloqueio-saude]', alvo) || alvo.firstElementChild, 'Versão segura aplicada como nova versão do criativo.');
+    desenhar(); recarregar(); mostrarResultado($('[data-aviso-saude]', alvo) || alvo.firstElementChild, 'Versão segura aplicada como nova versão do criativo.');
   }));
   const novaVersao = async (patch, nota) => {
     // Sempre grava o ângulo/framework/gatilho/formato vigentes nesta versão (do patch, senão o que já estava no
@@ -516,7 +515,7 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
   on(alvo, 'submit', '#fe', async (f, ev) => {
     ev.preventDefault();
     const v = lerForm(f);
-    await ocupado(f.querySelector('button'), async () => { await novaVersao({ hook: v.hook, copy: v.copy, cta: v.cta }, 'Edição manual'); toast('Nova versão salva.'); desenhar(); recarregar(); });
+    await ocupado(f.querySelector('button'), async () => { await novaVersao({ hook: v.hook, copy: v.copy, cta: v.cta }, 'Edição manual'); toast('Nova versão salva.'); desenhar(); recarregar(); avisarRiscoMeta(alertaSaude(textoDoCriativo(c), cliente)); });
   });
   on(alvo, 'click', '[data-copiar]', () => copiar(`${c.hook}\n\n${c.copy}\n\n${c.cta}`));
   on(alvo, 'click', '[data-estudio]', () => abrirEstudio(c, cliente, fonte));
@@ -571,8 +570,6 @@ function detalhe(c, cliente, cfg, recarregar, fonte = { produtos: [], materiais:
     if (s.value === 'aprovado' || s.value === 'em_uso') {
       if (!CHECKLIST_QUALIDADE.every(([k]) => c.checklist?.[k])) { toast('Complete o checklist de qualidade antes de aprovar/usar.', 'erro'); return desenhar(); }
       if (acharTermosDoCliente(`${c.hook} ${c.copy} ${c.cta}`, cliente).length) { toast('Remova os termos proibidos antes de aprovar.', 'erro'); return desenhar(); }
-      const saude = motivoSaude(`${c.hook} ${c.copy} ${c.cta}`, cliente);
-      if (saude) { toast(`Não dá para aprovar: ${saude}.`, 'erro'); return desenhar(); }
       if (motivoGancho(c, cliente)) { toast(`Não dá para aprovar: ${motivoGancho(c, cliente)}.`, 'erro'); return desenhar(); }
     }
     await definirStatus(c, s.value); toast('Status atualizado.'); desenhar(); recarregar();

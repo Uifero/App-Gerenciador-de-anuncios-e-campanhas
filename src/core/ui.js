@@ -98,6 +98,20 @@ export function mostrarErro(msg, { detalhe = '' } = {}) {
   barra.querySelector('[data-fechar-erro]').onclick = () => fecharBarra('status-erro');
 }
 
+/**
+ * Nota amarela de alegação de saúde depois de salvar um criativo (lib/saude.js alertaSaude). Só informação: não
+ * bloqueia nem pede confirmação; fica até fechar no × (ou até salvar um texto sem alegação).
+ */
+export function avisarRiscoMeta(alerta) {
+  if (!alerta?.nota) return fecharBarra('status-risco-meta');
+  const barra = barraStatus('status-risco-meta');
+  barra.classList.add('bottom-24');
+  barra.innerHTML = `<div class="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 shadow-lg" role="status" data-nota-risco-meta>
+    <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i><p class="min-w-0 flex-1">${esc(alerta.nota)}</p>
+    <button type="button" class="min-h-[44px] min-w-[44px] -my-2 -mr-2 text-lg leading-none" aria-label="Fechar aviso" data-fechar-risco-meta>&times;</button></div>`;
+  barra.querySelector('[data-fechar-risco-meta]').onclick = () => fecharBarra('status-risco-meta');
+}
+
 export function dataBR(iso) {
   if (!iso) return '—';
   // Data sem hora ("2026-09-24", do <input type="date">): o navegador leria como meia-noite UTC, que no Brasil

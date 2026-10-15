@@ -7,7 +7,7 @@
 // o desenho de um quadro no tempo t (desenharQuadro, recebe o contexto 2D). A gravação fica em lib/animacoes-render.js.
 import { zonaSegura } from './formatos-instagram.js';
 import { extrairCenas, partirTexto } from './estudio.js';
-import { motivoSaude, ehProdutoSaude } from './saude.js';
+import { alertaSaude, ehProdutoSaude } from './saude.js';
 import { temColchete } from './ganchos.js';
 
 const txt = (v) => String(v ?? '').trim();
@@ -41,7 +41,6 @@ const RE_BELEZA = /cosm[eé]t|beleza|pele|skin|cabelo|est[eé]tic|maquiag|depila
 export function motivoPreset(presetId, { cliente = {}, produtos = [], fotos = 0 } = {}) {
   const p = presetPorId(presetId); if (!p) return 'animação desconhecida';
   if (p.politica === 'antes_depois') {
-    if (ehProdutoSaude(cliente, produtos)) return 'Antes e depois é proibido em produto de saúde (política do Meta): use outra animação';
     if (RE_BELEZA.test(norm(`${cliente.nicho} ${cliente.marca?.negocio}`))) return 'Antes e depois é proibido em cosmético e beleza (política do Meta): use outra animação';
     if (fotos < 2) return 'Precisa de duas fotos reais (antes e depois) nos Materiais do cliente';
   }
@@ -127,20 +126,23 @@ export function ajustarDuracao(plano) {
 export const textosDoPlano = (plano = {}) => [...(plano.cenas || []).map((c) => c.texto), plano.preco?.por, plano.frete].filter(Boolean).join(' \n ');
 
 /**
- * Conferência antes de gravar (bloqueia como o resto dos criativos): saúde (achadosSaude via motivoSaude), colchete
- * do modelo de gancho, política do preset e duração. Avisos (não bloqueiam): muitas palavras numa tela, preço riscado.
- * Devolve { bloqueio, avisos }.
+ * Conferência antes de gravar: colchete do modelo de gancho e política do preset bloqueiam. Alegação de saúde não
+ * bloqueia (decisão do operador): vira `alerta` (lib/saude.js alertaSaude) para a nota amarela depois de gravar.
+ * Avisos (não bloqueiam): muitas palavras numa tela, preço riscado, antes e depois em produto de saúde.
+ * Devolve { bloqueio, avisos, alerta }.
  */
 export function conferirPlano(plano = {}, { cliente = {}, produtos = [], nFotos = 0 } = {}) {
   const texto = textosDoPlano(plano);
-  const saude = motivoSaude(texto, cliente);
+  const alerta = alertaSaude(texto, cliente);
   const pol = motivoPreset(plano.preset, { cliente, produtos, fotos: nFotos || 2 });
-  const bloqueio = pol ? pol : saude ? `Não dá para gravar: ${saude}` : temColchete(texto) ? 'Não dá para gravar: sobrou colchete do modelo de gancho; escreva no lugar o texto do produto' : '';
+  const bloqueio = pol ? pol : temColchete(texto) ? 'Não dá para gravar: sobrou colchete do modelo de gancho; escreva no lugar o texto do produto' : '';
   const avisos = [...(plano.avisos || [])];
+  if (presetPorId(plano.preset)?.politica === 'antes_depois' && ehProdutoSaude(cliente, produtos)) avisos.push('Antes e depois em produto de saúde: o Meta pode reprovar o anúncio. Risco alto; reprovações repetidas podem restringir a conta de anúncios.');
+  if (alerta) avisos.push(alerta.nota);
   const longas = (plano.cenas || []).filter((c) => txt(c.texto).split(/\s+/).filter(Boolean).length > PALAVRAS_POR_TELA && c.tipo !== 'item');
   if (longas.length) avisos.push(`${longas.length} tela(s) com mais de ${PALAVRAS_POR_TELA} palavras: no celular, ninguém lê. Divida a fala em duas cenas.`);
   if (plano.duracao > (presetPorId(plano.preset)?.gif ? DURACAO_MAX_GIF : DURACAO_MAX)) avisos.push('Duração acima do limite: o app encurta as cenas ao gravar.');
-  return { bloqueio, avisos };
+  return { bloqueio, avisos, alerta };
 }
 
 /** Plano da IA -> plano conferido: só os campos de texto e tempo; preço e frete continuam os do cadastro (nunca da IA). */

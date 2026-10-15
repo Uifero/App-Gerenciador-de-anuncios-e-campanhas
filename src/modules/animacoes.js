@@ -1,11 +1,11 @@
 // "Biblioteca de animações" (Estúdio e passo 3 de "Criar criativos"): cada preset toca ao vivo com as fotos reais, a cor
 // e as fontes do cliente; o operador escolhe um, o app preenche sem IA a partir da ideia e do produto (ou com IA, se
 // pedir), ele edita texto e tempo de cada cena, e grava MP4 (Reels/Stories 9:16 ou feed 4:5) ou GIF no navegador.
-// A peça vai para a Galeria como qualquer outra (config.animacao), e passa pelo "Parece anúncio?". Saúde, colchete do
-// modelo de gancho e política do preset bloqueiam a gravação (lib/animacoes.js conferirPlano).
+// A peça vai para a Galeria como qualquer outra (config.animacao), e passa pelo "Parece anúncio?". Colchete do
+// modelo de gancho e política do preset bloqueiam a gravação; saúde é só aviso (lib/animacoes.js conferirPlano).
 import { db, COL } from '../core/storage.js';
 import { preencherAnimacao } from '../core/ia.js';
-import { esc, $, on, modal, ocupado, toast, tag, mostrarResultado } from '../core/ui.js';
+import { esc, $, on, modal, ocupado, toast, tag, mostrarResultado, avisarRiscoMeta } from '../core/ui.js';
 import { PRESETS, presetPorId, ESTILO_NOME, planoInicial, conferirPlano, motivoPreset, normalizarPlanoIa, ajustarDuracao, DURACAO_MAX_GIF, MAX_CENAS } from '../lib/animacoes.js';
 import { carregarFontes, carregarFotos, recursosDe, tocarPrevia, gravarMp4, gravarGif } from '../lib/animacoes-render.js';
 import { designDoSite } from '../lib/design-site.js';
@@ -157,6 +157,7 @@ export async function abrirBibliotecaAnimacoes(criativo, cliente, fonte = {}, op
       st.className = 'mt-2 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-sm text-emerald-800';
       st.innerHTML = `<i class="fa-solid fa-circle-check"></i> Guardada na Galeria (${esc(salva.formatoNome || nomeFormato(formato, tipo))}, ${formatarBytes(salva.tamanho)}${salva.comprimido ? ', convertida para MP4' : ''}).`;
       mostrarResultado(st, 'Peça guardada na Galeria.');
+      avisarRiscoMeta(conferirPlano(ultimo.plano, { cliente, produtos }).alerta);
       opts.aoFinalizar?.(salva);
     }));
     on(box, 'click', '[data-voltar-lista]', () => desenharLista());

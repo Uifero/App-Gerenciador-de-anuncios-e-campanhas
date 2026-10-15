@@ -52,12 +52,12 @@ describe('reescrita', () => {
     expect(p.bloqueio).toBe('');
     expect(p.explicacao).toBe('Objeção no gancho.');
   });
-  it('reescrita que cria promessa de saúde é bloqueada (Thermora)', () => {
+  it('reescrita com promessa de saúde NÃO bloqueia: salva e traz o alerta (Thermora)', () => {
     const p = propostaDeMudanca(criativo, { hook: 'Acelera o seu metabolismo de manhã', copy: criativo.copy, cta: criativo.cta }, thermora);
-    expect(p.bloqueio).toMatch(/Não dá para salvar/);
-    expect(p.bloqueio).toMatch(/metabolismo/);
-    // o mesmo texto num cliente que não é de saúde passa
-    expect(propostaDeMudanca(criativo, { hook: 'Acelera o seu metabolismo de manhã' }, moda).bloqueio).toBe('');
+    expect(p.bloqueio).toBe('');
+    expect(p.alerta.nota).toContain('alegação de saúde ("acelera o seu metabolismo")');
+    // o mesmo texto num cliente que não é de saúde: sem alerta
+    expect(propostaDeMudanca(criativo, { hook: 'Acelera o seu metabolismo de manhã' }, moda).alerta).toBeNull();
   });
   it('colchete do modelo de gancho é bloqueado', () => {
     expect(motivoBloqueioTexto({ hook: 'Eu testei [produto] por 30 dias', copy: '', cta: '' }, moda, 37)).toMatch(/colchete/);

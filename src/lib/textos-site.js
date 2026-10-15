@@ -4,7 +4,7 @@
 //    sentido e as MESMAS alegações e números, mais clara para o celular) e "Versão segura" (sem efeito no corpo e sem
 //    número sem fonte; serve também para anúncio). Padrão: "Seu texto". Nada é aplicado antes de "Aplicar o plano".
 //  - No site, alegação de efeito (cliente de saúde) NÃO é bloqueada: fica com aviso amarelo e precisa do "Entendi e
-//    quero manter no site" (quem e quando ficam guardados). Nos criativos continua bloqueada (lib/saude.js).
+//    quero manter no site" (quem e quando ficam guardados). Nos criativos vira aviso "Risco Meta" (lib/saude.js alertaSaude).
 //  - Número escrito pelo operador ("mais de 5000 pessoas") pede a fonte; sem fonte o item fica pendente. A IA nunca
 //    inventa número: versão que traz número ou alegação que o original não tinha é descartada aqui.
 import { achadosSaude } from './saude.js';
@@ -28,7 +28,7 @@ export function exigirTamanho(texto, nome = '"Como eu quero o site"', limite = L
 }
 
 // ---------- avisos ----------
-export const AVISO_SITE_SAUDE = 'No site é permitido, mas atenção: a Anvisa trata a página da loja como publicidade e o Meta revisa a página de destino dos anúncios; alegação de efeito pode reprovar anúncios que levam para cá. Nos criativos isso é bloqueado porque o Meta proíbe.';
+export const AVISO_SITE_SAUDE = 'No site é permitido, mas atenção: a Anvisa trata a página da loja como publicidade e o Meta revisa a página de destino dos anúncios; alegação de efeito pode reprovar anúncios que levam para cá. Nos criativos aparece o aviso "Risco Meta": o Meta pode reprovar o anúncio.';
 export const VERSOES = { original: 'Seu texto', melhorada: 'Versão melhorada', segura: 'Versão segura', manual: 'Editar à mão' };
 export const FONTES_NUMERO = { vendas_cliente: 'Vendas informadas pelo cliente', relatorio: 'Relatório da plataforma', outro: 'Outro' };
 export const DESTINOS_TEXTO = { banner_titulo: 'Título do banner', banner_subtitulo: 'Subtítulo do banner', secao: 'Seção de destaques' };

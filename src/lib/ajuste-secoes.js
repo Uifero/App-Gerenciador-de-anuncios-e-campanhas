@@ -263,8 +263,8 @@ export function conferirSecoes(estado = {}, secoes = [], modo = 'custom', { saud
     const itens = [];
     const textos = textosDaSecao(estado, id, modo).filter((t) => txt(t.texto));
     if (saude) {
-      const ach = [...new Set(textos.flatMap((t) => achadosSaudeSite(t.texto)))];
-      itens.push(ach.length ? { tipo: 'saude', ok: false, texto: `Alegação de efeito no corpo: ${ach.map((a) => `"${a}"`).join(', ')}. No site fica só com o seu "Entendi e quero manter no site"; nos anúncios continua bloqueada.` } : { tipo: 'saude', ok: true, texto: 'Sem alegação de efeito no corpo.' });
+      const ach = [...new Set(textos.flatMap((t) => achadosSaudeSite(t.texto, null, produtos)))];
+      itens.push(ach.length ? { tipo: 'saude', ok: false, texto: `Alegação de efeito no corpo: ${ach.map((a) => `"${a}"`).join(', ')}. No site fica só com o seu "Entendi e quero manter no site"; nos anúncios aparece como "Risco Meta" (o Meta pode reprovar).` } : { tipo: 'saude', ok: true, texto: 'Sem alegação de efeito no corpo.' });
     }
     const cliches = cara.filter((a) => a.tipo !== 'cor' && a.tipo !== 'banner' && secaoDoAchado(a, modo) === id);
     if (textos.length) itens.push(cliches.length ? { tipo: 'cara_de_ia', ok: false, texto: `Cara de IA: ${cliches.map((a) => a.titulo).join('; ')}.` } : { tipo: 'cara_de_ia', ok: true, texto: 'Sem clichê de IA.' });

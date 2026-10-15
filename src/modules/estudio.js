@@ -17,7 +17,7 @@ import {
   FORMATOS_IMAGEM, TEMPLATES, LIMITE_VIDEO_S, midiaDaCena, extrairCenas, desenharPeca, canvasParaPng, desenharGuiaZona, carregarMidia, carregarImagemUrl, formatoDeVideo, gravarVideo,
 } from '../lib/estudio.js';
 import { foraDaZona, nomeFormato, zonaSegura } from '../lib/formatos-instagram.js';
-import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo, mostrarResultado, confirmar } from '../core/ui.js';
+import { $, esc, on, modal, toast, ocupado, opcoes, copiar, campoArquivo, mostrarResultado, confirmar, avisarRiscoMeta } from '../core/ui.js';
 import { CENAS_UNBOXING } from '../lib/constantes.js';
 import { slug } from '../lib/csv.js'; // mesma função usada em sites.js/relatorios.js/backup.js — era duplicada aqui
 import { montarEditorVideo } from './video-editor.js';
@@ -28,7 +28,7 @@ import { abrirBiblioteca } from './modelos-prompt.js';
 import { logoHtml, ligarLogo } from './logo-cliente.js';
 import { tipoMaterial } from '../lib/prova-social.js';
 import { produtoDoCriativo, printsParaCriativo } from '../lib/conexoes.js';
-import { motivoSaude, trocarPelaSegura, textosDoSiteNoAnuncio } from '../lib/saude.js';
+import { alertaSaude, seloRiscoMeta, trocarPelaSegura, textosDoSiteNoAnuncio } from '../lib/saude.js';
 import { excluirMateriais } from './excluir-material.js';
 import { salvarPeca } from './pecas.js';
 import { formatarBytes } from '../lib/pecas.js';
@@ -139,7 +139,7 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     </div>
     <div class="mt-3 flex flex-wrap items-center gap-2"><label class="flex min-h-[44px] items-center gap-2 text-sm"><input type="checkbox" data-guia-zona checked> Mostrar a zona segura do Instagram <span class="hint">(só na tela; não vai para o arquivo)</span></label></div>
     <p class="mt-1 hidden rounded bg-amber-50 p-2 text-sm text-amber-800" role="status" data-aviso-zona></p>
-    <div class="mt-1 hidden rounded border border-rose-300 bg-rose-50 p-2 text-sm text-rose-700" role="status" data-aviso-saude-estudio></div>
+    <div class="mt-1 hidden rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800" role="status" data-aviso-saude-estudio></div>
     <div class="mt-2 flex justify-center rounded-lg bg-slate-100 p-2"><canvas data-previa style="max-width:100%;max-height:420px" class="rounded"></canvas></div>
     <div class="mt-3 flex flex-wrap gap-2"><button class="btn-primary btn-sm min-h-[44px]" data-finalizar-foto><i class="fa-solid fa-circle-check"></i> Finalizar peça (guardar na Galeria)</button>
       <button class="btn-ghost btn-sm" data-baixar-foto><i class="fa-solid fa-download"></i> Baixar este formato</button>
@@ -218,15 +218,15 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
     aviso.innerHTML = msgs.join('<br>');
     avisarSaude();
   };
-  // Produto de saúde: o bloqueio dos criativos vale aqui também (texto com promessa de efeito não vira peça). Texto do
-  // site mantido pelo operador ganha o motivo "Permitido no site, mas bloqueado em anúncio" e a versão segura como troca.
+  // Produto de saúde: alegação no texto é só aviso (decisão do operador): a peça é guardada e aparece a nota amarela.
+  // Texto do site mantido pelo operador ganha a versão segura como troca opcional.
   const textosPeca = () => [$('[data-hook]', raiz).value, $('[data-cta]', raiz).value, ...est.cenas.map((c) => c.texto || '')].join(' \n ');
-  const motivoPeca = () => motivoSaude(textosPeca(), cliente);
+  const motivoPeca = () => alertaSaude(textosPeca(), cliente);
   const avisarSaude = () => {
     const el = $('[data-aviso-saude-estudio]', raiz); if (!el) return;
     const m = motivoPeca(), troca = m && textosDoSiteNoAnuncio(textosPeca(), cliente).some((l) => l.alegacao.length && l.segura);
     el.classList.toggle('hidden', !m);
-    el.innerHTML = m ? `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não dá para finalizar esta peça: ${esc(m)}.${troca ? ' <button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-estudio><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>' : ''}` : '';
+    el.innerHTML = m ? `${seloRiscoMeta(textosPeca(), cliente)} <span class="text-xs">Só aviso: a peça pode ser guardada.</span>${troca ? ' <button type="button" class="btn-ghost btn-sm mt-1 min-h-[44px]" data-usar-segura-estudio><i class="fa-solid fa-shield-halved"></i> Usar a versão segura</button>' : ''}` : '';
   };
   let agendado = 0;
   const agendarPrevia = () => { cancelAnimationFrame(agendado); agendado = requestAnimationFrame(previa); };
@@ -463,13 +463,13 @@ export function abrirEstudio(criativo, cliente, fonte = null, opts = {}) {
   const configPeca = () => ({ template: est.template, cor: est.cor, corTexto: est.corTexto, logoNoFim: est.logoNoFim, temLogo: Boolean(est.logo), hook: $('[data-hook]', raiz).value, cta: $('[data-cta]', raiz).value,
     cenas: est.cenas.map((c) => ({ texto: c.texto || '', dur: c.dur, tipo: c.tipo })) });
   const finalizar = async (qual, peca) => {
-    const bloqueio = motivoPeca();
-    if (bloqueio) { statusFinal(qual, `<i class="fa-solid fa-triangle-exclamation"></i> Não guardei a peça: ${esc(bloqueio)}.`, 'border-rose-300 bg-rose-50 text-rose-700'); toast('Peça não guardada: o texto tem alegação proibida em anúncio (veja o motivo).', 'erro'); return null; }
+    const alerta = motivoPeca();
     const andamento = (texto, p) => statusFinal(qual, `<i class="fa-solid fa-spinner fa-spin"></i> ${esc(texto)}${p ? ` ${Math.round(p * 100)}%` : ''}<div class="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200"><div class="h-2 bg-indigo-600" style="width:${Math.round((p || 0) * 100)}%"></div></div>`, 'border-indigo-200 bg-indigo-50 text-indigo-800');
     try {
       const salva = await salvarPeca(cliente, criativo, { ...peca, config: configPeca(), baseadaEm: opts.baseadaEm || null, especialista: opts.especialista || null }, { aoEtapa: andamento });
       const el = statusFinal(qual, `<i class="fa-solid fa-circle-check"></i> Peça guardada na Galeria (${esc(salva.formatoNome)}, ${formatarBytes(salva.tamanho)}${salva.comprimido ? ', comprimida para o Instagram' : ''}).${salva.avisoCompressao ? ` <span class="text-amber-800">${esc(salva.avisoCompressao)}</span>` : ''} Ajuste e finalize de novo para ter outra versão para comparar.`, 'border-emerald-300 bg-emerald-50 text-emerald-800');
       mostrarResultado(el, 'Peça guardada na Galeria.');
+      avisarRiscoMeta(alerta);
       opts.aoFinalizar?.(salva);
       return salva;
     } catch (e) {
